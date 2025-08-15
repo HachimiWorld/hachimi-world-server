@@ -2,3 +2,6 @@
 .idea
 .DS_Store
 .env
+
+/config.yaml
+/docker-compose.yaml
