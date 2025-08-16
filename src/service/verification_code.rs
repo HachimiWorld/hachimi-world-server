@@ -4,7 +4,7 @@ use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 
 /// Automatically:
 /// - increase the retry counter when error
-/// - del the code when succeed
+/// - del the code when succeed or max retries
 pub async fn verify_code(
     conn: &mut ConnectionManager,
     email: &str,
@@ -16,7 +16,11 @@ pub async fn verify_code(
         let _: () = conn.del(key).await?;
         Ok(true)
     } else {
-        // TODO: increase counter
+        let retires: i32 = conn.incr(get_verify_code_retries_key(email), 1).await?;
+        if retires > 3 {
+            // Invalidate code
+            let _: () = conn.del(key).await?;
+        }
         Ok(false)
     }
 }
@@ -38,6 +42,10 @@ pub async fn set_limit_nx(conn: &mut ConnectionManager, email: &str) -> anyhow::
 pub async fn set_code(conn: &mut ConnectionManager, email: &str, code: &str) -> anyhow::Result<()> {
     let key = get_verify_code_key(email);
     let _: () = conn.set_ex(key, code, 300).await?;
+
+    // Reset retries
+    let retires_key = get_verify_code_retries_key(email);
+    let _: () = conn.set(retires_key, 0).await?;
     Ok(())
 }
 
@@ -51,6 +59,10 @@ pub fn get_verify_code_key(email: &str) -> String {
 
 pub fn get_verify_code_limited_key(email: &str) -> String {
     format!("email_code:limited:{}", email)
+}
+
+pub fn get_verify_code_retries_key(email: &str) -> String {
+    format!("email_code:retries:{}", email)
 }
 
 #[cfg(test)]
