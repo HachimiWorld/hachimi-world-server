@@ -16,6 +16,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    dotenv::dotenv().ok();
     tracing_subscriber::fmt::init();
 
     let (cancel_token, cancel_handle) = gracefully_shutdown::gen_cancel_token();
@@ -24,14 +25,17 @@ async fn main() -> anyhow::Result<()> {
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
     let redis_conn = get_redis_pool(&config).await?;
     let sql_pool = get_database_pool(&config).await?;
+    
+    // Initialize auth service
     let state = AppState {
         redis_conn,
         config: Arc::new(config),
-        sql_pool,
+        sql_pool
     };
 
     info!("Starting web server at {}", server_cfg.listen);
     web::run_web_app(
+        server_cfg.jwt_secret,
         state,
         server_cfg.listen,
         server_cfg.metrics_listen,
@@ -45,8 +49,9 @@ async fn main() -> anyhow::Result<()> {
 
 #[derive(Deserialize)]
 struct ServerCfg {
-    listen: String,
-    metrics_listen: String,
+    pub listen: String,
+    pub metrics_listen: String,
+    pub jwt_secret: String
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -59,19 +64,19 @@ struct DatabaseConfig {
 
 
 async fn get_database_pool(config: &Config) -> anyhow::Result<sqlx::PgPool> {
-    // <type>://<username>:<password>@<host>[:<port>][/[<database>][?<params>]]
+    // <type>://<username>:<password>@<host>[:<port>][/[<db>][?<params>]]
     let DatabaseConfig {
         address,
         username,
         password,
         database,
-    } = config.get_and_parse::<DatabaseConfig>("database")?;
+    } = config.get_and_parse::<DatabaseConfig>("db")?;
 
     let url = format!(
-        "mysql://{username}:{password}@{address}/{database}",
+        "postgres://{username}:{password}@{address}/{database}",
         password = urlencoding::encode(&password),
     );
-    info!("Connecting to mysql at {address}");
+    info!("Connecting to postgresql at {address}");
     let sql_pool = sqlx::PgPool::connect(&url).await?;
 
     // Run migrations

@@ -1,0 +1,113 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool, Result};
+use crate::db::CrudDao;
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct User {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub password_hash: String,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub gender: Option<i32>,
+    pub is_banned: bool,
+    pub last_login_time: Option<DateTime<Utc>>,
+    pub create_time: DateTime<Utc>,
+    pub update_time: DateTime<Utc>,
+}
+
+pub struct UserDao {
+    pool: PgPool,
+}
+
+pub trait IUserDao: CrudDao {
+    async fn get_by_email(&self, email: &str) -> Result<Option<User>>;
+    async fn get_by_username(&self, username: &str) -> Result<Option<User>>;
+}
+
+impl UserDao {
+    pub fn new(pool: PgPool) -> Self {
+        UserDao { pool }
+    }
+}
+
+impl CrudDao for UserDao {
+    type Entity = User;
+
+    async fn list(&self) -> Result<Vec<User>> {
+        sqlx::query_as!(User, "SELECT * FROM users")
+            .fetch_all(&self.pool)
+            .await
+    }
+
+    async fn page(&self, page: i64, size: i64) -> Result<Vec<User>> {
+        Ok(sqlx::query_as!(User, "SELECT * FROM users LIMIT $1 OFFSET $2", size, (page - 1) * size)
+            .fetch_all(&self.pool)
+            .await?)
+    }
+
+    async fn get_by_id(&self, id: i64) -> Result<Option<User>> {
+        Ok(sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", id)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    async fn insert(&self, value: &User) -> Result<i64> {
+        let result = sqlx::query!(
+            "INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+            value.username,
+            value.email,
+            value.password_hash,
+            value.avatar_url,
+            value.bio,
+            value.gender,
+            value.is_banned,
+            value.last_login_time,
+            value.create_time,
+            value.update_time,
+        ).fetch_one(&self.pool).await?;
+
+        Ok(result.id)
+    }
+
+    async fn update_by_id(&self, value: &User) -> Result<()> {
+        sqlx::query!(
+            "UPDATE users SET username = $1, email = $2, password_hash = $3, avatar_url = $4, bio = $5, gender = $6, is_banned = $7, last_login_time = $8, create_time = $9, update_time = $10 WHERE id = $11",
+            value.username,
+            value.email,
+            value.password_hash,
+            value.avatar_url,
+            value.bio,
+            value.gender,
+            value.is_banned,
+            value.last_login_time,
+            value.create_time,
+            value.update_time,
+            value.id
+        ).execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn delete_by_id(&self, id: i64) -> Result<()> {
+        sqlx::query!("DELETE FROM users WHERE id = $1", id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+impl IUserDao for UserDao {
+    async fn get_by_email(&self, email: &str) -> Result<Option<User>> {
+        Ok(sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", email)
+            .fetch_optional(&self.pool)
+            .await?)
+    }
+
+    async fn get_by_username(&self, username: &str) -> Result<Option<User>> {
+        sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
+            .fetch_optional(&self.pool)
+            .await
+    }
+}

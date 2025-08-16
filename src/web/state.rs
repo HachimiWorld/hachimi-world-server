@@ -7,5 +7,5 @@ use std::sync::Arc;
 pub struct AppState {
     pub redis_conn: ConnectionManager,
     pub config: Arc<Config>,
-    pub sql_pool: Pool<Postgres>,
+    pub sql_pool: Pool<Postgres>
 }

@@ -9,14 +9,20 @@ use tracing::info;
 pub mod routes;
 pub mod state;
 
+mod jwt;
+pub mod result;
 mod web_metrics;
+mod extractors;
 
 pub async fn run_web_app(
+    jwt_secret: String,
     app_state: AppState,
     addr: impl ToSocketAddrs,
     metrics_addr: impl ToSocketAddrs,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
+    jwt::initialize_jwt_key(jwt::Keys::new(jwt_secret.as_bytes()));
+    
     let (_main_server, _metrics_server) = tokio::join!(
         start_main_server(app_state, addr, cancel_token.clone()),
         web_metrics::start_metrics_server(metrics_addr, cancel_token)
@@ -35,7 +41,7 @@ async fn start_main_server(
     info!("HTTP Server started at {}", listener.local_addr()?);
 
     let app = Router::new()
-        .merge(routes::router())
+        .nest("/api", routes::router())
         .route("/health", get(health))
         .with_state(app_state)
         .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
