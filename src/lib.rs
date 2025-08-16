@@ -4,3 +4,4 @@ pub mod config;
 // pub mod models;
 // pub mod auth;
 pub mod db;
+pub mod service;

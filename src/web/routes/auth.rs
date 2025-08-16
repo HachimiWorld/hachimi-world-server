@@ -1,7 +1,7 @@
-use std::env;
-use crate::db::CrudDao;
 use crate::db::refresh_token::{IRefreshTokenDao, RefreshToken, RefreshTokenDao};
 use crate::db::user::{IUserDao, User, UserDao};
+use crate::db::CrudDao;
+use crate::service::{mailer, verification_code};
 use crate::web::extractors::XRealIP;
 use crate::web::jwt;
 use crate::web::jwt::Claims;
@@ -10,16 +10,12 @@ use crate::web::result::{WebResponse, WebResult};
 use crate::web::state::AppState;
 use crate::{err, ok};
 use axum::routing::get;
-use axum::{Json, Router, debug_handler, extract::State, routing::post};
+use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use lettre::message::Mailbox;
-use lettre::message::header::ContentType;
-use lettre::transport::smtp::authentication::Credentials;
-use lettre::{SmtpTransport, Transport};
 use rand::Rng;
-use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::env;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -55,7 +51,7 @@ pub struct EmailRegisterResp {
 }
 
 async fn email_register(
-    state: State<AppState>,
+    mut state: State<AppState>,
     XRealIP(ip): XRealIP,
     req: Json<EmailRegisterReq>,
 ) -> WebResult<EmailRegisterResp> {
@@ -69,33 +65,20 @@ async fn email_register(
         err!("invalid_email", "Invalid email pattern")
     }
 
-    let code: Option<String> = state
-        .redis_conn
-        .clone()
-        .get(format!("email_code:{}", req.email))
-        .await?;
+    let pass = verification_code::verify_code(&mut state.redis_conn, &req.email, &req.code).await?;
 
-    if let Some(code) = code
-        && req.code == code
-    {
-        let _: () = state
-            .redis_conn
-            .clone()
-            .del(format!("email_code:{}", req.email))
-            .await?;
-
+    if pass {
         // 1. Check user existence
-        // 2. Generate username and hash password
-        // 3. Create user
-        // 4. Generate tokens
         let user_dao = UserDao::new(state.sql_pool.clone());
         if user_dao.get_by_email(&req.email).await?.is_some() {
             err!("email_existed", "Email already exists!")
         }
 
+        // 2. Generate username and hash password
         let username = generate_username();
         let password_hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)?;
 
+        // 3. Create user
         let mut entity = User {
             id: 0,
             username: username.clone(),
@@ -111,6 +94,7 @@ async fn email_register(
         };
         let uid = user_dao.insert(&mut entity).await?;
 
+        // 4. Generate tokens
         let token =
             generate_token_pairs_and_save(ip, uid, req.device_info.clone(), &state.sql_pool)
                 .await?;
@@ -255,51 +239,20 @@ async fn send_email_code(
     State(state): State<AppState>,
     Json(req): Json<SendVerificationReq>,
 ) -> WebResult<()> {
-    let mut redis = state.redis_conn.clone();
-    let code = generate_verify_code();
+    let mut redis = state.redis_conn;
 
-    let limit_absent: bool = redis
-        .set_options(
-            format!("email_code:limited:{}", req.email),
-            0,
-            SetOptions::default()
-                .conditional_set(ExistenceCheck::NX)
-                .with_expiration(SetExpiry::EX(60)),
-        )
-        .await?;
+    let limit_absent: bool = verification_code::set_limit_nx(&mut redis, &req.email).await?;
 
     if !limit_absent {
-        err!(
-            "too_many_requests",
-            "Too many requests, please try again later!"
-        );
+        err!("too_many_requests","Too many requests, please try again later!");
     }
 
-    // TODO: Extract as service
+    let code = verification_code::generate_verify_code();
+
     let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+    mailer::send_verification_code(&email_cfg, &req.email, &code).await?;
 
-    let email_msg = lettre::Message::builder()
-        .from(Mailbox::new(
-            Some("Hachimi World".to_string()),
-            email_cfg.no_reply_email.parse()?,
-        ))
-        .to(Mailbox::new(None, req.email.parse()?))
-        .subject("Your email verification code - Hachimi World")
-        .header(ContentType::TEXT_PLAIN)
-        .body(String::from(&code))?;
-    let creds = Credentials::new(
-        email_cfg.username,
-        email_cfg.password
-    );
-
-    let mailer = SmtpTransport::relay(email_cfg.host.as_str())?
-        .credentials(creds)
-        .build();
-    mailer.send(&email_msg)?;
-
-    let _: () = redis
-        .set_ex(format!("email_code:{}", req.email), code, 300)
-        .await?;
+    verification_code::set_code(&mut redis, &req.email, &code).await?;
     ok!(())
 }
 
@@ -382,10 +335,6 @@ async fn protected(claims: Claims) -> WebResult<()> {
     ok!(())
 }
 
-fn generate_verify_code() -> String {
-    format!("{:06}", rand::rng().random_range(0..1000000))
-}
-
 fn generate_username() -> String {
     format!("神人{:08}", rand::rng().random_range(0..100000000))
 }
@@ -421,16 +370,4 @@ async fn generate_token_pairs_and_save(
         refresh_token,
         expires_in,
     })
-}
-#[cfg(test)]
-mod test {
-    use crate::web::routes::auth::generate_verify_code;
-
-    #[test]
-    fn test_gen_verify_code() {
-        for _ in 0..100 {
-            let code = generate_verify_code();
-            assert_eq!(6, code.len())
-        }
-    }
 }
