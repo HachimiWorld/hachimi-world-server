@@ -3,5 +3,8 @@
 .DS_Store
 .env
 
+/.local/
 /config.yaml
 /docker-compose.yaml
+
+/CLAUDE.md
