@@ -20,6 +20,7 @@ pub struct RefreshToken {
 pub trait IRefreshTokenDao: CrudDao<Entity = RefreshToken> {
     async fn get_by_token_id(&self, token_id: &str) -> sqlx::Result<Option<RefreshToken>>;
     async fn list_by_uid(&self, uid: i64) -> sqlx::Result<Vec<RefreshToken>>;
+    async fn delete_all_by_uid(&self, uid: i64) -> sqlx::Result<u64>;
 }
 
 pub struct RefreshTokenDao {
@@ -113,5 +114,11 @@ impl IRefreshTokenDao for RefreshTokenDao {
         )
         .fetch_all(&self.pool)
         .await
+    }
+    async fn delete_all_by_uid(&self, uid: i64) -> sqlx::Result<u64> {
+        let rows = sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", uid)
+            .execute(&self.pool)
+            .await?.rows_affected();
+        Ok(rows)
     }
 }

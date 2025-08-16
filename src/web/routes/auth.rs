@@ -26,6 +26,7 @@ pub fn router() -> Router<AppState> {
         .route("/device/logout", post(device_logout))
         .route("/refresh_token", post(refresh_token))
         .route("/protected", get(protected))
+        .route("/reset_password", post(reset_password))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -333,6 +334,40 @@ async fn device_logout(
 
 async fn protected(claims: Claims) -> WebResult<()> {
     ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResetPasswordReq {
+    pub email: String,
+    pub code: String,
+    pub new_password: String,
+    pub logout_all_devices: bool
+}
+
+async fn reset_password(
+    mut state: State<AppState>,
+    req: Json<ResetPasswordReq>
+) -> WebResult<()> {
+    if verification_code::verify_code(&mut state.redis_conn, req.email.as_str(), req.code.as_str()).await? {
+        let user_dao = UserDao::new(state.sql_pool.clone());
+        let mut user = if let Some(user) = user_dao.get_by_email(req.email.as_str()).await? {
+            user
+        } else {
+            err!("invalid_user", "Invalid user")
+        };
+        user.password_hash = bcrypt::hash(req.new_password.as_str(), bcrypt::DEFAULT_COST)?;
+        user.update_time = Utc::now();
+
+        user_dao.update_by_id(&user).await?;
+
+        if req.logout_all_devices {
+            let token_dao = RefreshTokenDao::new(state.sql_pool.clone());
+            token_dao.delete_all_by_uid(user.id).await?;
+        }
+        ok!(())
+    } else {
+        err!("invalid_user", "Invalid user")
+    }
 }
 
 fn generate_username() -> String {

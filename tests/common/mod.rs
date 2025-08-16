@@ -4,6 +4,7 @@ use reqwest::Response;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::env;
+use serde::Serialize;
 
 pub struct TestEnvironment {
     pub api: ApiClient,
@@ -76,7 +77,7 @@ impl ApiClient {
         resp
     }
 
-    pub async fn post(&self, path: &str, body: &Value) -> Response {
+    pub async fn post<T: Serialize>(&self, path: &str, body: &T) -> Response {
         let client = reqwest::Client::new();
 
         let mut headers = HeaderMap::new();

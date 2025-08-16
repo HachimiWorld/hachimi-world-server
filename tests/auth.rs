@@ -3,10 +3,10 @@ pub mod common;
 use crate::common::{assert_is_err, assert_is_ok};
 use common::with_test_environment;
 use hachimi_world_server::web::result::WebResponse;
-use hachimi_world_server::web::routes::auth::{DeviceListResp, LoginResp, TokenPair};
-use redis::AsyncCommands;
+use hachimi_world_server::web::routes::auth::{DeviceListResp, LoginReq, LoginResp, ResetPasswordReq, TokenPair};
 use reqwest::StatusCode;
 use serde_json::json;
+use hachimi_world_server::service;
 
 #[tokio::test]
 async fn test_send_verification_code() {
@@ -35,11 +35,7 @@ async fn test_register_and_login() {
         // TODO[test]: Separate these tests
 
         // Put a fake email code for test
-        let mut redis = common::get_redis_conn().await;
-        let _: () = redis
-            .set(format!("email_code:{}", random_email), "000000")
-            .await
-            .unwrap();
+        service::verification_code::set_code(&mut env.redis, &random_email, "12345678").await.unwrap();
 
         // Test register with code
         let resp = env
@@ -49,7 +45,7 @@ async fn test_register_and_login() {
                 &json!({
                     "email": random_email,
                     "password": "test12345678",
-                    "code": "000000",
+                    "code": "12345678",
                     "device_info": "test",
                 }),
             )
@@ -89,7 +85,6 @@ async fn test_register_and_login() {
         let resp: WebResponse<DeviceListResp> = env.api.get("/auth/device/list").await.json().await.unwrap();
         assert_eq!(2, resp.data.devices.len());
         let last_device = resp.data.devices.last().unwrap();
-        println!("{:#?}", last_device);
 
         // Test revoke device
         let resp = env.api.post("/auth/device/logout", &json!({
@@ -103,6 +98,25 @@ async fn test_register_and_login() {
             "device_info": "test"
         })).await;
         assert_is_err(resp).await;
+
+        // Test reset password
+        service::verification_code::set_code(&mut env.redis, &random_email, "12345678").await.unwrap();
+        let resp = env.api.post("/auth/reset_password", &ResetPasswordReq {
+            email: random_email.to_string(),
+            code: "12345678".to_string(),
+            new_password: "test-changed".to_string(),
+            logout_all_devices: true,
+        }).await;
+        assert_is_ok(resp).await;
+
+        // Test login with new password
+        let resp = env.api.post("/auth/login/email", &LoginReq {
+            email: random_email.to_string(),
+            password: "test-changed".to_string(),
+            device_info: "test".to_string(),
+            code: None,
+        }).await;
+        assert_is_ok(resp).await;
     })
     .await;
 }
