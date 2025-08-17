@@ -1,14 +1,17 @@
 extern crate hachimi_world_server as app;
 
 use std::sync::Arc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use app::util::gracefully_shutdown;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
 use tracing::info;
 use app::config::Config;
+use app::file_hosting::FileHost;
 use app::web;
 use app::web::state::AppState;
+use aws_sdk_s3 as s3;
+use aws_sdk_s3::config::Region;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -26,11 +29,14 @@ async fn main() -> anyhow::Result<()> {
     let redis_conn = get_redis_pool(&config).await?;
     let sql_pool = get_database_pool(&config).await?;
     
+    let file_host = Arc::new(get_file_host(&config).await?);
+    
     // Initialize auth service
     let state = AppState {
         redis_conn,
         config: Arc::new(config),
-        sql_pool
+        sql_pool,
+        file_host,
     };
 
     info!("Starting web server at {}", server_cfg.listen);
@@ -115,4 +121,38 @@ async fn get_redis_pool(config: &Config) -> anyhow::Result<redis::aio::Connectio
     let redis_conn = redis.get_connection_manager().await?;
     info!("Redis connected");
     Ok(redis_conn)
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct S3Config {
+    pub bucket_name: String,
+    pub endpoint_url: String,
+    pub public_domain: String,
+    pub access_key_id: String,
+    pub access_key_secret: String,
+}
+
+async fn get_file_host(config: &Config) -> anyhow::Result<FileHost> {
+    let cfg: S3Config = config.get_and_parse("s3")?;
+
+    // Configure the client
+    let config = s3::Config::builder()
+        .endpoint_url(cfg.endpoint_url)
+        .credentials_provider(aws_sdk_s3::config::Credentials::new(
+            cfg.access_key_id,
+            cfg.access_key_secret,
+            None, // session token is not used with R2
+            None,
+            "R2",
+        ))
+        .region(Region::new("auto"))
+        .behavior_version_latest()
+        .build();
+
+    let client = s3::Client::from_conf(config);
+    Ok(FileHost::new(
+        cfg.bucket_name,
+        cfg.public_domain,
+        client,
+    ))
 }

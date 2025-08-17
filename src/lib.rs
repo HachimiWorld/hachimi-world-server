@@ -5,3 +5,4 @@ pub mod config;
 // pub mod auth;
 pub mod db;
 pub mod service;
+pub mod file_hosting;

@@ -2,10 +2,12 @@ use crate::config::Config;
 use redis::aio::ConnectionManager;
 use sqlx::{Pool, Postgres};
 use std::sync::Arc;
+use crate::file_hosting::FileHost;
 
 #[derive(Clone)]
 pub struct AppState {
     pub redis_conn: ConnectionManager,
     pub config: Arc<Config>,
-    pub sql_pool: Pool<Postgres>
+    pub sql_pool: Pool<Postgres>,
+    pub file_host: Arc<FileHost>,
 }
