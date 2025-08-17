@@ -1,3 +1,6 @@
+use std::io::Cursor;
+use anyhow::Context;
+use async_backtrace::framed;
 use crate::db::CrudDao;
 use crate::db::user::{IUserDao, UserDao};
 use crate::web::jwt::Claims;
@@ -7,7 +10,10 @@ use crate::web::state::AppState;
 use crate::{err, ok};
 use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
+use axum::extract::Multipart;
 use chrono::Utc;
+use image::imageops::FilterType;
+use image::{ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -16,6 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/greet", get(greet))
         .route("/profile", post(get_profile))
         .route("/update_profile", post(update_profile))
+        .route("/set_avatar", post(set_avatar))
 }
 
 async fn greet() -> WebResult<&'static str> {
@@ -113,6 +120,59 @@ async fn update_profile(
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
     user_dao.update_by_id(&user).await?;
+
+    ok!(())
+}
+
+#[framed]
+async fn set_avatar(
+    claims: Claims,
+    state: State<AppState>,
+    mut multipart: Multipart,
+) -> WebResult<()> {
+    // TODO[opt]: Limit access rate
+    let user_dao = UserDao::new(state.sql_pool.clone());
+    let mut user = if let Some(x) = user_dao.get_by_id(claims.uid()).await? {
+        x
+    } else {
+        err!("not_found", "User not found")
+    };
+
+    let data_field = multipart
+        .next_field()
+        .await?
+        .with_context(|| "No data field found")?;
+    let bytes = data_field.bytes().await?;
+
+    let start = std::time::Instant::now();
+
+    // Validate image
+    if bytes.len() > 8 * 1024 * 1024 {
+        err!("image_too_large", "Image size must be less than 8MB");
+    }
+    let image = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_err(|_| WebError::common("invalid_image", "Invalid image"))?
+        .decode()
+        .map_err(|_| WebError::common("invalid_image", "Invalid image"))?;
+
+    // Resize image
+    // TODO[opt](user): Change filter type to Lanczos3 for better image quality
+    let resized = image.resize_to_fill(128, 128, FilterType::Nearest);
+    let mut output = Cursor::new(Vec::<u8>::new());
+    resized.write_to(&mut output, ImageFormat::WebP)?;
+    metrics::histogram!("avatar_processing_duration_secs").record(start.elapsed().as_secs_f64());
+
+    // Upload image
+    let data = output.into_inner();
+    let sha1 = openssl::sha::sha1(&data);
+    let filename = format!("images/avatar/{}.webp", hex::encode(sha1));
+    let bytes = bytes::Bytes::from(data);
+    let result = state.file_host.upload(bytes, &filename).await?;
+
+    // Save url
+    user.avatar_url = Some(result.public_url);
+    user_dao.update_by_id(&mut user).await?;
 
     ok!(())
 }
