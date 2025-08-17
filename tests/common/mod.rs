@@ -1,3 +1,5 @@
+pub mod auth;
+
 use axum::http::HeaderMap;
 use redis::aio::ConnectionManager;
 use reqwest::Response;
@@ -96,7 +98,7 @@ impl ApiClient {
             .send()
             .await
             .unwrap();
-        println!("{}", resp.status());
+        println!("[{}] POST to {}", resp.status(), path);
         resp
     }
 }
