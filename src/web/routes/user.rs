@@ -31,12 +31,12 @@ async fn greet() -> WebResult<&'static str> {
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct GetProfileReq {
-    pub uid: String,
+    pub uid: i64,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct PublicUserProfile {
-    pub uid: String,
+    pub uid: i64,
     pub username: String,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
@@ -50,14 +50,14 @@ async fn get_profile(
 ) -> WebResult<PublicUserProfile> {
     // Fetch user from db
     let user_dao = UserDao::new(state.sql_pool.clone());
-    let user = if let Some(x) = user_dao.get_by_id(req.uid.parse()?).await? {
+    let user = if let Some(x) = user_dao.get_by_id(req.uid).await? {
         x
     } else {
         err!("not_found", "User not found")
     };
 
     let mapped = PublicUserProfile {
-        uid: user.id.to_string(),
+        uid: user.id,
         username: user.username,
         avatar_url: user.avatar_url,
         bio: user.bio,

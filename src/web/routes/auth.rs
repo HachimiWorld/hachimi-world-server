@@ -46,7 +46,7 @@ pub struct EmailRegisterReq {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmailRegisterResp {
-    pub uid: String,
+    pub uid: i64,
     pub generated_username: String,
     pub token: TokenPair,
 }
@@ -101,7 +101,7 @@ async fn email_register(
                 .await?;
 
         ok!(EmailRegisterResp {
-            uid: uid.to_string(),
+            uid: uid,
             generated_username: username,
             token,
         })
