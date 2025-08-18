@@ -241,6 +241,9 @@ async fn publish(
     }
     song_dao.update_song_production_crew(song_id, production_crew).await?;
 
+    // Update tags, should we validate these tags?
+    song_dao.update_song_tags(song_id, req.tag_ids.clone()).await?;
+
     ok!(PublishResp {
         song_display_id: display_id
     })
