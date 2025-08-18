@@ -1692,6 +1692,7 @@ dependencies = [
  "bytes",
  "chrono",
  "dotenv",
+ "futures",
  "hex",
  "image",
  "jsonwebtoken",
