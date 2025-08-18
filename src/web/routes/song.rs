@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::audio::ParseError;
 use crate::db::CrudDao;
 use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
@@ -9,7 +10,7 @@ use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{audio, err, ok};
 use anyhow::{anyhow, Context};
-use axum::Json;
+use axum::{Json};
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
@@ -18,7 +19,7 @@ use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
-use image::imageops::FilterType;
+use async_backtrace::framed;
 use image::{ImageFormat, ImageReader};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 
@@ -43,14 +44,14 @@ pub fn router() -> Router<AppState> {
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
-        // .route("/tag/report_merge", post(tag_report_merge))
-        // .route("/tag/commit_translation", post())
-        // Playlists
-        // .rotue("/playlist/create", post(create_playlist))
-        // .route("/playlist/update", post(update_playlist))
-        // .route("/playlist/delete", post(delete_playlist))
-        // .route("/playlist/add_song", post(add_song_to_playlist))
-        // .route("/playlist/remove_song", post(remove_song_from_playlist))
+    // .route("/tag/report_merge", post(tag_report_merge))
+    // .route("/tag/commit_translation", post())
+    // Playlists
+    // .rotue("/playlist/create", post(create_playlist))
+    // .route("/playlist/update", post(update_playlist))
+    // .route("/playlist/delete", post(delete_playlist))
+    // .route("/playlist/add_song", post(add_song_to_playlist))
+    // .route("/playlist/remove_song", post(remove_song_from_playlist))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,8 +60,80 @@ pub struct DetailReq {
     pub id: String,
 }
 
-async fn detail(params: Query<DetailReq>) {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetailResp {
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+    pub tags: Vec<TagItem>,
+    pub lyrics: String,
+    pub audio_url: String,
+    pub cover_url: String,
+    pub production_crew: Vec<SongProductionCrew>,
+    pub creation_type: i32,
+    pub origin_infos: Vec<CreationTypeInfo>,
+    pub uploader_uid: i64,
+    pub play_count: i64,
+    pub like_count: i64,
+}
 
+#[framed]
+async fn detail(
+    state: State<AppState>,
+    params: Query<DetailReq>,
+) -> WebResult<DetailResp> {
+    let song_dao = SongDao::new(state.sql_pool.clone());
+    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
+
+    let song = song_dao.get_by_display_id(&params.id).await?
+        .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+
+    let tag_ids = song_dao.list_tags_by_song_id(song.id).await?;
+    let tags = song_tag_dao.list_by_ids(&tag_ids).await?.into_iter().map(|x|
+        TagItem {
+            id: x.id,
+            name: x.name,
+            description: x.description,
+        }
+    ).collect();
+
+
+    let origin_infos = song_dao.list_origin_info_by_song_id(song.id).await?;
+    let mut id_display_map = HashMap::new();
+
+    for x in &origin_infos {
+        let x = song_dao.get_by_id(x.song_id).await?
+            .ok_or_else(|| WebError::common("origin_song_not_found", "Origin song not found"))?; // No. Just skip
+        id_display_map.insert(x.id, x.display_id);
+    }
+
+    let origin_infos_mapped = origin_infos.iter().map(|x| CreationTypeInfo {
+        song_display_id: x.origin_song_id.and_then(|x| id_display_map.get(&x).cloned()),
+        title: x.origin_title.clone(),
+        artist: x.origin_artist.clone(),
+        url: x.origin_url.clone(),
+    }).collect();
+
+    let production_crew = song_dao.list_production_crew_by_song_id(song.id).await?;
+
+    let data = DetailResp {
+        id: song.display_id.to_string(),
+        title: song.title.to_string(),
+        subtitle: song.subtitle.to_string(), // What?
+        description: song.description.to_string(),
+        tags: tags,
+        lyrics: song.lyrics.to_string(),
+        audio_url: song.file_url.to_string(),
+        cover_url: song.cover_art_url.to_string(),
+        production_crew: production_crew,
+        creation_type: song.creation_type,
+        origin_infos: origin_infos_mapped,
+        uploader_uid: song.uploader_uid,
+        play_count: song.play_count,
+        like_count: song.like_count,
+    };
+    ok!(data)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,7 +208,7 @@ async fn publish(
     }
 
     let user_dao = UserDao::new(state.sql_pool.clone());
-    
+
     // Processing data
     let user = user_dao
         .get_by_id(uid)
@@ -167,6 +240,8 @@ async fn publish(
         id: 0,
         display_id: display_id.to_string(),
         title: req.title.to_string(),
+        subtitle: req.subtitle.to_string(),
+        description: req.description.to_string(),
         artist: user.username.to_string(),
         file_url: song_temp_data.file_url.to_string(),
         cover_art_url: cover_url.to_string(),
@@ -183,7 +258,7 @@ async fn publish(
     };
 
     let song_id = song_dao.insert(&song).await?;
-    
+
     let mut song_origin_infos = Vec::new();
     for x in [
         &req.creation_info.origin_info,
@@ -363,14 +438,14 @@ async fn upload_cover_image(
         .map_err(|_| WebError::common("invalid_image", "Invalid image"))?
         .format()
         .ok_or_else(|| WebError::common("invalid_image", "Invalid image"))?;
-    
+
     let format_ext = match format {
         ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Avif => {
             format.extensions_str().first().ok_or_else(|| anyhow!("Cannot get extension name"))?
         }
         _ => err!("format_unsupported", "Image format unsupported")
     };
-    
+
     // Upload image
     let sha1 = openssl::sha::sha1(&bytes);
     let filename = format!("images/cover/{}.{}", hex::encode(sha1), format_ext);
@@ -380,7 +455,7 @@ async fn upload_cover_image(
         .redis_conn
         .set_ex(build_image_temp_key(&temp_id), result.public_url, 3600)
         .await?;
-    
+
     ok!(UploadImageResp { temp_id })
 }
 
@@ -413,19 +488,19 @@ async fn play() {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagSearchReq {
-    pub query: String
+    pub query: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagSearchResp {
-    pub result: Vec<TagItem>
+    pub result: Vec<TagItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagItem {
     pub id: i64,
     pub name: String,
-    pub description: Option<String>
+    pub description: Option<String>,
 }
 
 async fn tag_search(
@@ -452,7 +527,7 @@ pub struct TagCreateReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagCreateResp {
-    pub id: i64
+    pub id: i64,
 }
 
 async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateReq>) -> WebResult<TagCreateResp> {

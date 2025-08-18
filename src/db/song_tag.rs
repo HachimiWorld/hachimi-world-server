@@ -24,6 +24,7 @@ impl SongTagDao {
 }
 
 pub trait ISongTagDao: CrudDao {
+    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<SongTag>>;
     async fn get_by_name(&self, name: &str) -> sqlx::Result<Option<SongTag>>;
     async fn search_by_prefix(&self, prefix: &str) -> sqlx::Result<Vec<SongTag>>;
 }
@@ -97,6 +98,14 @@ impl CrudDao for SongTagDao {
 }
 
 impl ISongTagDao for SongTagDao {
+    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<SongTag>> {
+        sqlx::query_as!(
+            SongTag,
+            "SELECT * FROM song_tags WHERE id = ANY($1)",
+            ids
+        ).fetch_all(&self.pool).await
+    }
+    
     async fn get_by_name(&self, name: &str) -> sqlx::Result<Option<SongTag>> {
         sqlx::query_as!(SongTag, "SELECT * FROM song_tags WHERE name = $1", name)
             .fetch_optional(&self.pool)

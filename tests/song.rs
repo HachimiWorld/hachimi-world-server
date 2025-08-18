@@ -1,10 +1,7 @@
 use crate::common::auth::with_new_random_test_user;
 use crate::common::{ApiClient, with_test_environment};
 use crate::common::{CommonParse, assert_is_ok};
-use hachimi_world_server::web::routes::song::{
-    CreationInfo, CreationTypeInfo, ProductionItem, PublishReq, PublishResp, TagCreateReq,
-    TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp,
-};
+use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
 
@@ -102,6 +99,10 @@ async fn test_publish() {
             .await
             .unwrap();
         println!("{}", resp.song_display_id);
+
+        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: resp.song_display_id })
+            .await.parse_resp().await.unwrap();
+        println!("{:?}", resp);
     })
     .await;
 }

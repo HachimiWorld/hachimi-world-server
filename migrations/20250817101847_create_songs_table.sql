@@ -4,6 +4,8 @@ CREATE TABLE songs
     id               BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     display_id       VARCHAR(16)              NOT NULL UNIQUE,
     title            VARCHAR(255)             NOT NULL,
+    subtitle         VARCHAR(255)             NOT NULL,
+    description      VARCHAR(500)             NOT NULL,
     artist           VARCHAR(255)             NOT NULL,
     file_url         VARCHAR(500)             NOT NULL, -- S3/R2 URL to audio file
     cover_art_url    VARCHAR(500)             NOT NULL, -- Album/song cover image

@@ -8,6 +8,8 @@ pub struct Song {
     pub id: i64,
     pub display_id: String,
     pub title: String,
+    pub subtitle: String,
+    pub description: String,
     pub artist: String,
     pub file_url: String,
     pub cover_art_url: String,
@@ -64,6 +66,10 @@ pub trait ISongDao: CrudDao {
         song_id: i64,
         values: Vec<SongOriginInfo>,
     ) -> sqlx::Result<()>;
+    async fn update_song_tags(&self, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()>;
+    async fn list_tags_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<i64>>;
+    async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
+    async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
 }
 
 impl CrudDao for SongDao {
@@ -88,22 +94,26 @@ impl CrudDao for SongDao {
             "UPDATE songs SET
                 display_id = $1,
                 title = $2,
-                artist = $3,
-                file_url = $4,
-                cover_art_url = $5,
-                lyrics = $6,
-                duration_seconds = $7,
-                uploader_uid = $8,
-                creation_type = $9,
-                play_count = $10,
-                like_count = $11,
-                is_private = $12,
-                release_time = $13,
-                create_time = $14,
-                update_time = $15
-            WHERE id = $16",
+                subtitle = $3,
+                description = $4,
+                artist = $5,
+                file_url = $6,
+                cover_art_url = $7,
+                lyrics = $8,
+                duration_seconds = $9,
+                uploader_uid = $10,
+                creation_type = $11,
+                play_count = $12,
+                like_count = $13,
+                is_private = $14,
+                release_time = $15,
+                create_time = $16,
+                update_time = $17
+            WHERE id = $18",
             value.display_id,
             value.title,
+            value.subtitle,
+            value.description,
             value.artist,
             value.file_url,
             value.cover_art_url,
@@ -129,6 +139,8 @@ impl CrudDao for SongDao {
             "INSERT INTO songs (
                 display_id,
                 title,
+                subtitle,
+                description,
                 artist,
                 file_url,
                 cover_art_url,
@@ -142,9 +154,11 @@ impl CrudDao for SongDao {
                 release_time,
                 create_time,
                 update_time
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
             value.display_id,
             value.title,
+            value.subtitle,
+            value.description,
             value.artist,
             value.file_url,
             value.cover_art_url,
@@ -237,5 +251,35 @@ impl ISongDao for SongDao {
             .await?;
         }
         Ok(())
+    }
+
+    async fn update_song_tags(&self, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_tag_refs WHERE song_id = $1", song_id)
+            .execute(&self.pool)
+            .await?;
+        for tag_id in tags {
+            sqlx::query!(
+                "INSERT INTO song_tag_refs (song_id, tag_id) VALUES ($1, $2)",
+                song_id, tag_id
+            ).execute(&self.pool).await?;
+        }
+        Ok(())
+    }
+
+    async fn list_tags_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<i64>> {
+        let rows = sqlx::query!("SELECT tag_id FROM song_tag_refs WHERE song_id = $1", song_id)
+            .fetch_all(&self.pool).await?;
+        let result = rows.into_iter().map(|x| x.tag_id).collect();
+        Ok(result)
+    }
+
+    async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
+        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
+            .fetch_all(&self.pool).await
+    }
+
+    async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
+        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
+            .fetch_all(&self.pool).await
     }
 }
