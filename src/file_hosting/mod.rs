@@ -1,6 +1,8 @@
+use anyhow::Context;
 use aws_sdk_s3::operation::put_object::PutObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
+use tracing::info;
 
 pub struct FileHost {
     bucket_name: String,
@@ -18,6 +20,7 @@ impl FileHost {
     }
 
     pub async fn upload(&self, bytes: Bytes, key: &str) -> anyhow::Result<UploadResult> {
+        info!("Uploading file {} to r2. Total: {} bytes", key, bytes.len());
         let body = ByteStream::from(bytes);
         let result = self
             .client
@@ -26,8 +29,10 @@ impl FileHost {
             .body(body)
             .key(key)
             .send()
-            .await?;
+            .await
+            .with_context(|| format!("Failed to upload {}", key))?;
         let url = format!("https://{}/{}", self.public_domain, key);
+        info!("Uploaded to {}", url);
         Ok(UploadResult {
             output: result,
             public_url: url,

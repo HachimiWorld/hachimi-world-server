@@ -1,0 +1,241 @@
+use crate::db::CrudDao;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, PgPool};
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct Song {
+    pub id: i64,
+    pub display_id: String,
+    pub title: String,
+    pub artist: String,
+    pub file_url: String,
+    pub cover_art_url: String,
+    pub lyrics: String,
+    pub duration_seconds: i32,
+    pub uploader_uid: i64,
+    pub creation_type: i32,
+    pub play_count: i64,
+    pub like_count: i64,
+    pub is_private: bool,
+    pub release_time: DateTime<Utc>,
+    pub create_time: DateTime<Utc>,
+    pub update_time: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SongOriginInfo {
+    pub id: i64,
+    pub song_id: i64,
+    pub origin_song_id: Option<i64>,
+    pub origin_title: Option<String>,
+    pub origin_artist: Option<String>,
+    pub origin_url: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SongProductionCrew {
+    pub id: i64,
+    pub song_id: i64,
+    pub role: String,
+    pub uid: Option<i64>,
+    pub person_name: Option<String>,
+}
+
+pub struct SongDao {
+    pool: PgPool,
+}
+
+impl SongDao {
+    pub fn new(pool: PgPool) -> Self {
+        SongDao { pool }
+    }
+}
+
+pub trait ISongDao: CrudDao {
+    async fn get_by_display_id(&self, display_id: &str) -> sqlx::Result<Option<Song>>;
+    async fn update_song_production_crew(
+        &self,
+        song_id: i64,
+        values: Vec<SongProductionCrew>,
+    ) -> sqlx::Result<()>;
+    async fn update_song_origin_info(
+        &self,
+        song_id: i64,
+        values: Vec<SongOriginInfo>,
+    ) -> sqlx::Result<()>;
+}
+
+impl CrudDao for SongDao {
+    type Entity = Song;
+
+    async fn list(&self) -> sqlx::Result<Vec<Self::Entity>> {
+        todo!()
+    }
+
+    async fn page(&self, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        todo!()
+    }
+
+    async fn get_by_id(&self, id: i64) -> sqlx::Result<Option<Self::Entity>> {
+        sqlx::query_as!(Song, "SELECT * FROM songs WHERE id = $1", id)
+            .fetch_optional(&self.pool)
+            .await
+    }
+
+    async fn update_by_id(&self, value: &Self::Entity) -> sqlx::Result<()> {
+        sqlx::query!(
+            "UPDATE songs SET
+                display_id = $1,
+                title = $2,
+                artist = $3,
+                file_url = $4,
+                cover_art_url = $5,
+                lyrics = $6,
+                duration_seconds = $7,
+                uploader_uid = $8,
+                creation_type = $9,
+                play_count = $10,
+                like_count = $11,
+                is_private = $12,
+                release_time = $13,
+                create_time = $14,
+                update_time = $15
+            WHERE id = $16",
+            value.display_id,
+            value.title,
+            value.artist,
+            value.file_url,
+            value.cover_art_url,
+            value.lyrics,
+            value.duration_seconds,
+            value.uploader_uid,
+            value.creation_type,
+            value.play_count,
+            value.like_count,
+            value.is_private,
+            value.release_time,
+            value.create_time,
+            value.update_time,
+            value.id
+        )
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    async fn insert(&self, value: &Self::Entity) -> sqlx::Result<i64> {
+        sqlx::query!(
+            "INSERT INTO songs (
+                display_id,
+                title,
+                artist,
+                file_url,
+                cover_art_url,
+                lyrics,
+                duration_seconds,
+                uploader_uid,
+                creation_type,
+                play_count,
+                like_count,
+                is_private,
+                release_time,
+                create_time,
+                update_time
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id",
+            value.display_id,
+            value.title,
+            value.artist,
+            value.file_url,
+            value.cover_art_url,
+            value.lyrics,
+            value.duration_seconds,
+            value.uploader_uid,
+            value.creation_type,
+            value.play_count,
+            value.like_count,
+            value.is_private,
+            value.release_time,
+            value.create_time,
+            value.update_time
+        ).fetch_one(&self.pool).await.map(|x| x.id)
+    }
+
+    async fn delete_by_id(&self, id: i64) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM songs WHERE id = $1", id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+impl ISongDao for SongDao {
+    async fn get_by_display_id(&self, display_id: &str) -> sqlx::Result<Option<Song>> {
+        sqlx::query_as!(
+            Song,
+            "SELECT * FROM songs WHERE display_id = $1",
+            display_id
+        )
+        .fetch_optional(&self.pool)
+        .await
+    }
+
+    async fn update_song_production_crew(
+        &self,
+        song_id: i64,
+        values: Vec<SongProductionCrew>,
+    ) -> sqlx::Result<()> {
+        sqlx::query!(
+            "DELETE FROM song_production_crew WHERE song_id = $1",
+            song_id
+        )
+        .execute(&self.pool)
+        .await?;
+        for x in values {
+            sqlx::query!(
+                "INSERT INTO song_production_crew (
+                    song_id,
+                    role,
+                    uid,
+                    person_name
+                ) VALUES ($1, $2, $3, $4)",
+                x.song_id,
+                x.role,
+                x.uid,
+                x.person_name
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
+    async fn update_song_origin_info(
+        &self,
+        song_id: i64,
+        values: Vec<SongOriginInfo>,
+    ) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_origin_info WHERE song_id = $1", song_id)
+            .execute(&self.pool)
+            .await?;
+        for x in values {
+            sqlx::query!(
+                "INSERT INTO song_origin_info (
+                    song_id,
+                    origin_song_id,
+                    origin_title,
+                    origin_artist,
+                    origin_url
+                ) VALUES ($1, $2, $3, $4, $5)",
+                x.song_id,
+                x.origin_song_id,
+                x.origin_title,
+                x.origin_artist,
+                x.origin_url
+            )
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+}

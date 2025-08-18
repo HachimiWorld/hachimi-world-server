@@ -1,12 +1,13 @@
 pub mod auth;
 
 use axum::http::HeaderMap;
+use hachimi_world_server::web::result::CommonError;
 use redis::aio::ConnectionManager;
-use reqwest::Response;
+use reqwest::{RequestBuilder, Response};
+use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::env;
-use serde::Serialize;
 
 pub struct TestEnvironment {
     pub api: ApiClient,
@@ -61,27 +62,52 @@ impl ApiClient {
 
     pub async fn get(&self, path: &str) -> Response {
         let client = reqwest::Client::new();
-        let mut headers = HeaderMap::new();
-        headers.insert("X-Real-IP", "127.0.0.1".parse().unwrap());
-        if let Some(token) = &self.token {
-            headers.insert(
-                "Authorization",
-                format!("Bearer {}", token).parse().unwrap(),
-            );
-        }
 
         let resp = client
             .get(format!("{}{path}", self.base_url))
-            .headers(headers)
+            .headers(self.default_headers())
             .send()
             .await
             .unwrap();
+        println!("[{}] GET to {}", resp.status(), path);
+        resp
+    }
+    
+    pub async fn get_query<T: Serialize>(&self, path: &str, query: &T) -> Response {
+        let client = reqwest::Client::new();
+
+        let resp = client
+            .get(format!("{}{path}", self.base_url))
+            .headers(self.default_headers())
+            .query(query)
+            .send()
+            .await
+            .unwrap();
+        println!("[{}] GET to {}", resp.status(), path);
         resp
     }
 
     pub async fn post<T: Serialize>(&self, path: &str, body: &T) -> Response {
         let client = reqwest::Client::new();
 
+        let resp = client
+            .post(format!("{}{path}", self.base_url))
+            .headers(self.default_headers())
+            .json(body)
+            .send()
+            .await
+            .unwrap();
+        println!("[{}] POST to {}", resp.status(), path);
+        resp
+    }
+    
+    pub fn post_raw(&self, path: &str) -> RequestBuilder {
+        let client = reqwest::Client::new();
+        client.post(format!("{}{path}", self.base_url))
+            .headers(self.default_headers())
+    }
+    
+    fn default_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("X-Real-IP", "127.0.0.1".parse().unwrap());
         if let Some(token) = &self.token {
@@ -90,16 +116,7 @@ impl ApiClient {
                 format!("Bearer {}", token).parse().unwrap(),
             );
         }
-
-        let resp = client
-            .post(format!("{}{path}", self.base_url))
-            .headers(headers)
-            .json(body)
-            .send()
-            .await
-            .unwrap();
-        println!("[{}] POST to {}", resp.status(), path);
-        resp
+        headers
     }
 }
 
@@ -111,4 +128,28 @@ pub async fn assert_is_ok(resp: Response) {
 pub async fn assert_is_err(resp: Response) {
     let value: Value = resp.json().await.unwrap();
     assert_eq!(value["ok"], false, "{}", value);
+}
+
+pub type ApiResult<T, E = CommonError> = Result<T, E>;
+
+pub trait CommonParse {
+    async fn parse_resp<T: for<'de> serde::Deserialize<'de>>(self) -> ApiResult<T>;
+}
+
+impl CommonParse for Response {
+    async fn parse_resp<T: for<'de> serde::Deserialize<'de>>(self) -> ApiResult<T> {
+        let text = self.text().await.unwrap();
+        println!("Response: {}", text);
+        
+        let mut value: Value = serde_json::from_str(&text).unwrap();
+        let data = value.get_mut("data").unwrap().take();
+
+        if value["ok"].as_bool().unwrap() {
+            let data: T = serde_json::from_value(data).unwrap();
+            Ok(data)
+        } else {
+            let data: CommonError = serde_json::from_value(data).unwrap();
+            Err(data)
+        }
+    }
 }

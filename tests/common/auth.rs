@@ -6,9 +6,14 @@ use hachimi_world_server::web::routes::auth::{
 };
 
 pub struct TestUser {
-    pub uid: String,
+    pub uid: i64,
     pub email: String,
     pub token: TokenPair,
+}
+
+pub async fn with_new_random_test_user(env: &mut TestEnvironment) -> TestUser {
+    let random_email = format!("test_{}@mail.com", uuid::Uuid::new_v4());
+    with_new_test_user(env, &random_email).await
 }
 
 pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestUser {

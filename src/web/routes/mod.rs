@@ -1,7 +1,8 @@
 pub mod user;
 pub mod auth;
-mod follow;
-mod file;
+pub mod song;
+// pub mod follow;
+// pub mod file;
 
 use axum::Router;
 use crate::web::state::AppState;
@@ -10,4 +11,5 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .nest("/auth", auth::router())
         .nest("/user", user::router())
+        .nest("/song", song::router())
 }
