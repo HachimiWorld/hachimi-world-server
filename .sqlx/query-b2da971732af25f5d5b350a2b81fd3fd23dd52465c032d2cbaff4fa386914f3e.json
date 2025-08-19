@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO song_origin_info (\n                    song_id,\n                    origin_type,\n                    origin_song_id,\n                    origin_title,\n                    origin_artist,\n                    origin_url\n                ) VALUES ($1, $2, $3, $4, $5, $6)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4",
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b2da971732af25f5d5b350a2b81fd3fd23dd52465c032d2cbaff4fa386914f3e"
+}

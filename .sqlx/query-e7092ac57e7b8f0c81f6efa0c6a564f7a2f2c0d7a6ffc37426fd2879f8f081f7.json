@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM songs WHERE id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "display_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "subtitle",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "artist",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "file_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_art_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 8,
+        "name": "lyrics",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "duration_seconds",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "uploader_uid",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 11,
+        "name": "creation_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "play_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "like_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "is_private",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "release_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 16,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "update_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e7092ac57e7b8f0c81f6efa0c6a564f7a2f2c0d7a6ffc37426fd2879f8f081f7"
+}

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM song_origin_info WHERE song_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "79c8dde5fb6ecd6ebc9ae9f9a9c9ecc81a9af0fde71907f62f5ae9c030e08e84"
+}

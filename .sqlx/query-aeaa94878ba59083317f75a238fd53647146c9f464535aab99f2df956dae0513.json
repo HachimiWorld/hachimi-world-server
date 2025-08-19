@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO song_production_crew (\n                    song_id,\n                    role,\n                    uid,\n                    person_name\n                ) VALUES ($1, $2, $3, $4)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Int8",
+        "Varchar"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "aeaa94878ba59083317f75a238fd53647146c9f464535aab99f2df956dae0513"
+}

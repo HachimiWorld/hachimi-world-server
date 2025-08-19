@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE song_tags SET\n                name = $1,\n                description = $2,\n                is_active = $3,\n                create_time = $4,\n                update_time = $5\n            WHERE id = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "3e640b1521c9614736dbc8541804369a959a0689200b69bc6967a01358c73899"
+}

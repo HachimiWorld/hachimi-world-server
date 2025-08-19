@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO songs (\n                display_id,\n                title,\n                subtitle,\n                description,\n                artist,\n                file_url,\n                cover_art_url,\n                lyrics,\n                duration_seconds,\n                uploader_uid,\n                creation_type,\n                play_count,\n                like_count,\n                is_private,\n                release_time,\n                create_time,\n                update_time\n            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Varchar",
+        "Text",
+        "Int4",
+        "Int8",
+        "Int4",
+        "Int8",
+        "Int8",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "734f219e7924660cdad853f42ab4a08c249d38e62ed399a60e5ea6de1ece77da"
+}
