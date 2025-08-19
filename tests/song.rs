@@ -1,11 +1,15 @@
+mod common;
+
 use crate::common::auth::with_new_random_test_user;
-use crate::common::{ApiClient, with_test_environment};
-use crate::common::{CommonParse, assert_is_ok};
+use crate::common::{assert_is_ok, CommonParse};
+use crate::common::{with_test_environment, ApiClient, TestEnvironment};
+use futures::future::join_all;
+use hachimi_world_server::service::song_like;
 use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
+use std::time::SystemTime;
 
-mod common;
 
 #[tokio::test]
 async fn test_publish() {
@@ -60,7 +64,7 @@ async fn test_publish() {
         // Publish a song
         let test_song_titles = vec!["不再曼波", "跳楼基", "但愿人长久", "我无怨无悔", "讨厌哈基米", "基米大厅演奏卡门序曲", "野哈飞舞", "西班牙斗耄士进行曲", "哈基博士", "为你哈基", "哈气之风", "基米没茅台", "太空曼波", "哈气的咪被火葬", "哈基米是世界的意思", "她站在地球的另一边看哈气", "兰哈草", "孤独的哈基米", "夜曲"];
 
-        let mut last_song_id = String::new();
+        let mut last_song_display_id = String::new();
 
         for title in &test_song_titles {
             let resp: PublishResp = env
@@ -106,11 +110,11 @@ async fn test_publish() {
                 .await
                 .unwrap();
 
-            last_song_id = resp.song_display_id;
+            last_song_display_id = resp.song_display_id;
         }
 
         // Test detail
-        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: last_song_id.clone() })
+        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: last_song_display_id.clone() })
             .await.parse_resp().await.unwrap();
         assert_eq!(test_song_titles.last().unwrap().to_string(), resp.title);
 
@@ -124,8 +128,24 @@ async fn test_publish() {
         }).await.parse_resp().await.unwrap();
         println!("{:#?}", search_result);
 
+        let first = search_result.hits.first().unwrap();
+        let first_song_id = first.id;
+        click_farming_likes(&env, first_song_id, 60000).await;
+
+        // Get likes
+        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: first.display_id.clone() }).await.parse_resp().await.unwrap();
+        println!("{:#?}", resp);
     })
     .await;
+}
+
+#[tokio::test]
+async fn test_get_likes() {
+    with_test_environment(|mut env| async move {
+        // Get likes
+        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: "JM-IOEW-474".to_string() }).await.parse_resp().await.unwrap();
+        println!("{:#?}", resp);
+    }).await;
 }
 
 async fn create_tags(api: &ApiClient) {
@@ -143,4 +163,24 @@ async fn create_tags(api: &ApiClient) {
             .await;
         assert_is_ok(resp).await;
     }
+}
+
+async fn click_farming_likes(env: &TestEnvironment, song_id: i64, number: i64) {
+    // Test bench for likes
+    let start = SystemTime::now();
+    let mut handles = vec![];
+
+    for _ in 0..number {
+        let handle = tokio::spawn({
+            let conn = env.redis.clone();
+            let pool = env.pool.clone();
+            async move {
+                song_like::like(&conn, &pool, song_id, rand::random()).await.unwrap();
+            }
+        });
+        handles.push(handle);
+    }
+    join_all(handles).await;
+    println!("Spend {:.2} secs to execute 60000 likes", start.elapsed().unwrap().as_secs_f64());
+
 }

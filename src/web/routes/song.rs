@@ -1,8 +1,9 @@
-use std::collections::HashMap;
 use crate::audio::ParseError;
-use crate::db::CrudDao;
 use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
+use crate::db::CrudDao;
+use crate::service::song_like;
 use crate::web::jwt::Claims;
 use crate::web::result::WebError;
 use crate::web::result::WebResponse;
@@ -10,18 +11,18 @@ use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{audio, err, ok, search};
 use anyhow::{anyhow, Context};
-use axum::{Json};
-use axum::Router;
+use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
+use axum::Json;
+use axum::Router;
 use chrono::Utc;
+use image::{ImageFormat, ImageReader};
 use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::Cursor;
-use async_backtrace::framed;
-use image::{ImageFormat, ImageReader};
-use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -40,6 +41,7 @@ pub fn router() -> Router<AppState> {
         // .route("/recent", get(recent))
         // User interactions
         .route("/like", post(like))
+        .route("/unlike", post(unlike))
         .route("/play", post(play))
         // Tags
         .route("/tag/create", post(tag_create))
@@ -118,6 +120,8 @@ async fn detail(
 
     let production_crew = song_dao.list_production_crew_by_song_id(song.id).await?;
 
+    let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
+
     let data = DetailResp {
         id: song.display_id.to_string(),
         title: song.title.to_string(),
@@ -132,7 +136,7 @@ async fn detail(
         origin_infos: origin_infos_mapped,
         uploader_uid: song.uploader_uid,
         play_count: song.play_count,
-        like_count: song.like_count,
+        like_count: like_count,
     };
     ok!(data)
 }
@@ -196,7 +200,7 @@ async fn publish(
     let user_dao = UserDao::new(state.sql_pool.clone());
     let song_dao = SongDao::new(state.sql_pool.clone());
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
-    
+
     let uid = claims.uid();
     let user = user_dao
         .get_by_id(uid)
@@ -217,11 +221,9 @@ async fn publish(
             "Missing derivative info for derivative song"
         );
     }
-    
+
     // Validate tags
-    let tags = SongTagDao::new(state.sql_pool.clone())
-        .list_by_ids(&req.tag_ids)
-        .await?;
+    let tags = song_tag_dao.list_by_ids(&req.tag_ids).await?;
 
 
     // Processing data
@@ -517,7 +519,8 @@ pub struct SearchResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchSongItem {
-    pub id: String,
+    pub id: i64,
+    pub display_id: String,
     pub title: String,
     pub subtitle: String,
     pub description: String,
@@ -548,21 +551,24 @@ async fn search(
     
     for hit in result.hits {
         if let Ok(Some(song)) = song_dao.get_by_id(hit.id).await {
+            let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
+
             hits.push(SearchSongItem {
-                id: song.display_id,
+                id: song.id,
+                display_id: song.display_id,
                 title: song.title,
                 subtitle: song.subtitle,
                 description: song.description,
                 artist: song.artist,
                 duration_seconds: song.duration_seconds,
                 play_count: song.play_count,
-                like_count: song.like_count,
+                like_count: like_count,
                 cover_art_url: song.cover_art_url,
                 audio_url: song.file_url,
             });
         }
     }
-    
+
     ok!(SearchResp {
         hits,
         query: result.query,
@@ -575,9 +581,39 @@ async fn search(
 
 async fn recommend() {}
 
-async fn like() {}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LikeReq {
+    pub song_id: i64,
+}
 
-async fn play() {}
+async fn like(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<LikeReq>
+) -> WebResult<()> {
+    song_like::like(
+        &state.redis_conn,
+        &state.sql_pool,
+        claims.uid(), req.song_id).await?;
+    ok!(())
+}
+
+async fn unlike(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<LikeReq>
+) -> WebResult<()> {
+    song_like::unlike(
+        &state.redis_conn,
+        &state.sql_pool,
+        req.song_id, claims.uid()).await?;
+    ok!(())
+}
+
+async fn play() -> WebResult<()> {
+    // TODO
+    err!("no_impl", "Not implemented")
+}
 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

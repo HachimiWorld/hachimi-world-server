@@ -1,7 +1,7 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgPool, QueryBuilder};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Song {
@@ -45,6 +45,21 @@ pub struct SongProductionCrew {
     pub person_name: Option<String>,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SongLike {
+    pub song_id: i64,
+    pub user_id: i64,
+    pub create_time: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SongPlay {
+    pub song_id: i64,
+    pub user_id: Option<i64>,
+    pub anonymous_uid: Option<i64>,
+    pub create_time: DateTime<Utc>,
+}
+
 pub struct SongDao {
     pool: PgPool,
 }
@@ -72,6 +87,12 @@ pub trait ISongDao: CrudDao {
     async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
     async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
     async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn count_likes(&self, song_id: i64) -> sqlx::Result<i64>;
+    async fn count_plays(&self, song_id: i64) -> sqlx::Result<i64>;
+    async fn insert_likes(&self, values: &[SongLike]) -> sqlx::Result<()>;
+    async fn is_liked(&self, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
+    async fn delete_like(&self, song_id: i64, user_id: i64) -> sqlx::Result<()>;
+    async fn insert_plays(&self, values: &[SongPlay]) -> sqlx::Result<()>;
 }
 
 impl CrudDao for SongDao {
@@ -131,8 +152,8 @@ impl CrudDao for SongDao {
             value.update_time,
             value.id
         )
-        .execute(&self.pool)
-        .await?;
+            .execute(&self.pool)
+            .await?;
         Ok(())
     }
 
@@ -192,8 +213,8 @@ impl ISongDao for SongDao {
             "SELECT * FROM songs WHERE display_id = $1",
             display_id
         )
-        .fetch_optional(&self.pool)
-        .await
+            .fetch_optional(&self.pool)
+            .await
     }
 
     async fn update_song_production_crew(
@@ -205,8 +226,8 @@ impl ISongDao for SongDao {
             "DELETE FROM song_production_crew WHERE song_id = $1",
             song_id
         )
-        .execute(&self.pool)
-        .await?;
+            .execute(&self.pool)
+            .await?;
         for x in values {
             sqlx::query!(
                 "INSERT INTO song_production_crew (
@@ -220,8 +241,8 @@ impl ISongDao for SongDao {
                 x.uid,
                 x.person_name
             )
-            .execute(&self.pool)
-            .await?;
+                .execute(&self.pool)
+                .await?;
         }
         Ok(())
     }
@@ -251,8 +272,8 @@ impl ISongDao for SongDao {
                 x.origin_artist,
                 x.origin_url
             )
-            .execute(&self.pool)
-            .await?;
+                .execute(&self.pool)
+                .await?;
         }
         Ok(())
     }
@@ -292,5 +313,44 @@ impl ISongDao for SongDao {
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
             ids
         ).fetch_all(&self.pool).await
+    }
+
+    async fn count_likes(&self, song_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1", song_id)
+            .fetch_one(&self.pool)
+            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
+    }
+
+    async fn count_plays(&self, song_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(1) FROM song_plays WHERE song_id = $1", song_id)
+            .fetch_one(&self.pool)
+            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
+    }
+
+    async fn insert_likes(&self, values: &[SongLike]) -> sqlx::Result<()> {
+        let mut builder = QueryBuilder::new("INSERT INTO song_likes (song_id, user_id, create_time)");
+        builder.push_values(values, |mut b, x| {
+            b.push_bind(x.song_id);
+            b.push_bind(x.user_id);
+            b.push_bind(x.create_time);
+        }).build().execute(&self.pool).await?;
+        Ok(())
+    }
+
+    async fn is_liked(&self, song_id: i64, user_id: i64) -> sqlx::Result<bool> {
+        let count = sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
+            .fetch_one(&self.pool).await?
+            .count.map(|x| x == 1).unwrap_or(false);
+        Ok(count)
+    }
+    async fn delete_like(&self, song_id: i64, user_id: i64) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
+    async fn insert_plays(&self, values: &[SongPlay]) -> sqlx::Result<()> {
+        todo!()
     }
 }
