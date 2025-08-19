@@ -12,7 +12,7 @@ CREATE TABLE songs
     lyrics           TEXT                     NOT NULL,
     duration_seconds INT                      NOT NULL, -- Duration in seconds
     uploader_uid     BIGINT                   NOT NULL,
-    creation_type    INT                      NOT NULL, -- 1=original, 2=remix/cover, 3=remix/cover for remix/cover
+    creation_type    INT                      NOT NULL, -- 0=original, 1=remix/cover, 2=remix/cover for remix/cover
     play_count       BIGINT                   NOT NULL DEFAULT 0,
     like_count       BIGINT                   NOT NULl DEFAULT 0,
     is_private       BOOLEAN                  NOT NULL DEFAULT FALSE,
@@ -31,6 +31,7 @@ CREATE TABLE song_origin_info
 (
     id             BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     song_id        BIGINT NOT NULL,
+    origin_type    INT NOT NULL, --0=origin, 2=derive
     origin_song_id BIGINT,
     origin_title   VARCHAR(255),
     origin_artist  VARCHAR(255),
