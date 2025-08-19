@@ -1,7 +1,7 @@
 use crate::common::auth::with_new_random_test_user;
 use crate::common::{ApiClient, with_test_environment};
 use crate::common::{CommonParse, assert_is_ok};
-use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
 
@@ -57,52 +57,73 @@ async fn test_publish() {
             .await
             .unwrap();
 
-        let resp: PublishResp = env
-            .api
-            .post(
-                "/song/publish",
-                &PublishReq {
-                    song_temp_id: upload_resp.temp_id,
-                    cover_temp_id: upload_img_resp.temp_id,
-                    title: "Test Music".to_string(),
-                    subtitle: "A test music".to_string(),
-                    description: "This is a fucking test music".to_string(),
-                    lyrics: "哈基米哈基米哈基米".to_string(),
-                    tag_ids: vec![first_tag.id],
-                    creation_info: CreationInfo {
-                        creation_type: 0,
-                        origin_info: Some(CreationTypeInfo {
-                            song_display_id: None,
-                            title: Some("原作".into()),
-                            artist: Some("群星".into()),
-                            url: None,
-                        }),
-                        derivative_info: None,
-                    },
-                    production_crew: vec![
-                        ProductionItem {
-                            role: "混音".to_string(),
-                            uid: None,
-                            name: Some("张三".to_string()),
-                        },
-                        ProductionItem {
-                            role: "编曲".to_string(),
-                            uid: Some(user.uid),
-                            name: None,
-                        },
-                    ],
-                    external_links: vec![],
-                },
-            )
-            .await
-            .parse_resp()
-            .await
-            .unwrap();
-        println!("{}", resp.song_display_id);
+        // Publish a song
+        let test_song_titles = vec!["不再曼波", "跳楼基", "但愿人长久", "我无怨无悔", "讨厌哈基米", "基米大厅演奏卡门序曲", "野哈飞舞", "西班牙斗耄士进行曲", "哈基博士", "为你哈基", "哈气之风", "基米没茅台", "太空曼波", "哈气的咪被火葬", "哈基米是世界的意思", "她站在地球的另一边看哈气", "兰哈草", "孤独的哈基米", "夜曲"];
 
-        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: resp.song_display_id })
+        let mut last_song_id = String::new();
+
+        for title in &test_song_titles {
+            let resp: PublishResp = env
+                .api
+                .post(
+                    "/song/publish",
+                    &PublishReq {
+                        song_temp_id: upload_resp.temp_id.clone(),
+                        cover_temp_id: upload_img_resp.temp_id.clone(),
+                        title: title.to_string(),
+                        subtitle: "A test music".to_string(),
+                        description: "This is a fucking test music".to_string(),
+                        lyrics: "哈基米哈基米哈基米".to_string(),
+                        tag_ids: vec![first_tag.id],
+                        creation_info: CreationInfo {
+                            creation_type: 0,
+                            origin_info: Some(CreationTypeInfo {
+                                song_display_id: None,
+                                title: Some("原作".into()),
+                                artist: Some("群星".into()),
+                                url: None,
+                                origin_type: 0,
+                            }),
+                            derivative_info: None,
+                        },
+                        production_crew: vec![
+                            ProductionItem {
+                                role: "混音".to_string(),
+                                uid: None,
+                                name: Some("张三".to_string()),
+                            },
+                            ProductionItem {
+                                role: "编曲".to_string(),
+                                uid: Some(user.uid),
+                                name: None,
+                            },
+                        ],
+                        external_links: vec![],
+                    },
+                )
+                .await
+                .parse_resp()
+                .await
+                .unwrap();
+
+            last_song_id = resp.song_display_id;
+        }
+
+        // Test detail
+        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: last_song_id.clone() })
             .await.parse_resp().await.unwrap();
-        println!("{:?}", resp);
+        assert_eq!(test_song_titles.last().unwrap().to_string(), resp.title);
+
+
+        // Test search
+        let search_result: SearchResp = env.api.get_query("/song/search", &SearchReq {
+            q: "基米".to_string(),
+            limit: None,
+            offset: None,
+            filter: None,
+        }).await.parse_resp().await.unwrap();
+        println!("{:#?}", search_result);
+
     })
     .await;
 }

@@ -7,3 +7,4 @@ pub mod db;
 pub mod service;
 pub mod file_hosting;
 pub mod audio;
+pub mod search;

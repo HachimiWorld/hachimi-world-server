@@ -8,7 +8,7 @@ use crate::web::result::WebError;
 use crate::web::result::WebResponse;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{audio, err, ok};
+use crate::{audio, err, ok, search};
 use anyhow::{anyhow, Context};
 use axum::{Json};
 use axum::Router;
@@ -113,6 +113,7 @@ async fn detail(
         title: x.origin_title.clone(),
         artist: x.origin_artist.clone(),
         url: x.origin_url.clone(),
+        origin_type: x.origin_type,
     }).collect();
 
     let production_crew = song_dao.list_production_crew_by_song_id(song.id).await?;
@@ -154,6 +155,7 @@ pub struct PublishReq {
 pub struct CreationInfo {
     /// 0: original, 1: derivative work, 2: tertiary work
     pub creation_type: i32,
+    // TODO: A derivation song can be inspired by many origin songs
     pub origin_info: Option<CreationTypeInfo>,
     pub derivative_info: Option<CreationTypeInfo>,
 }
@@ -165,6 +167,7 @@ pub struct CreationTypeInfo {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub url: Option<String>,
+    pub origin_type: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +193,15 @@ async fn publish(
     mut state: State<AppState>,
     req: Json<PublishReq>,
 ) -> WebResult<PublishResp> {
+    let user_dao = UserDao::new(state.sql_pool.clone());
+    let song_dao = SongDao::new(state.sql_pool.clone());
+    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
+    
     let uid = claims.uid();
+    let user = user_dao
+        .get_by_id(uid)
+        .await?
+        .ok_or_else(|| WebError::common("user_not_found", "User not found"))?;
 
     // Validate input
     // Validate creation_type
@@ -206,16 +217,15 @@ async fn publish(
             "Missing derivative info for derivative song"
         );
     }
+    
+    // Validate tags
+    let tags = SongTagDao::new(state.sql_pool.clone())
+        .list_by_ids(&req.tag_ids)
+        .await?;
 
-    let user_dao = UserDao::new(state.sql_pool.clone());
 
     // Processing data
-    let user = user_dao
-        .get_by_id(uid)
-        .await?
-        .ok_or_else(|| WebError::common("user_not_found", "User not found"))?;
 
-    let song_dao = SongDao::new(state.sql_pool.clone());
     let song_temp_data: String = state
         .redis_conn
         .get(build_temp_key(&req.song_temp_id))
@@ -283,6 +293,7 @@ async fn publish(
             song_origin_infos.push(SongOriginInfo {
                 id: 0,
                 song_id,
+                origin_type: item.origin_type,
                 origin_song_id: song.map(|x| x.id),
                 origin_title: item.title.clone(),
                 origin_artist: item.artist.clone(),
@@ -291,7 +302,7 @@ async fn publish(
         }
     }
     song_dao
-        .update_song_origin_info(song_id, song_origin_infos)
+        .update_song_origin_info(song_id, &song_origin_infos)
         .await?;
 
     let mut production_crew = Vec::new();
@@ -314,10 +325,21 @@ async fn publish(
             person_name: x.name.clone(),
         })
     }
-    song_dao.update_song_production_crew(song_id, production_crew).await?;
+    song_dao.update_song_production_crew(song_id, &production_crew).await?;
 
-    // Update tags, should we validate these tags?
-    song_dao.update_song_tags(song_id, req.tag_ids.clone()).await?;
+    let tag_ids = tags.iter().map(|x| x.id).collect();
+    song_dao.update_song_tags(song_id, tag_ids).await?;
+
+    // Write behind, data consistence is not guaranteed.
+    search::add_song_document(
+        state.meilisearch.as_ref(),
+        song_id,
+        &song,
+        &production_crew,
+        &song_origin_infos,
+        &tags
+    ).await?;
+
 
     ok!(PublishResp {
         song_display_id: display_id
@@ -475,8 +497,80 @@ async fn delete() -> WebResult<()> {
     err!("no_impl", "Not implemented yet");
 }
 
-async fn search() -> WebResult<()> {
-    err!("no_impl", "Not implemented yet")
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchReq {
+    pub q: String,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    pub filter: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResp {
+    pub hits: Vec<SearchSongItem>,
+    pub query: String,
+    pub processing_time_ms: u64,
+    pub total_hits: Option<usize>,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchSongItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+    pub artist: String,
+    pub duration_seconds: i32,
+    pub play_count: i64,
+    pub like_count: i64,
+    pub cover_art_url: String,
+    pub audio_url: String,
+}
+
+async fn search(
+    state: State<AppState>,
+    req: Query<SearchReq>,
+) -> WebResult<SearchResp> {
+    let search_query = search::SearchQuery {
+        q: req.q.clone(),
+        limit: req.limit,
+        offset: req.offset,
+        filter: req.filter.clone(),
+    };
+    
+    let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await
+        .map_err(|e| WebError::common("search_error", &format!("Search failed: {}", e)))?;
+    
+    let song_dao = SongDao::new(state.sql_pool.clone());
+    let mut hits = Vec::new();
+    
+    for hit in result.hits {
+        if let Ok(Some(song)) = song_dao.get_by_id(hit.id).await {
+            hits.push(SearchSongItem {
+                id: song.display_id,
+                title: song.title,
+                subtitle: song.subtitle,
+                description: song.description,
+                artist: song.artist,
+                duration_seconds: song.duration_seconds,
+                play_count: song.play_count,
+                like_count: song.like_count,
+                cover_art_url: song.cover_art_url,
+                audio_url: song.file_url,
+            });
+        }
+    }
+    
+    ok!(SearchResp {
+        hits,
+        query: result.query,
+        processing_time_ms: result.processing_time_ms,
+        total_hits: result.hits_info.total_hits,
+        limit: result.hits_info.limit,
+        offset: result.hits_info.offset,
+    })
 }
 
 async fn recommend() {}

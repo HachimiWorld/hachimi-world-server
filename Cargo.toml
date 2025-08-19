@@ -40,6 +40,7 @@ async-backtrace = "0.2.7"
 symphonia = { version = "0.5.4", features = ["mp3"] }
 symphonia-metadata = "0.5.4"
 futures = "0.3.31"
+meilisearch-sdk = "0.29.1"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"

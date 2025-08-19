@@ -30,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
     let sql_pool = get_database_pool(&config).await?;
     
     let file_host = Arc::new(get_file_host(&config).await?);
+
+    let meilisearch_client = get_meilisearch_client(&config)?;
     
     // Initialize auth service
     let state = AppState {
@@ -37,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         config: Arc::new(config),
         sql_pool,
         file_host,
+        meilisearch: Arc::new(meilisearch_client)
     };
 
     info!("Starting web server at {}", server_cfg.listen);
@@ -155,4 +158,16 @@ async fn get_file_host(config: &Config) -> anyhow::Result<FileHost> {
         cfg.public_domain,
         client,
     ))
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+struct MeiliCfg {
+    pub host: String,
+    pub api_key: String
+}
+
+fn get_meilisearch_client(config: &Config) -> anyhow::Result<meilisearch_sdk::client::Client> {
+    let cfg: MeiliCfg = config.get_and_parse("meilisearch")?;
+    let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
+    Ok(client)
 }

@@ -10,4 +10,5 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub sql_pool: Pool<Postgres>,
     pub file_host: Arc<FileHost>,
+    pub meilisearch: Arc<meilisearch_sdk::client::Client>
 }

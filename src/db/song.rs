@@ -29,6 +29,7 @@ pub struct Song {
 pub struct SongOriginInfo {
     pub id: i64,
     pub song_id: i64,
+    pub origin_type: i32,
     pub origin_song_id: Option<i64>,
     pub origin_title: Option<String>,
     pub origin_artist: Option<String>,
@@ -59,17 +60,18 @@ pub trait ISongDao: CrudDao {
     async fn update_song_production_crew(
         &self,
         song_id: i64,
-        values: Vec<SongProductionCrew>,
+        values: &[SongProductionCrew],
     ) -> sqlx::Result<()>;
     async fn update_song_origin_info(
         &self,
         song_id: i64,
-        values: Vec<SongOriginInfo>,
+        values: &[SongOriginInfo],
     ) -> sqlx::Result<()>;
     async fn update_song_tags(&self, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()>;
     async fn list_tags_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<i64>>;
     async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
     async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
+    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
 }
 
 impl CrudDao for SongDao {
@@ -197,7 +199,7 @@ impl ISongDao for SongDao {
     async fn update_song_production_crew(
         &self,
         song_id: i64,
-        values: Vec<SongProductionCrew>,
+        values: &[SongProductionCrew],
     ) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM song_production_crew WHERE song_id = $1",
@@ -227,7 +229,7 @@ impl ISongDao for SongDao {
     async fn update_song_origin_info(
         &self,
         song_id: i64,
-        values: Vec<SongOriginInfo>,
+        values: &[SongOriginInfo],
     ) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM song_origin_info WHERE song_id = $1", song_id)
             .execute(&self.pool)
@@ -236,12 +238,14 @@ impl ISongDao for SongDao {
             sqlx::query!(
                 "INSERT INTO song_origin_info (
                     song_id,
+                    origin_type,
                     origin_song_id,
                     origin_title,
                     origin_artist,
                     origin_url
-                ) VALUES ($1, $2, $3, $4, $5)",
+                ) VALUES ($1, $2, $3, $4, $5, $6)",
                 x.song_id,
+                x.origin_type,
                 x.origin_song_id,
                 x.origin_title,
                 x.origin_artist,
@@ -281,5 +285,12 @@ impl ISongDao for SongDao {
     async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
         sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
             .fetch_all(&self.pool).await
+    }
+
+    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(
+            Song, "SELECT * FROM songs WHERE id = ANY($1)",
+            ids
+        ).fetch_all(&self.pool).await
     }
 }
