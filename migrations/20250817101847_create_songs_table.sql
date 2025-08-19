@@ -31,7 +31,7 @@ CREATE TABLE song_origin_info
 (
     id             BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
     song_id        BIGINT NOT NULL,
-    origin_type    INT NOT NULL, --0=origin, 2=derive
+    origin_type    INT    NOT NULL, --0=origin, 2=derive
     origin_song_id BIGINT,
     origin_title   VARCHAR(255),
     origin_artist  VARCHAR(255),
@@ -68,11 +68,11 @@ CREATE TABLE song_plays
     song_id       BIGINT NOT NULL,
     user_id       BIGINT, -- NULL for anonymous plays
     anonymous_uid BIGINT, -- Unique identifier for anonymous users
-    play_time     TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    create_time   TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 CREATE INDEX idx_song_plays_song_id ON song_plays (song_id);
 CREATE INDEX idx_song_plays_user_id ON song_plays (user_id);
-CREATE INDEX idx_song_plays_play_time ON song_plays (play_time);
+CREATE INDEX idx_song_plays_play_time ON song_plays (create_time);
 
 -- Song likes
 CREATE TABLE song_likes
