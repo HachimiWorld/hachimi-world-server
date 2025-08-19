@@ -5,7 +5,7 @@ use crate::common::{assert_is_ok, CommonParse};
 use crate::common::{with_test_environment, ApiClient, TestEnvironment};
 use futures::future::join_all;
 use hachimi_world_server::service::song_like;
-use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, SongListResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
 use std::time::SystemTime;
@@ -145,6 +145,17 @@ async fn test_get_likes() {
         // Get likes
         let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: "JM-IOEW-474".to_string() }).await.parse_resp().await.unwrap();
         println!("{:#?}", resp);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_discover_songs() {
+    with_test_environment(|mut env| async move {
+        let resp: SongListResp = env.api.get("/song/hot").await.parse_resp().await.unwrap();
+        println!("hot: {:?}", resp.song_ids);
+
+        let resp: SongListResp = env.api.get("/song/recent").await.parse_resp().await.unwrap();
+        println!("recent: {:?}", resp.song_ids);
     }).await;
 }
 

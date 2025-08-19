@@ -3,7 +3,7 @@ use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCre
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
-use crate::service::song_like;
+use crate::service::{recommend, song_like};
 use crate::web::jwt::Claims;
 use crate::web::result::WebError;
 use crate::web::result::WebResponse;
@@ -36,9 +36,8 @@ pub fn router() -> Router<AppState> {
         .route("/delete", post(delete))
         // Discovery
         .route("/search", get(search))
-        .route("/recommend", get(recommend))
-        // .route("/trending", get(trending))
-        // .route("/recent", get(recent))
+        .route("/recent", get(recent))
+        .route("/hot", get(hot))
         // User interactions
         .route("/like", post(like))
         .route("/unlike", post(unlike))
@@ -339,7 +338,7 @@ async fn publish(
         &song,
         &production_crew,
         &song_origin_infos,
-        &tags
+        &tags,
     ).await?;
 
 
@@ -542,13 +541,13 @@ async fn search(
         offset: req.offset,
         filter: req.filter.clone(),
     };
-    
+
     let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await
         .map_err(|e| WebError::common("search_error", &format!("Search failed: {}", e)))?;
-    
+
     let song_dao = SongDao::new(state.sql_pool.clone());
     let mut hits = Vec::new();
-    
+
     for hit in result.hits {
         if let Ok(Some(song)) = song_dao.get_by_id(hit.id).await {
             let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
@@ -579,7 +578,36 @@ async fn search(
     })
 }
 
-async fn recommend() {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SongListResp {
+    pub song_ids: Vec<String>,
+}
+
+async fn recent(
+    state: State<AppState>
+) -> WebResult<SongListResp> {
+    let songs = recommend::get_recent_songs(&state.redis_conn, &state.sql_pool).await?;
+    let ids: Vec<String> = songs.into_iter().map(|x| {
+        x.display_id
+    }).collect();
+
+    ok!(SongListResp {
+        song_ids: ids
+    })
+}
+
+async fn hot(
+    state: State<AppState>
+) -> WebResult<SongListResp> {
+    let songs = recommend::get_hot_songs(&state.redis_conn, &state.sql_pool).await?;
+    let ids: Vec<String> = songs.into_iter().map(|x| {
+        x.display_id
+    }).collect();
+
+    ok!(SongListResp {
+        song_ids: ids
+    })
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LikeReq {
@@ -589,7 +617,7 @@ pub struct LikeReq {
 async fn like(
     claims: Claims,
     state: State<AppState>,
-    req: Json<LikeReq>
+    req: Json<LikeReq>,
 ) -> WebResult<()> {
     song_like::like(
         &state.redis_conn,
@@ -601,7 +629,7 @@ async fn like(
 async fn unlike(
     claims: Claims,
     state: State<AppState>,
-    req: Json<LikeReq>
+    req: Json<LikeReq>,
 ) -> WebResult<()> {
     song_like::unlike(
         &state.redis_conn,
