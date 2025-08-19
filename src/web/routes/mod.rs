@@ -1,6 +1,7 @@
 pub mod user;
 pub mod auth;
 pub mod song;
+mod playlist;
 // pub mod follow;
 // pub mod file;
 
@@ -12,4 +13,5 @@ pub fn router() -> Router<AppState> {
         .nest("/auth", auth::router())
         .nest("/user", user::router())
         .nest("/song", song::router())
+        .nest("/playlist", playlist::router())
 }

@@ -2,6 +2,7 @@ pub mod refresh_token;
 pub mod user;
 pub mod song;
 pub mod song_tag;
+pub mod playlist;
 
 pub trait CrudDao {
     type Entity;
