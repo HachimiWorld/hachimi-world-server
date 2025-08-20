@@ -677,9 +677,9 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 
 [[package]]
 name = "bcrypt"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92758ad6077e4c76a6cadbce5005f666df70d4f13b19976b1a8062eef880040f"
+checksum = "abaf6da45c74385272ddf00e1ac074c7d8a6c1a1dda376902bd6a427522a8b2c"
 dependencies = [
  "base64 0.22.1",
  "blowfish",
@@ -3475,13 +3475,14 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.29.5"
+version = "0.32.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc42f3a12fd4408ce64d8efef67048a924e543bd35c6591c0447fda9054695f"
+checksum = "7cd3650deebc68526b304898b192fa4102a4ef0b9ada24da096559cb60e0eef8"
 dependencies = [
  "arc-swap",
  "backon",
  "bytes",
+ "cfg-if",
  "combine",
  "futures-channel",
  "futures-util",
@@ -3491,7 +3492,7 @@ dependencies = [
  "pin-project-lite",
  "ryu",
  "sha1_smol",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "tokio",
  "tokio-util",
  "url",
@@ -3996,9 +3997,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.142"
+version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
+checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
  "itoa",
  "memchr",
