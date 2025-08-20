@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE playlist_songs SET order_index = $1 WHERE playlist_id = $2 AND song_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a02ebd53057c63ba92adb06c6d902b076d6108423f9ac9560427362271ef15f5"
+}

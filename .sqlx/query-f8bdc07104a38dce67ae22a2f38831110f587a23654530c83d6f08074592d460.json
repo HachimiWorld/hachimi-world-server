@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE playlists SET\n                name = $1,\n                description = $2,\n                user_id = $3,\n                cover_url = $4,\n                is_public = $5,\n                create_time = $6,\n                update_time = $7\n            WHERE id = $8",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text",
+        "Int8",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f8bdc07104a38dce67ae22a2f38831110f587a23654530c83d6f08074592d460"
+}
