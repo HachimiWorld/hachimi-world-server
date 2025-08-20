@@ -22,7 +22,7 @@ pub fn router() -> Router<AppState> {
         .route("/delete", post(delete))
         .route("/add_song", post(add_song))
         .route("/remove_song", post(remove_song))
-        .route("/change_order", post(add_song))
+        .route("/change_order", post(change_order))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -285,14 +285,45 @@ async fn remove_song(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChangeOrder {
+pub struct ChangeOrderReq {
     pub playlist_id: i64,
     pub song_id: i64,
-    pub target_order: i64
+    /// Start from 0
+    pub target_order: usize
 }
 
-async fn change_order(state: AppState) -> WebResult<()> {
-    todo!()
+async fn change_order(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<ChangeOrderReq>
+) -> WebResult<()> {
+    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
+    let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+
+    let mut songs = playlist_dao.list_songs(playlist.id).await?;
+    songs.sort_by(|a, b| a.order_index.cmp(&b.order_index));
+    
+    let src_index = songs.iter().position(|x| x.song_id == req.song_id)
+        .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+    
+    // Move to target order_index
+    if src_index == req.target_order { 
+        ok!(())
+    }
+    // Reorder
+    if req.target_order > src_index  {
+        // move down
+        songs[src_index..=req.target_order].rotate_left(1);
+    } else {
+        // move up
+        songs[req.target_order..=src_index].rotate_right(1);
+    }
+    // Apply order
+    for (i, song) in songs.iter_mut().enumerate() {
+        song.order_index = i as i32;
+    }
+    playlist_dao.update_songs_orders(&songs).await?;
+    ok!(())
 }
 
 async fn check_ownership(

@@ -40,6 +40,7 @@ pub trait IPlaylistDao: CrudDao {
     async fn count_songs(&self, playlist_id: i64) -> sqlx::Result<i64>;
     async fn list_by_user(&self, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
     async fn count_by_user(&self, user_id: i64) -> sqlx::Result<i64>;
+    async fn update_songs_orders(&self, values: &[PlaylistSong]) -> sqlx::Result<()>;
 }
 
 impl CrudDao for PlaylistDao {
@@ -133,7 +134,7 @@ impl IPlaylistDao for PlaylistDao {
         Ok(())
     }
     async fn list_songs(&self, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>> {
-        sqlx::query_as!(PlaylistSong, "SELECT * FROM playlist_songs WHERE playlist_id = $1", playlist_id)
+        sqlx::query_as!(PlaylistSong, "SELECT * FROM playlist_songs WHERE playlist_id = $1 ORDER BY order_index", playlist_id)
             .fetch_all(&self.pool)
             .await
     }
@@ -156,5 +157,19 @@ impl IPlaylistDao for PlaylistDao {
             .fetch_one(&self.pool)
             .await
             .map(|x| x.count.unwrap_or(0))
+    }
+
+    async fn update_songs_orders(&self, values: &[PlaylistSong]) -> sqlx::Result<()> {
+        let mut tx = self.pool.begin().await?;
+        for value in values {
+            sqlx::query!(
+                "UPDATE playlist_songs SET order_index = $1 WHERE playlist_id = $2 AND song_id = $3",
+                value.order_index,
+                value.playlist_id,
+                value.song_id,
+            ).execute(&mut *tx).await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 }

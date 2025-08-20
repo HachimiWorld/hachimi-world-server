@@ -1,5 +1,5 @@
 use crate::common::{assert_is_ok, CommonParse};
-use hachimi_world_server::web::routes::playlist::{AddSongReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListResp};
+use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListResp};
 use crate::common::auth::with_new_random_test_user;
 use crate::common::with_test_environment;
 
@@ -45,16 +45,41 @@ async fn test_playlist() {
         assert_eq!(None, playlist.description);
         assert_eq!(false, playlist.is_public);
         assert_eq!(5, playlist.songs_count);
-        
+
         let detail = env.api.get_query("/playlist/detail_private", &DetailReq {
             id: playlist.id
         }).await.parse_resp::<DetailResp>().await.unwrap();
         assert_eq!(&playlist.name, &detail.playlist_info.name);
-        
+
         assert_eq!(5, detail.songs.len());
         println!("{:#?}", detail.songs);
 
-        // TODO[test]: Add test for create many playlist
+        // Test reorder songs
+        // Move song3 to idx_0, move song2 to idx_4
+        let r = env.api.post("/playlist/change_order", &ChangeOrderReq {
+            playlist_id,
+            song_id: 3,
+            target_order: 0,
+        }).await.parse_resp::<()>().await.unwrap();
+        // Target order [3, 1, 2, 4, 5]
+        let detail = env.api.get_query("/playlist/detail_private", &DetailReq {
+            id: playlist.id
+        }).await.parse_resp::<DetailResp>().await.unwrap();
+        let songs = detail.songs.iter().map(|x| x.song_id).collect::<Vec<_>>();
+        assert_eq!(&vec![3, 1, 2, 4, 5], &songs);
+
+        // Move song1 to idx_4. [3, 2, 4, 5, 1]
+        let r = env.api.post("/playlist/change_order", &ChangeOrderReq {
+            playlist_id,
+            song_id: 1,
+            target_order: 4,
+        }).await.parse_resp::<()>().await.unwrap();
+        let detail = env.api.get_query("/playlist/detail_private", &DetailReq {
+            id: playlist.id
+        }).await.parse_resp::<DetailResp>().await.unwrap();
+        let songs = detail.songs.iter().map(|x| x.song_id).collect::<Vec<_>>();
+        assert_eq!(&vec![3, 2, 4, 5, 1], &songs);
+        
         ()
     }).await;
 }
