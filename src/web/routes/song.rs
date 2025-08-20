@@ -390,7 +390,7 @@ async fn upload_audio_file(
                 ParseError::TrackNotFound => err!("track_not_found", "Audio track not found"),
                 ParseError::MetadataNotFound(key) => err!(
                     "metadata_not_found",
-                    &format!("Metadata {key} not found in audio")
+                    "Metadata {key} not found in audio"
                 ),
                 ParseError::ParsingDurationError => err!("parsing_duration_error", "Failed to parse duration"),
                 ParseError::Parse(err) => {

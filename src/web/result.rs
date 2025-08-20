@@ -1,21 +1,26 @@
-use std::backtrace;
-use std::backtrace::Backtrace;
 use axum::http::StatusCode;
 use axum::Json;
 use axum::response::IntoResponse;
 use serde::{Deserialize, Serialize};
 
 #[macro_export]
+macro_rules! common {
+    ($code:expr, $($arg:tt)*) => {
+        crate::web::result::WebError::common($code, &format!($($arg)*))
+    };
+}
+
+#[macro_export]
 macro_rules! err {
-    ($code:expr, $msg:expr) => {
-        return Err(WebError::common($code, $msg))
+    ($code:expr, $($arg:tt)*) => {
+        return Err($crate::web::result::WebError::common($code, &format!($($arg)*)))
     };
 }
 
 #[macro_export]
 macro_rules! ok {
     ($data:expr) => {
-        return Ok(Json(WebResponse::ok($data)))
+        return Ok(Json($crate::web::result::WebResponse::ok($data)))
     };
 }
 
