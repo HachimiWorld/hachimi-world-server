@@ -1,7 +1,7 @@
 pub mod user;
 pub mod auth;
 pub mod song;
-mod playlist;
+pub mod playlist;
 // pub mod follow;
 // pub mod file;
 

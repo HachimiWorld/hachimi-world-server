@@ -1,7 +1,7 @@
 use crate::web::result::{CommonError, WebResponse};
 use crate::web::result::WebError;
-use axum::{Json, RequestExt, Router};
-use axum::extract::{Query, Request, State};
+use axum::{Json, Router};
+use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,6 @@ async fn detail_private(
     claims: Claims,
     state: State<AppState>,
     req: Query<DetailReq>,
-    raw_req: Request,
 ) -> WebResult<DetailResp> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlist = playlist_dao.get_by_id(req.id).await?
@@ -68,6 +67,7 @@ async fn detail_private(
 
     let resp = DetailResp {
         playlist_info: PlaylistItem {
+            id: playlist.id,
             name: playlist.name,
             cover_url: playlist.cover_url,
             description: playlist.description,
@@ -87,6 +87,7 @@ pub struct ListResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistItem {
+    pub id: i64,
     pub name: String,
     pub cover_url: Option<String>,
     pub description: Option<String>,
@@ -105,12 +106,13 @@ async fn list(
     let mut result = Vec::<PlaylistItem>::new();
     for x in playlists {
         let item = PlaylistItem {
+            id: x.id,
             name: x.name,
             cover_url: x.cover_url,
             description: x.description,
             create_time: x.create_time,
             is_public: x.is_public,
-            songs_count: playlist_dao.count_songs(claims.uid()).await?
+            songs_count: playlist_dao.count_songs(x.id).await?
         };
         result.push(item);
     }
@@ -149,6 +151,7 @@ async fn create(
     let uid = claims.uid();
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
 
+    // TODO[security](playlist): We don't have lock, so there must be some data racing issues
     let count = playlist_dao.count_by_user(uid).await?;
     if count > 256 {
         err!("too_many_playlists", "You have too many playlists")
@@ -242,10 +245,14 @@ async fn add_song(
     let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
 
     let song_dao = SongDao::new(state.sql_pool.clone());
-    let song = song_dao.get_by_id(playlist.id).await?
+    let song = song_dao.get_by_id(req.song_id).await?
         .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
 
     let songs = playlist_dao.list_songs(playlist.id).await?;
+    let existed = songs.iter().any(|x| x.song_id == song.id);
+    if existed {
+        err!("song_existed", "Song {} already exists in the playlist {}", song.id, playlist.id);
+    }
     let target_order = songs.len() as i32;
     playlist_dao.add_song(
         &PlaylistSong {

@@ -76,28 +76,29 @@ impl ApiClient {
     pub async fn get_query<T: Serialize>(&self, path: &str, query: &T) -> Response {
         let client = reqwest::Client::new();
 
+        let query = serde_json::to_value(query).unwrap();
         let resp = client
             .get(format!("{}{path}", self.base_url))
             .headers(self.default_headers())
-            .query(query)
+            .query(&query)
             .send()
             .await
             .unwrap();
-        println!("[{}] GET to {}", resp.status(), path);
+        println!("[{}] GET to {}; Query: {}", resp.status(), path, query.to_string());
         resp
     }
 
     pub async fn post<T: Serialize>(&self, path: &str, body: &T) -> Response {
         let client = reqwest::Client::new();
-
+        let body = serde_json::to_value(body).unwrap();
         let resp = client
             .post(format!("{}{path}", self.base_url))
             .headers(self.default_headers())
-            .json(body)
+            .json(&body)
             .send()
             .await
             .unwrap();
-        println!("[{}] POST to {}", resp.status(), path);
+        println!("[{}] POST to {}; Body: {}", resp.status(), path, body.to_string());
         resp
     }
     
