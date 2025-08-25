@@ -1,9 +1,11 @@
 use crate::web::state::AppState;
 use axum::Router;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, Method, StatusCode};
 use axum::routing::get;
+use serde::Deserialize;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 pub mod routes;
@@ -14,18 +16,24 @@ pub mod result;
 mod web_metrics;
 mod extractors;
 
+#[derive(Deserialize)]
+pub struct ServerCfg {
+    pub listen: String,
+    pub metrics_listen: String,
+    pub jwt_secret: String,
+    pub allow_origin: String,
+}
+
 pub async fn run_web_app(
-    jwt_secret: String,
+    cfg: ServerCfg,
     app_state: AppState,
-    addr: impl ToSocketAddrs,
-    metrics_addr: impl ToSocketAddrs,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
-    jwt::initialize_jwt_key(jwt::Keys::new(jwt_secret.as_bytes()));
+    jwt::initialize_jwt_key(jwt::Keys::new(cfg.jwt_secret.as_bytes()));
     
     let (_main_server, _metrics_server) = tokio::join!(
-        start_main_server(app_state, addr, cancel_token.clone()),
-        web_metrics::start_metrics_server(metrics_addr, cancel_token)
+        start_main_server(app_state, cfg.listen, cfg.allow_origin, cancel_token.clone()),
+        web_metrics::start_metrics_server(cfg.metrics_listen, cancel_token)
     );
 
     info!("Web server stopped");
@@ -35,6 +43,7 @@ pub async fn run_web_app(
 async fn start_main_server(
     app_state: AppState,
     addr: impl ToSocketAddrs,
+    allow_origin: String,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -44,7 +53,11 @@ async fn start_main_server(
         .nest("/api", routes::router())
         .route("/health", get(health))
         .with_state(app_state)
-        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
+        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics))
+        .layer(CorsLayer::new()
+            .allow_origin(allow_origin.parse::<HeaderValue>()?)
+            .allow_methods([Method::GET, Method::POST])
+        );
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {

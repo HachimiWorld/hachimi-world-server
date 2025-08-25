@@ -1,3 +1,4 @@
+use async_backtrace::framed;
 use crate::web::result::{CommonError, WebResponse};
 use crate::web::result::WebError;
 use axum::{Json, Router};
@@ -36,6 +37,7 @@ pub struct DetailResp {
     pub songs: Vec<PlaylistSong>
 }
 
+#[framed]
 async fn detail_private(
     claims: Claims,
     state: State<AppState>,
@@ -96,6 +98,7 @@ pub struct PlaylistItem {
     pub songs_count: i64,
 }
 
+#[framed]
 async fn list(
     claims: Claims,
     state: State<AppState>
@@ -135,6 +138,7 @@ pub struct CreatePlaylistResp {
     pub id: i64
 }
 
+#[framed]
 async fn create(
     claims: Claims,
     state: State<AppState>,
@@ -186,6 +190,7 @@ pub struct UpdatePlaylistReq {
     pub is_public: bool
 }
 
+#[framed]
 async fn update(
     claims: Claims,
     state: State<AppState>,
@@ -219,6 +224,7 @@ pub struct DeletePlaylistReq {
     pub id: i64
 }
 
+#[framed]
 async fn delete(
     claims: Claims,
     state: State<AppState>,
@@ -236,6 +242,7 @@ pub struct AddSongReq {
     pub song_id: i64
 }
 
+#[framed]
 async fn add_song(
     claims: Claims,
     state: State<AppState>,
@@ -272,6 +279,7 @@ pub struct RemoveSongReq {
     pub song_id: i64
 }
 
+#[framed]
 async fn remove_song(
     claims: Claims,
     state: State<AppState>,
@@ -292,6 +300,7 @@ pub struct ChangeOrderReq {
     pub target_order: usize
 }
 
+#[framed]
 async fn change_order(
     claims: Claims,
     state: State<AppState>,

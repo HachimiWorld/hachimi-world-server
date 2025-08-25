@@ -1,6 +1,7 @@
 extern crate hachimi_world_server as app;
 
 use std::sync::Arc;
+use async_backtrace::framed;
 use serde::{Deserialize, Serialize};
 use app::util::gracefully_shutdown;
 #[cfg(not(target_env = "msvc"))]
@@ -12,11 +13,13 @@ use app::web;
 use app::web::state::AppState;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
+use app::web::ServerCfg;
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
+#[framed]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
@@ -43,24 +46,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     info!("Starting web server at {}", server_cfg.listen);
-    web::run_web_app(
-        server_cfg.jwt_secret,
-        state,
-        server_cfg.listen,
-        server_cfg.metrics_listen,
-        cancel_token,
-    ).await?;
+    web::run_web_app(server_cfg, state, cancel_token).await?;
 
     cancel_handle.await?;
     info!("Shutdown successfully");
     Ok(())
-}
-
-#[derive(Deserialize)]
-struct ServerCfg {
-    pub listen: String,
-    pub metrics_listen: String,
-    pub jwt_secret: String
 }
 
 #[derive(Deserialize, Clone, Debug)]
