@@ -531,10 +531,16 @@ pub struct SearchSongItem {
     pub audio_url: String,
 }
 
+#[framed]
 async fn search(
     state: State<AppState>,
     req: Query<SearchReq>,
 ) -> WebResult<SearchResp> {
+    // Validate search
+    if req.q.is_blank() {
+        err!("invalid_query", "Query must not be blank")
+    }
+
     let search_query = search::SearchQuery {
         q: req.q.clone(),
         limit: req.limit,
