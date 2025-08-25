@@ -29,8 +29,8 @@ pub async fn get_recent_songs(
                 create_time: Utc::now(),
             })?;
 
-            // Cache for 1 hour
-            let _: () = redis.clone().set_ex("songs:recent", value, 3600).await?;
+            // Cache for 5 minutes
+            let _: () = redis.clone().set_ex("songs:recent", value, 300).await?;
             return Ok(recent_songs);
         }
     }
