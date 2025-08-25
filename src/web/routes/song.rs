@@ -23,6 +23,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Cursor;
+use crate::util::IsBlank;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -45,14 +46,8 @@ pub fn router() -> Router<AppState> {
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
-    // .route("/tag/report_merge", post(tag_report_merge))
-    // .route("/tag/commit_translation", post())
-    // Playlists
-    // .rotue("/playlist/create", post(create_playlist))
-    // .route("/playlist/update", post(update_playlist))
-    // .route("/playlist/delete", post(delete_playlist))
-    // .route("/playlist/add_song", post(add_song_to_playlist))
-    // .route("/playlist/remove_song", post(remove_song_from_playlist))
+        // .route("/tag/report_merge", post(tag_report_merge))
+        // .route("/tag/commit_translation", post())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,6 +63,7 @@ pub struct DetailResp {
     pub subtitle: String,
     pub description: String,
     pub tags: Vec<TagItem>,
+    pub duration_seconds: i32,
     pub lyrics: String,
     pub audio_url: String,
     pub cover_url: String,
@@ -127,6 +123,7 @@ async fn detail(
         subtitle: song.subtitle.to_string(), // What?
         description: song.description.to_string(),
         tags: tags,
+        duration_seconds: song.duration_seconds,
         lyrics: song.lyrics.to_string(),
         audio_url: song.file_url.to_string(),
         cover_url: song.cover_art_url.to_string(),
@@ -191,6 +188,7 @@ pub struct PublishResp {
     pub song_display_id: String,
 }
 
+#[framed]
 async fn publish(
     claims: Claims,
     mut state: State<AppState>,
@@ -362,6 +360,7 @@ pub struct SongTempData {
     pub duration_secs: u64,
 }
 
+#[framed]
 async fn upload_audio_file(
     claims: Claims,
     mut state: State<AppState>,
@@ -432,6 +431,7 @@ pub struct UploadImageResp {
     pub temp_id: String,
 }
 
+#[framed]
 async fn upload_cover_image(
     claims: Claims,
     mut state: State<AppState>,
@@ -494,6 +494,7 @@ pub struct DeleteReq {
     pub song_id: i64,
 }
 
+#[framed]
 async fn delete() -> WebResult<()> {
     err!("no_impl", "Not implemented yet");
 }
@@ -589,6 +590,7 @@ pub struct SongListResp {
     pub song_ids: Vec<String>,
 }
 
+#[framed]
 async fn recent(
     state: State<AppState>
 ) -> WebResult<SongListResp> {
@@ -602,6 +604,7 @@ async fn recent(
     })
 }
 
+#[framed]
 async fn hot(
     state: State<AppState>
 ) -> WebResult<SongListResp> {
@@ -620,6 +623,7 @@ pub struct LikeReq {
     pub song_id: i64,
 }
 
+#[framed]
 async fn like(
     claims: Claims,
     state: State<AppState>,
@@ -632,6 +636,7 @@ async fn like(
     ok!(())
 }
 
+#[framed]
 async fn unlike(
     claims: Claims,
     state: State<AppState>,
@@ -644,6 +649,7 @@ async fn unlike(
     ok!(())
 }
 
+#[framed]
 async fn play() -> WebResult<()> {
     // TODO
     err!("no_impl", "Not implemented")
@@ -667,6 +673,7 @@ pub struct TagItem {
     pub description: Option<String>,
 }
 
+#[framed]
 async fn tag_search(
     claims: Claims, // Consider removing auth
     state: State<AppState>,
@@ -694,6 +701,7 @@ pub struct TagCreateResp {
     pub id: i64,
 }
 
+#[framed]
 async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateReq>) -> WebResult<TagCreateResp> {
     // TODO[feat](song-tag): Need audit procedure
     if req.name.is_empty() || req.name.chars().count() > 10 {
