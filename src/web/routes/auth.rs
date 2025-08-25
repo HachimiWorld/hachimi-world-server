@@ -120,6 +120,8 @@ pub struct LoginReq {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResp {
+    pub uid: i64,
+    pub username: String,
     pub token: TokenPair,
 }
 
@@ -155,10 +157,14 @@ async fn email_login(
                 user.id,
                 req.device_info.clone(),
                 &state.sql_pool,
-            )
-            .await?;
+            ).await?;
 
-            ok!(LoginResp { token })
+            let resp = LoginResp {
+                uid: user.id,
+                username: user.username,
+                token,
+            };
+            ok!(resp)
         }
         Some(code) => {
             // TODO: check 2fa code
@@ -232,7 +238,7 @@ pub struct EmailConfig {
     pub host: String,
     pub username: String,
     pub password: String,
-    pub no_reply_email: String
+    pub no_reply_email: String,
 }
 
 #[async_backtrace::framed]
@@ -276,7 +282,7 @@ async fn oauth_github() {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeviceListResp {
-    pub devices: Vec<DeviceItem>
+    pub devices: Vec<DeviceItem>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -285,12 +291,12 @@ pub struct DeviceItem {
     pub device_info: Option<String>,
     pub ip_address: Option<String>,
     pub last_used_time: Option<DateTime<Utc>>,
-    pub create_time: DateTime<Utc>
+    pub create_time: DateTime<Utc>,
 }
 
 async fn device_list(
     State(state): State<AppState>,
-    claims: Claims
+    claims: Claims,
 ) -> WebResult<DeviceListResp> {
     let devices = RefreshTokenDao::new(state.sql_pool.clone())
         .list_by_uid(claims.uid()).await?
@@ -308,13 +314,13 @@ async fn device_list(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceLogoutReq {
-    device_id: i64
+    device_id: i64,
 }
 
 async fn device_logout(
     State(state): State<AppState>,
     claims: Claims,
-    req: Json<DeviceLogoutReq>
+    req: Json<DeviceLogoutReq>,
 ) -> WebResult<()> {
     let token_dao = RefreshTokenDao::new(state.sql_pool.clone());
     let device = if let Some(x) = token_dao.get_by_id(req.device_id).await? {
@@ -341,12 +347,12 @@ pub struct ResetPasswordReq {
     pub email: String,
     pub code: String,
     pub new_password: String,
-    pub logout_all_devices: bool
+    pub logout_all_devices: bool,
 }
 
 async fn reset_password(
     mut state: State<AppState>,
-    req: Json<ResetPasswordReq>
+    req: Json<ResetPasswordReq>,
 ) -> WebResult<()> {
     if verification_code::verify_code(&mut state.redis_conn, req.email.as_str(), req.code.as_str()).await? {
         let user_dao = UserDao::new(state.sql_pool.clone());
