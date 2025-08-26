@@ -10,7 +10,7 @@ use crate::web::state::AppState;
 use crate::{err, ok};
 use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
-use axum::extract::Multipart;
+use axum::extract::{Multipart, Query};
 use chrono::Utc;
 use image::imageops::FilterType;
 use image::{ImageFormat, ImageReader};
@@ -20,7 +20,7 @@ use sqlx::FromRow;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/greet", get(greet))
-        .route("/profile", post(get_profile))
+        .route("/profile", get(get_profile))
         .route("/update_profile", post(update_profile))
         .route("/set_avatar", post(set_avatar))
 }
@@ -46,7 +46,7 @@ pub struct PublicUserProfile {
 
 async fn get_profile(
     state: State<AppState>,
-    req: Json<GetProfileReq>,
+    req: Query<GetProfileReq>,
 ) -> WebResult<PublicUserProfile> {
     // Fetch user from db
     let user_dao = UserDao::new(state.sql_pool.clone());
@@ -92,8 +92,11 @@ async fn update_profile(
             "Username must be less than 10 characters"
         );
     }
-    if user_dao.get_by_username(&req.username).await?.is_some() {
-        err!("username_exists", "Username already exists");
+    
+    if let Some(user) = user_dao.get_by_username(&req.username).await? {
+        if user.id != claims.uid() {
+            err!("username_exists", "Username already exists");
+        }
     }
 
     if let Some(ref bio) = req.bio {
