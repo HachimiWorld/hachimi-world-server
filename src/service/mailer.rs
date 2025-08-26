@@ -27,3 +27,19 @@ pub async fn send_verification_code(
     mailer.send(&email_msg)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+    use crate::service::mailer::send_verification_code;
+    use crate::web::routes::auth::EmailConfig;
+
+    #[tokio::test]
+    async fn test() {
+        let content = fs::read_to_string("config.yaml").unwrap();
+        let value = serde_yaml::from_str::<serde_yaml::Value>(content.as_str()).unwrap();
+        let cfg: EmailConfig = serde_yaml::from_value(value["email"].clone()).unwrap();
+        println!("{:?}", cfg);
+        send_verification_code(&cfg, "mail@example.com", "Your email verification code is: AFKC-ADI2").await.unwrap();
+    }
+}
