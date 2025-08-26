@@ -160,8 +160,7 @@ async fn set_avatar(
         .map_err(|_| WebError::common("invalid_image", "Invalid image"))?;
 
     // Resize image
-    // TODO[opt](user): Change filter type to Lanczos3 for better image quality
-    let resized = image.resize_to_fill(128, 128, FilterType::Nearest);
+    let resized = image.resize_to_fill(128, 128, FilterType::Lanczos3);
     let mut output = Cursor::new(Vec::<u8>::new());
     resized.write_to(&mut output, ImageFormat::WebP)?;
     metrics::histogram!("avatar_processing_duration_secs").record(start.elapsed().as_secs_f64());
