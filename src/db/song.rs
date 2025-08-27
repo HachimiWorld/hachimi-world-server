@@ -10,6 +10,8 @@ pub struct Song {
     pub title: String,
     pub subtitle: String,
     pub description: String,
+    /// Artist is deprecated, because the artist is a group of people
+    #[deprecated]
     pub artist: String,
     pub file_url: String,
     pub cover_art_url: String,
@@ -225,9 +227,7 @@ impl ISongDao for SongDao {
         sqlx::query!(
             "DELETE FROM song_production_crew WHERE song_id = $1",
             song_id
-        )
-            .execute(&self.pool)
-            .await?;
+        ).execute(&self.pool).await?;
         for x in values {
             sqlx::query!(
                 "INSERT INTO song_production_crew (
@@ -236,13 +236,11 @@ impl ISongDao for SongDao {
                     uid,
                     person_name
                 ) VALUES ($1, $2, $3, $4)",
-                x.song_id,
+                song_id,
                 x.role,
                 x.uid,
                 x.person_name
-            )
-                .execute(&self.pool)
-                .await?;
+            ).execute(&self.pool).await?;
         }
         Ok(())
     }
@@ -265,7 +263,7 @@ impl ISongDao for SongDao {
                     origin_artist,
                     origin_url
                 ) VALUES ($1, $2, $3, $4, $5, $6)",
-                x.song_id,
+                song_id,
                 x.origin_type,
                 x.origin_song_id,
                 x.origin_title,

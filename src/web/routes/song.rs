@@ -88,7 +88,7 @@ async fn detail(
         let Ok(v) = serde_json::from_str::<DetailResp>(&cache) {
         ok!(v)
     }
-    
+
     let song_dao = SongDao::new(state.sql_pool.clone());
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
     let user_dao = UserDao::new(state.sql_pool.clone());
@@ -147,7 +147,7 @@ async fn detail(
         play_count: song.play_count,
         like_count: like_count,
     };
-    
+
     let _: () = redis.set_ex(cache_key, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
     ok!(data)
 }
@@ -214,42 +214,31 @@ async fn publish(
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
 
     let uid = claims.uid();
-    let user = user_dao
-        .get_by_id(uid)
-        .await?
+    let user = user_dao.get_by_id(uid).await?
         .ok_or_else(|| WebError::common("user_not_found", "User not found"))?;
 
     // Validate input
     // Validate creation_type
     if req.creation_info.creation_type == 1 && req.creation_info.origin_info.is_none() {
-        err!(
-            "missing_origin_info",
-            "Missing origin info for derivative song"
-        );
+        err!("missing_origin_info", "Missing origin info for derivative song");
     }
     if req.creation_info.creation_type == 2 && req.creation_info.derivative_info.is_none() {
-        err!(
-            "missing_origin_info",
-            "Missing derivative info for derivative song"
-        );
+        err!("missing_origin_info", "Missing derivative info for derivative song");
     }
 
     // Validate tags
     let tags = song_tag_dao.list_by_ids(&req.tag_ids).await?;
-
-
+    if tags.len() != req.tag_ids.len() {
+        err!("tag_not_found", "Some tags not found");
+    }
+    
     // Processing data
-
-    let song_temp_data: String = state
-        .redis_conn
-        .get(build_temp_key(&req.song_temp_id))
-        .await?;
+    let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(&req.song_temp_id)).await?;
+    let song_temp_data = song_temp_data.ok_or_else(|| WebError::common("invalid_song_temp_id", "Invalid song temp id"))?;
     let song_temp_data: SongTempData = serde_json::from_str(&song_temp_data)?;
 
-    let cover_url: String = state
-        .redis_conn
-        .get(build_image_temp_key(&req.cover_temp_id))
-        .await?;
+    let cover_url: Option<String> = state.redis_conn.get(build_image_temp_key(&req.cover_temp_id)).await?;
+    let cover_url = cover_url.ok_or_else(|| WebError::common("invalid_cover_temp_id", "Invalid cover temp id"))?;
 
     let display_id = loop {
         let id = generate_song_display_id();
@@ -281,8 +270,6 @@ async fn publish(
         update_time: now, // Do we really need three time data?
     };
 
-    let song_id = song_dao.insert(&song).await?;
-
     let mut song_origin_infos = Vec::new();
     for x in [
         &req.creation_info.origin_info,
@@ -306,7 +293,7 @@ async fn publish(
             // Add to batch
             song_origin_infos.push(SongOriginInfo {
                 id: 0,
-                song_id,
+                song_id: 0,
                 origin_type: item.origin_type,
                 origin_song_id: song.map(|x| x.id),
                 origin_title: item.title.clone(),
@@ -315,13 +302,14 @@ async fn publish(
             });
         }
     }
-    song_dao
-        .update_song_origin_info(song_id, &song_origin_infos)
-        .await?;
 
     let mut production_crew = Vec::new();
-    for x in &req.production_crew {
-        let user = if let Some(uid) = x.uid {
+    for member in &req.production_crew {
+        if member.uid.is_none() && member.name.is_none() {
+            err!("name_missed", "One of uid or name must be set")
+        }
+
+        let user = if let Some(uid) = member.uid {
             let song = user_dao
                 .get_by_id(uid)
                 .await?
@@ -333,12 +321,14 @@ async fn publish(
 
         production_crew.push(SongProductionCrew {
             id: 0,
-            song_id,
-            role: x.role.clone(),
+            song_id: 0,
+            role: member.role.clone(),
             uid: user.map(|x| x.id),
-            person_name: x.name.clone(),
+            person_name: member.name.clone(),
         })
     }
+    let song_id = song_dao.insert(&song).await?;
+    song_dao.update_song_origin_info(song_id, &song_origin_infos).await?;
     song_dao.update_song_production_crew(song_id, &production_crew).await?;
 
     let tag_ids = tags.iter().map(|x| x.id).collect();
