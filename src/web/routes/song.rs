@@ -58,7 +58,8 @@ pub struct DetailReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailResp {
-    pub id: String,
+    pub id: i64,
+    pub display_id: String,
     pub title: String,
     pub subtitle: String,
     pub description: String,
@@ -130,7 +131,8 @@ async fn detail(
     let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
 
     let data = DetailResp {
-        id: song.display_id.to_string(),
+        id: song.id,
+        display_id: song.display_id.to_string(),
         title: song.title.to_string(),
         subtitle: song.subtitle.to_string(), // What?
         description: song.description.to_string(),
