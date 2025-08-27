@@ -71,6 +71,7 @@ pub struct DetailResp {
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
     pub uploader_uid: i64,
+    pub uploader_name: String,
     pub play_count: i64,
     pub like_count: i64,
 }
@@ -80,6 +81,7 @@ async fn detail(
     state: State<AppState>,
     params: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
+    let user_dao = UserDao::new(state.sql_pool.clone());
     let song_dao = SongDao::new(state.sql_pool.clone());
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
 
@@ -95,6 +97,8 @@ async fn detail(
         }
     ).collect();
 
+    let uploader_name = user_dao.get_by_id(song.uploader_uid).await?
+        .map(|x| x.username).unwrap_or_else(|| "Invalid".to_string());
 
     let origin_infos = song_dao.list_origin_info_by_song_id(song.id).await?;
     let mut id_display_map = HashMap::new();
@@ -131,6 +135,7 @@ async fn detail(
         creation_type: song.creation_type,
         origin_infos: origin_infos_mapped,
         uploader_uid: song.uploader_uid,
+        uploader_name: uploader_name,
         play_count: song.play_count,
         like_count: like_count,
     };
