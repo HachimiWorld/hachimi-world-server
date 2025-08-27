@@ -46,8 +46,8 @@ pub fn router() -> Router<AppState> {
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
-        // .route("/tag/report_merge", post(tag_report_merge))
-        // .route("/tag/commit_translation", post())
+    // .route("/tag/report_merge", post(tag_report_merge))
+    // .route("/tag/commit_translation", post())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -81,9 +81,17 @@ async fn detail(
     state: State<AppState>,
     params: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let user_dao = UserDao::new(state.sql_pool.clone());
+    let mut redis = state.redis_conn.clone();
+    let cache_key = format!("song:detail:{}", params.id);
+    let cache: Option<String> = redis.get(&cache_key).await?;
+    if let Some(cache) = cache &&
+        let Ok(v) = serde_json::from_str::<DetailResp>(&cache) {
+        ok!(v)
+    }
+    
     let song_dao = SongDao::new(state.sql_pool.clone());
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
+    let user_dao = UserDao::new(state.sql_pool.clone());
 
     let song = song_dao.get_by_display_id(&params.id).await?
         .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
@@ -139,6 +147,8 @@ async fn detail(
         play_count: song.play_count,
         like_count: like_count,
     };
+    
+    let _: () = redis.set_ex(cache_key, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
     ok!(data)
 }
 
