@@ -3,19 +3,23 @@ use crate::db::user::{IUserDao, User, UserDao};
 use crate::db::CrudDao;
 use crate::service::{mailer, verification_code};
 use crate::web::extractors::XRealIP;
-use crate::web::jwt;
 use crate::web::jwt::Claims;
-use crate::web::result::WebError;
-use crate::web::result::{WebResponse, WebResult};
+use crate::web::result::{WebResult};
 use crate::web::state::AppState;
+use crate::web::{jwt};
 use crate::{err, ok};
+use axum::http::{StatusCode};
+use axum::response::{Html};
 use axum::routing::get;
 use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
+use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::env;
+use axum::extract::Query;
+use serde_json::json;
+use tracing::error;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -27,6 +31,9 @@ pub fn router() -> Router<AppState> {
         .route("/refresh_token", post(refresh_token))
         .route("/protected", get(protected))
         .route("/reset_password", post(reset_password))
+        .route("/captcha", get(captcha))
+        .route("/captcha/generate", get(generate_captcha))
+        .route("/captcha/submit", post(submit_captcha))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -411,4 +418,96 @@ async fn generate_token_pairs_and_save(
         refresh_token,
         expires_in,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaptchaReq {
+    pub captcha_key: String,
+}
+
+#[debug_handler]
+async fn captcha(
+    state: State<AppState>,
+    _: Query<CaptchaReq>,
+) -> (StatusCode, Html<String>) {
+    let cfg = match state.config.get_and_parse::<TurnstileCfg>("turnstile") {
+        Ok(v) => { v }
+        Err(err) => {
+            error!("{:?}", err);
+            return (StatusCode::INTERNAL_SERVER_ERROR, Html("Error".to_string()));
+        }
+    };
+
+    let html = CAPTCHA_HTML.replace("{{API_BASE_URL}}", cfg.api_base_url.as_str())
+        .replace("{{SITE_KEY}}", cfg.site_key.as_str());
+    (StatusCode::OK, Html(html))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateCaptchaResp {
+    pub key: String,
+    pub url: String,
+}
+
+const CAPTCHA_HTML: &str = include_str!("captcha.html");
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnstileCfg {
+    pub captcha_page_url: String,
+    pub api_base_url: String,
+    pub site_key: String,
+    pub secret_key: String,
+}
+
+#[debug_handler]
+async fn generate_captcha(
+    mut state: State<AppState>,
+) -> WebResult<GenerateCaptchaResp> {
+    let key = uuid::Uuid::new_v4().to_string();
+    let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
+    let _: () = state.redis_conn.set_ex(format!("auth:captcha:{}", key), 0, 300).await?;
+    ok!(GenerateCaptchaResp {
+        key, url: cfg.captcha_page_url
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyCaptchaReq {
+    pub captcha_key: String,
+    pub token: String,
+}
+
+async fn submit_captcha(
+    mut state: State<AppState>,
+    req: Json<VerifyCaptchaReq>,
+) -> WebResult<()> {
+    let key = format!("auth:captcha:{}", req.captcha_key);
+    let status: Option<String> = state.redis_conn.get(&key).await?;
+    match status {
+        Some(status) => {
+            if status == "0" {
+                let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
+                // Verify
+                let client = reqwest::Client::new();
+                let verify_resp = client.post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
+                    .json(&json!({
+                        "secret": cfg.secret_key,
+                        "response": req.token,
+                    }))
+                    .send().await?;
+                if verify_resp.status().is_success() {
+                    state.redis_conn.set_ex(key, 1, 300).await?;
+                    ok!(())
+                } else {
+                    state.redis_conn.set_ex(key, 2, 300).await?;
+                    err!("failure", "Verify captcha failed")
+                }
+            } else {
+                err!("invalid_captcha_status", "Invalid captcha status")
+            }
+        }
+        None => {
+            err!("invalid_key", "Invalid key")
+        }
+    }
 }

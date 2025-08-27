@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Captcha</title>
+</head>
+<body>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
+
+<div style="text-align: center; margin-top: 100px;">
+    正在进行人机验证，请稍后
+    <div id="my-widget"></div>
+    <div id="status"></div>
+</div>
+
+<script>
+    const API_BASE_URL = "{{API_BASE_URL}}";
+    const SITE_KEY = "{{SITE_KEY}}";
+
+    window.onload = function() {
+        const status = document.querySelector("#status")
+        // Get query from location
+        const query = window.location.search.substring(1);
+        // Parse query into object
+        const vars = query.split("&");
+        const queryObject = {};
+        for (let i = 0; i < vars.length; i++) {
+            const pair = vars[i].split("=");
+            queryObject[pair[0]] = decodeURIComponent(pair[1]);
+        }
+        let captcha_key = queryObject.captcha_key
+
+        turnstile.render('#my-widget', {
+            sitekey: SITE_KEY,
+            theme: 'light',
+            callback: function(token) {
+                const url = API_BASE_URL + "/auth/captcha/submit"
+                const data = {
+                    captcha_key: captcha_key,
+                    token: token
+                }
+                // POST Json
+                fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                }).then(response => {
+                    response.json()
+                        .then(data => {
+                            if (data.ok) {
+                                status.textContent = "验证通过，您可以直接关闭本窗口"
+                                window.close()
+                            } else {
+                                status.textContent = "验证失败: " + data.data.msg
+                            }
+                        })
+                        .catch(() => {
+                            status.textContent = "验证失败"
+                        })
+                }).catch(reason => {
+                    status.textContent = "验证失败"
+                })
+            }
+        });
+    };
+</script>
+</body>
+</html>
