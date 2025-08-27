@@ -7,18 +7,16 @@ use crate::web::jwt::Claims;
 use crate::web::result::{WebResult};
 use crate::web::state::AppState;
 use crate::web::{jwt};
-use crate::{err, ok};
+use crate::{err, ok, service};
 use axum::http::{StatusCode};
 use axum::response::{Html};
 use axum::routing::get;
 use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use rand::Rng;
-use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
-use serde_json::json;
 use tracing::error;
 
 pub fn router() -> Router<AppState> {
@@ -49,6 +47,7 @@ pub struct EmailRegisterReq {
     pub password: String,
     pub code: String,
     pub device_info: String,
+    pub captcha_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -63,6 +62,11 @@ async fn email_register(
     XRealIP(ip): XRealIP,
     req: Json<EmailRegisterReq>,
 ) -> WebResult<EmailRegisterResp> {
+    let captcha = service::captcha::verify_captcha(&mut state.redis_conn, &req.captcha_key).await?;
+    if !captcha {
+        err!("invalid_captcha", "Invalid captcha")
+    }
+
     // Validate request
     if req.password.len() < 8 {
         err!("invalid_password", "Password must be at least 8 characters")
@@ -123,6 +127,7 @@ pub struct LoginReq {
     pub password: String,
     pub device_info: String,
     pub code: Option<String>,
+    pub captcha_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -135,13 +140,18 @@ pub struct LoginResp {
 #[async_backtrace::framed]
 #[debug_handler]
 async fn email_login(
-    XRealIP(ip): XRealIP,
-    State(state): State<AppState>,
+    ip: XRealIP,
+    mut state: State<AppState>,
     req: Json<LoginReq>,
 ) -> WebResult<LoginResp> {
+    let captcha = service::captcha::verify_captcha(&mut state.redis_conn, &req.captcha_key).await?;
+    if !captcha {
+        err!("invalid_captcha", "Invalid captcha")
+    }
+
     match &req.code {
         None => {
-            // TODO: Check if 2fa is required.
+            // TODO[security](auth): Check if 2fa is required.
             let user_dao = UserDao::new(state.sql_pool.clone());
 
             /*let should_2fa = false;
@@ -160,7 +170,7 @@ async fn email_login(
             }
 
             let token = generate_token_pairs_and_save(
-                ip,
+                ip.0,
                 user.id,
                 req.device_info.clone(),
                 &state.sql_pool,
@@ -174,7 +184,7 @@ async fn email_login(
             ok!(resp)
         }
         Some(code) => {
-            // TODO: check 2fa code
+            // TODO[security](auth): check 2fa code
             err!("invalid_code", "Invalid code")
         }
     }
@@ -445,7 +455,7 @@ async fn captcha(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateCaptchaResp {
-    pub key: String,
+    pub captcha_key: String,
     pub url: String,
 }
 
@@ -463,51 +473,29 @@ pub struct TurnstileCfg {
 async fn generate_captcha(
     mut state: State<AppState>,
 ) -> WebResult<GenerateCaptchaResp> {
-    let key = uuid::Uuid::new_v4().to_string();
     let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
-    let _: () = state.redis_conn.set_ex(format!("auth:captcha:{}", key), 0, 300).await?;
+    let key = service::captcha::generate_new_captcha(&mut state.redis_conn).await?;
+
     ok!(GenerateCaptchaResp {
-        key, url: cfg.captcha_page_url
+        captcha_key: key.clone(), url: format!("{}?captcha_key={}", cfg.captcha_page_url, key)
     })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VerifyCaptchaReq {
+pub struct SubmitCaptchaReq {
     pub captcha_key: String,
     pub token: String,
 }
 
 async fn submit_captcha(
     mut state: State<AppState>,
-    req: Json<VerifyCaptchaReq>,
+    req: Json<SubmitCaptchaReq>,
 ) -> WebResult<()> {
-    let key = format!("auth:captcha:{}", req.captcha_key);
-    let status: Option<String> = state.redis_conn.get(&key).await?;
-    match status {
-        Some(status) => {
-            if status == "0" {
-                let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
-                // Verify
-                let client = reqwest::Client::new();
-                let verify_resp = client.post("https://challenges.cloudflare.com/turnstile/v0/siteverify")
-                    .json(&json!({
-                        "secret": cfg.secret_key,
-                        "response": req.token,
-                    }))
-                    .send().await?;
-                if verify_resp.status().is_success() {
-                    state.redis_conn.set_ex(key, 1, 300).await?;
-                    ok!(())
-                } else {
-                    state.redis_conn.set_ex(key, 2, 300).await?;
-                    err!("failure", "Verify captcha failed")
-                }
-            } else {
-                err!("invalid_captcha_status", "Invalid captcha status")
-            }
-        }
-        None => {
-            err!("invalid_key", "Invalid key")
-        }
+    let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
+    let pass = service::captcha::submit_captcha(&cfg, &mut state.redis_conn, &req.captcha_key, &req.token).await?;
+    if pass {
+        ok!(())
+    } else {
+        err!("captcha_failed", "Captcha verification failed")
     }
 }

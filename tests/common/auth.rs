@@ -32,6 +32,7 @@ pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestU
                 password: "test12345678".to_string(),
                 code: "12345678".to_string(),
                 device_info: "test".to_string(),
+                captcha_key: "".to_string(), // TODO[test]: Add a way to mock captcha key
             },
         )
         .await

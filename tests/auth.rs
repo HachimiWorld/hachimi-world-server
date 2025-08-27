@@ -115,6 +115,7 @@ async fn test_register_and_login() {
             password: "test-changed".to_string(),
             device_info: "test".to_string(),
             code: None,
+            captcha_key: "test_captcha_key".to_string(), // TODO[test]: Add a way to mock captcha key
         }).await;
         assert_is_ok(resp).await;
     })
