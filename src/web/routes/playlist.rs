@@ -11,6 +11,7 @@ use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::{err, ok};
 use crate::db::song::{SongDao};
 use crate::db::user::UserDao;
+use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
@@ -175,8 +176,8 @@ async fn create(
     req: Json<CreatePlaylistReq>,
 ) -> WebResult<CreatePlaylistResp> {
     // Validate input
-    if req.name.chars().count() > 32 {
-        err!("name_too_long", "Playlist name is too long")
+    if req.name.is_blank() || req.name.chars().count() > 32 {
+        err!("invalid_name", "Playlist name invalid")
     }
     if let Some(ref desc) = req.description && desc.chars().count() > 300 {
         err!("description_too_long", "Playlist description is too long")
@@ -227,8 +228,8 @@ async fn update(
     req: Json<UpdatePlaylistReq>,
 ) -> WebResult<()> {
     // Validate input
-    if req.name.chars().count() > 32 {
-        err!("name_too_long", "Playlist name is too long")
+    if req.name.is_blank() || req.name.chars().count() > 32 {
+        err!("invalid_name", "Playlist name invalid")
     }
     if let Some(ref desc) = req.description && desc.chars().count() > 300 {
         err!("description_too_long", "Playlist description is too long")
