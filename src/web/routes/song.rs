@@ -233,7 +233,7 @@ async fn publish(
     if tags.len() != req.tag_ids.len() {
         err!("tag_not_found", "Some tags not found");
     }
-    
+
     // Processing data
     let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(&req.song_temp_id)).await?;
     let song_temp_data = song_temp_data.ok_or_else(|| WebError::common("invalid_song_temp_id", "Invalid song temp id"))?;
@@ -686,6 +686,11 @@ async fn tag_search(
     state: State<AppState>,
     req: Query<TagSearchReq>,
 ) -> WebResult<TagSearchResp> {
+    // Validate
+    if req.query.is_blank() || (req.query.is_ascii() && req.query.chars().count() < 2) {
+        ok!(TagSearchResp { result: vec![] })
+    }
+
     let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
     // TODO[opt](tag): Replace with real full-text search
     let result = song_tag_dao.search_by_prefix(&req.query).await?
