@@ -20,7 +20,7 @@ macro_rules! err {
 #[macro_export]
 macro_rules! ok {
     ($data:expr) => {
-        return Ok(Json($crate::web::result::WebResponse::ok($data)))
+        return Ok(axum::Json($crate::web::result::WebResponse::ok($data)))
     };
 }
 
