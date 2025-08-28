@@ -1,5 +1,5 @@
 use async_backtrace::framed;
-use crate::web::result::{CommonError, WebResponse};
+use crate::web::result::{CommonError};
 use crate::web::result::WebError;
 use axum::{Json, Router};
 use axum::extract::{Query, State};
@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use crate::db::CrudDao;
 use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::{err, ok};
-use crate::db::song::SongDao;
+use crate::db::song::{SongDao};
+use crate::db::user::UserDao;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
@@ -28,13 +29,28 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailReq {
-    pub id: i64
+    pub id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailResp {
     pub playlist_info: PlaylistItem,
-    pub songs: Vec<PlaylistSong>
+    pub songs: Vec<SongItem>,
+}
+
+// Basic song information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SongItem {
+    pub song_id: i64,
+    pub song_display_id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub cover_url: String,
+    pub uploader_name: String,
+    pub uploader_uid: i64,
+    pub duration_seconds: i32,
+    pub order_index: i32,
+    pub add_time: DateTime<Utc>,
 }
 
 #[framed]
@@ -44,28 +60,42 @@ async fn detail_private(
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
+    let song_dao = SongDao::new(state.sql_pool.clone());
+    let user_dao = UserDao::new(state.sql_pool.clone());
+    
     let playlist = playlist_dao.get_by_id(req.id).await?
         .ok_or_else(|| WebError::common("not_found", "Playlist not found"))?;
-    
+
     // Check permission if it's private
     if !playlist.is_public {
         if playlist.user_id != claims.uid() {
             err!("not_owner", "You are not the owner of this playlist")
         }
-        
-        /*match claims {
-            Some(v) => {
-                if playlist.user_id != v.uid() {
-                    err!("not_owner", "You are not the owner of this playlist")
-                }
-            }
-            None => err!("not_owner", "You are not the owner of this playlist")
-        }*/
     }
 
-    let songs = playlist_dao.list_songs(
-        playlist.id,
-    ).await?;
+    let songs = playlist_dao.list_songs(playlist.id).await?;
+    let mut result = Vec::<SongItem>::new();
+    for x in songs {
+        if let Some(song) = song_dao.get_by_id(x.song_id).await? &&
+            let Some(uploader) = user_dao.get_by_id(song.uploader_uid).await?
+        {
+            let item = SongItem {
+                song_id: x.song_id,
+                song_display_id: song.display_id.clone(),
+                title: song.title.clone(),
+                subtitle: song.subtitle.clone(),
+                cover_url: song.cover_art_url.clone(),
+                uploader_name: uploader.username.clone(),
+                uploader_uid: song.uploader_uid,
+                duration_seconds: song.duration_seconds,
+                order_index: x.order_index,
+                add_time: x.add_time,
+            };
+            result.push(item);
+        } else {
+            // How to deal with song deleted?
+        }
+    }
 
     let resp = DetailResp {
         playlist_info: PlaylistItem {
@@ -73,11 +103,11 @@ async fn detail_private(
             name: playlist.name,
             cover_url: playlist.cover_url,
             description: playlist.description,
-            create_time: Utc::now(),
+            create_time: playlist.create_time,
             is_public: playlist.is_public,
-            songs_count: songs.len() as i64,
+            songs_count: result.len() as i64,
         },
-        songs,
+        songs: result,
     };
     ok!(resp)
 }
@@ -101,7 +131,7 @@ pub struct PlaylistItem {
 #[framed]
 async fn list(
     claims: Claims,
-    state: State<AppState>
+    state: State<AppState>,
 ) -> WebResult<ListResp> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlists = playlist_dao.list_by_user(claims.uid()).await?;
@@ -115,7 +145,7 @@ async fn list(
             description: x.description,
             create_time: x.create_time,
             is_public: x.is_public,
-            songs_count: playlist_dao.count_songs(x.id).await?
+            songs_count: playlist_dao.count_songs(x.id).await?,
         };
         result.push(item);
     }
@@ -130,19 +160,19 @@ pub struct CreatePlaylistReq {
     // pub use_song_cover: bool,
     // pub cover_temp_id: Option<String>,
     pub description: Option<String>,
-    pub is_public: bool
+    pub is_public: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePlaylistResp {
-    pub id: i64
+    pub id: i64,
 }
 
 #[framed]
 async fn create(
     claims: Claims,
     state: State<AppState>,
-    req: Json<CreatePlaylistReq>
+    req: Json<CreatePlaylistReq>,
 ) -> WebResult<CreatePlaylistResp> {
     // Validate input
     if req.name.chars().count() > 32 {
@@ -187,14 +217,14 @@ pub struct UpdatePlaylistReq {
     // pub use_song_cover: bool,
     // pub cover_temp_id: Option<String>,
     pub description: Option<String>,
-    pub is_public: bool
+    pub is_public: bool,
 }
 
 #[framed]
 async fn update(
     claims: Claims,
     state: State<AppState>,
-    req: Json<UpdatePlaylistReq>
+    req: Json<UpdatePlaylistReq>,
 ) -> WebResult<()> {
     // Validate input
     if req.name.chars().count() > 32 {
@@ -221,14 +251,14 @@ async fn update(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeletePlaylistReq {
-    pub id: i64
+    pub id: i64,
 }
 
 #[framed]
 async fn delete(
     claims: Claims,
     state: State<AppState>,
-    req: Json<DeletePlaylistReq>
+    req: Json<DeletePlaylistReq>,
 ) -> WebResult<()> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlist = check_ownership(&claims, &playlist_dao, req.id).await?;
@@ -239,14 +269,14 @@ async fn delete(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddSongReq {
     pub playlist_id: i64,
-    pub song_id: i64
+    pub song_id: i64,
 }
 
 #[framed]
 async fn add_song(
     claims: Claims,
     state: State<AppState>,
-    req: Json<AddSongReq>
+    req: Json<AddSongReq>,
 ) -> WebResult<()> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
@@ -276,14 +306,14 @@ async fn add_song(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveSongReq {
     pub playlist_id: i64,
-    pub song_id: i64
+    pub song_id: i64,
 }
 
 #[framed]
 async fn remove_song(
     claims: Claims,
     state: State<AppState>,
-    req: Json<RemoveSongReq>
+    req: Json<RemoveSongReq>,
 ) -> WebResult<()> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
@@ -297,30 +327,30 @@ pub struct ChangeOrderReq {
     pub playlist_id: i64,
     pub song_id: i64,
     /// Start from 0
-    pub target_order: usize
+    pub target_order: usize,
 }
 
 #[framed]
 async fn change_order(
     claims: Claims,
     state: State<AppState>,
-    req: Json<ChangeOrderReq>
+    req: Json<ChangeOrderReq>,
 ) -> WebResult<()> {
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
 
     let mut songs = playlist_dao.list_songs(playlist.id).await?;
     songs.sort_by(|a, b| a.order_index.cmp(&b.order_index));
-    
+
     let src_index = songs.iter().position(|x| x.song_id == req.song_id)
         .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
-    
+
     // Move to target order_index
-    if src_index == req.target_order { 
+    if src_index == req.target_order {
         ok!(())
     }
     // Reorder
-    if req.target_order > src_index  {
+    if req.target_order > src_index {
         // move down
         songs[src_index..=req.target_order].rotate_left(1);
     } else {
@@ -338,7 +368,7 @@ async fn change_order(
 async fn check_ownership(
     claims: &Claims,
     playlist_dao: &PlaylistDao,
-    playlist_id: i64
+    playlist_id: i64,
 ) -> Result<Playlist, WebError<CommonError>> {
     let playlist = playlist_dao.get_by_id(playlist_id).await?
         .ok_or_else(|| WebError::common("not_found", "Playlist not found"))?;
