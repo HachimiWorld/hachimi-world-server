@@ -3,3 +3,4 @@ pub mod mailer;
 pub mod song_like;
 pub mod recommend;
 pub mod captcha;
+pub mod upload;

@@ -1,23 +1,26 @@
-use async_backtrace::framed;
-use crate::web::result::{CommonError};
-use crate::web::result::WebError;
-use axum::{Json, Router};
-use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
-use crate::db::CrudDao;
 use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
-use crate::{err, ok};
-use crate::db::song::{SongDao};
+use crate::db::song::SongDao;
 use crate::db::user::UserDao;
+use crate::db::CrudDao;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
+use crate::web::result::WebError;
 use crate::web::result::WebResult;
+use crate::web::result::CommonError;
 use crate::web::state::AppState;
+use crate::{err, ok, service};
+use anyhow::{Context};
+use async_backtrace::framed;
+use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/set_cover", post(set_cover))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .route("/detail_private", get(detail_private))
         .route("/list", get(list))
         .route("/create", post(create))
@@ -63,7 +66,7 @@ async fn detail_private(
     let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
     let song_dao = SongDao::new(state.sql_pool.clone());
     let user_dao = UserDao::new(state.sql_pool.clone());
-    
+
     let playlist = playlist_dao.get_by_id(req.id).await?
         .ok_or_else(|| WebError::common("not_found", "Playlist not found"))?;
 
@@ -377,4 +380,44 @@ async fn check_ownership(
         err!("not_owner", "You are not the owner of this playlist")
     }
     Ok(playlist)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetCoverReq {
+    pub playlist_id: i64
+}
+
+async fn set_cover(
+    claims: Claims,
+    state: State<AppState>,
+    mut multipart: Multipart
+) -> WebResult<()> {
+    let body_field = multipart.next_field().await?
+        .with_context(|| "No data field found")?;
+    let json = body_field.text().await?;
+    let req: SetCoverReq = serde_json::from_str(&json).with_context(|| "Invalid JSON body")?;
+
+    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
+    let mut playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+
+    let data_field = multipart
+        .next_field()
+        .await?
+        .with_context(|| "No data field found")?;
+    let bytes = data_field.bytes().await?;
+
+    // Validate image
+    if bytes.len() > 8 * 1024 * 1024 {
+        err!("image_too_large", "Image size must be less than 8MB");
+    }
+    let format_ext = service::upload::validate_image_and_get_ext(bytes.clone()).await?;
+
+    // Upload image
+    let sha1 = openssl::sha::sha1(&bytes);
+    let filename = format!("images/playlist/{}.{}", hex::encode(sha1), format_ext);
+    let result = state.file_host.upload(bytes, &filename).await?;
+
+    playlist.cover_url = Some(result.public_url);
+    playlist_dao.update_by_id(&playlist).await?;
+    ok!(())
 }
