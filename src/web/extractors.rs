@@ -15,6 +15,7 @@ where
         let value = parts
             .headers
             .get("X-Real-IP")
+            .or_else(|| parts.headers.get("CF-Connecting-IP")) // TODO[security]: Is it safe?
             .ok_or_else(|| WebError::Internal(anyhow::anyhow!("X-Real-IP header not found")))?;
 
         Ok(XRealIP(value.to_str()?.to_string()))
