@@ -1739,6 +1739,7 @@ dependencies = [
  "thiserror 2.0.14",
  "tikv-jemallocator",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tower",
  "tower-http",
@@ -5053,6 +5054,8 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
