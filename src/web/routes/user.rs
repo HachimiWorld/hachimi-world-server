@@ -5,9 +5,8 @@ use crate::db::CrudDao;
 use crate::db::user::{IUserDao, UserDao};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
-use crate::web::result::{WebError, WebResponse};
 use crate::web::state::AppState;
-use crate::{err, ok};
+use crate::{common, err, ok};
 use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
 use axum::extract::{Multipart, Query};
@@ -155,9 +154,9 @@ async fn set_avatar(
     }
     let image = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
-        .map_err(|_| WebError::common("invalid_image", "Invalid image"))?
+        .map_err(|_| common!("invalid_image", "Invalid image"))?
         .decode()
-        .map_err(|_| WebError::common("invalid_image", "Invalid image"))?;
+        .map_err(|_| common!("invalid_image", "Invalid image"))?;
 
     // Resize image
     let resized = image.resize_to_fill(128, 128, FilterType::Lanczos3);

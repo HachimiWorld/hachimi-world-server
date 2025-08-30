@@ -5,11 +5,9 @@ use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::{recommend, song_like};
 use crate::web::jwt::Claims;
-use crate::web::result::WebError;
-use crate::web::result::WebResponse;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{audio, err, ok, search};
+use crate::{audio, common, err, ok, search};
 use anyhow::{anyhow, Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -95,7 +93,7 @@ async fn detail(
     let user_dao = UserDao::new(state.sql_pool.clone());
 
     let song = song_dao.get_by_display_id(&params.id).await?
-        .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+        .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
     let tag_ids = song_dao.list_tags_by_song_id(song.id).await?;
     let tags = song_tag_dao.list_by_ids(&tag_ids).await?.into_iter().map(|x|
@@ -114,7 +112,7 @@ async fn detail(
 
     for x in &origin_infos {
         let x = song_dao.get_by_id(x.song_id).await?
-            .ok_or_else(|| WebError::common("origin_song_not_found", "Origin song not found"))?; // No. Just skip
+            .ok_or_else(|| common!("origin_song_not_found", "Origin song not found"))?; // No. Just skip
         id_display_map.insert(x.id, x.display_id);
     }
 
@@ -217,7 +215,7 @@ async fn publish(
 
     let uid = claims.uid();
     let user = user_dao.get_by_id(uid).await?
-        .ok_or_else(|| WebError::common("user_not_found", "User not found"))?;
+        .ok_or_else(|| common!("user_not_found", "User not found"))?;
 
     // Validate input
     // Validate creation_type
@@ -236,11 +234,11 @@ async fn publish(
 
     // Processing data
     let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(&req.song_temp_id)).await?;
-    let song_temp_data = song_temp_data.ok_or_else(|| WebError::common("invalid_song_temp_id", "Invalid song temp id"))?;
+    let song_temp_data = song_temp_data.ok_or_else(|| common!("invalid_song_temp_id", "Invalid song temp id"))?;
     let song_temp_data: SongTempData = serde_json::from_str(&song_temp_data)?;
 
     let cover_url: Option<String> = state.redis_conn.get(build_image_temp_key(&req.cover_temp_id)).await?;
-    let cover_url = cover_url.ok_or_else(|| WebError::common("invalid_cover_temp_id", "Invalid cover temp id"))?;
+    let cover_url = cover_url.ok_or_else(|| common!("invalid_cover_temp_id", "Invalid cover temp id"))?;
 
     let display_id = loop {
         let id = generate_song_display_id();
@@ -287,7 +285,7 @@ async fn publish(
                 let song = song_dao
                     .get_by_display_id(&display_id)
                     .await?
-                    .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+                    .ok_or_else(|| common!("song_not_found", "Song not found"))?;
                 Some(song)
             } else {
                 None
@@ -315,7 +313,7 @@ async fn publish(
             let song = user_dao
                 .get_by_id(uid)
                 .await?
-                .ok_or_else(|| WebError::common("crew_user_not_found", "Crew user not found"))?;
+                .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
             Some(song)
         } else {
             None
@@ -465,9 +463,9 @@ async fn upload_cover_image(
     }
     let format = ImageReader::new(Cursor::new(bytes.clone()))
         .with_guessed_format()
-        .map_err(|_| WebError::common("invalid_image", "Invalid image"))?
+        .map_err(|_| common!("invalid_image", "Invalid image"))?
         .format()
-        .ok_or_else(|| WebError::common("invalid_image", "Invalid image"))?;
+        .ok_or_else(|| common!("invalid_image", "Invalid image"))?;
 
     let format_ext = match format {
         ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Avif => {
@@ -556,8 +554,7 @@ async fn search(
         filter: req.filter.clone(),
     };
 
-    let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await
-        .map_err(|e| WebError::common("search_error", &format!("Search failed: {}", e)))?;
+    let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await?;
 
     let song_dao = SongDao::new(state.sql_pool.clone());
     let mut hits = Vec::new();

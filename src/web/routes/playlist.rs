@@ -4,11 +4,9 @@ use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
-use crate::web::result::WebError;
-use crate::web::result::WebResult;
-use crate::web::result::CommonError;
+use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
-use crate::{err, ok, service};
+use crate::{common, err, ok, service};
 use anyhow::{Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -68,7 +66,7 @@ async fn detail_private(
     let user_dao = UserDao::new(state.sql_pool.clone());
 
     let playlist = playlist_dao.get_by_id(req.id).await?
-        .ok_or_else(|| WebError::common("not_found", "Playlist not found"))?;
+        .ok_or_else(|| common!("not_found", "Playlist not found"))?;
 
     // Check permission if it's private
     if !playlist.is_public {
@@ -287,7 +285,7 @@ async fn add_song(
 
     let song_dao = SongDao::new(state.sql_pool.clone());
     let song = song_dao.get_by_id(req.song_id).await?
-        .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+        .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
     let songs = playlist_dao.list_songs(playlist.id).await?;
     let existed = songs.iter().any(|x| x.song_id == song.id);
@@ -347,7 +345,7 @@ async fn change_order(
     songs.sort_by(|a, b| a.order_index.cmp(&b.order_index));
 
     let src_index = songs.iter().position(|x| x.song_id == req.song_id)
-        .ok_or_else(|| WebError::common("song_not_found", "Song not found"))?;
+        .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
     // Move to target order_index
     if src_index == req.target_order {
@@ -375,7 +373,7 @@ async fn check_ownership(
     playlist_id: i64,
 ) -> Result<Playlist, WebError<CommonError>> {
     let playlist = playlist_dao.get_by_id(playlist_id).await?
-        .ok_or_else(|| WebError::common("not_found", "Playlist not found"))?;
+        .ok_or_else(|| common!("not_found", "Playlist not found"))?;
     if playlist.user_id != claims.uid() {
         err!("not_owner", "You are not the owner of this playlist")
     }
