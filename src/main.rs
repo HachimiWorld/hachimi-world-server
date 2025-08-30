@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use app::util::gracefully_shutdown;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
-use tracing::info;
+use tracing::{info, info_span, Instrument};
 use app::config::Config;
 use app::file_hosting::FileHost;
 use app::{search, web};
@@ -75,28 +75,31 @@ struct DatabaseConfig {
 
 
 async fn get_database_pool(config: Config) -> anyhow::Result<sqlx::PgPool> {
-    // <type>://<username>:<password>@<host>[:<port>][/[<db>][?<params>]]
-    let DatabaseConfig {
-        address,
-        username,
-        password,
-        database,
-    } = config.get_and_parse::<DatabaseConfig>("db")?;
+    let span = info_span!("database");
+    async {
+        // <type>://<username>:<password>@<host>[:<port>][/[<db>][?<params>]]
+        let DatabaseConfig {
+            address,
+            username,
+            password,
+            database,
+        } = config.get_and_parse::<DatabaseConfig>("db")?;
 
-    let url = format!(
-        "postgres://{username}:{password}@{address}/{database}",
-        password = urlencoding::encode(&password),
-    );
-    info!("Connecting to postgresql at {address}");
-    let sql_pool = sqlx::PgPool::connect(&url).await?;
+        let url = format!(
+            "postgres://{username}:{password}@{address}/{database}",
+            password = urlencoding::encode(&password),
+        );
+        info!("Connecting to postgresql at {address}");
+        let sql_pool = sqlx::PgPool::connect(&url).await?;
 
-    // Run migrations
-    // TODO: Consider to integrate with CI?
-    info!("Running migrations");
-    sqlx::migrate!().run(&sql_pool).await?;
+        // Run migrations
+        // TODO: Consider to integrate with CI?
+        info!("Running migrations");
+        sqlx::migrate!().run(&sql_pool).await?;
 
-    info!("Database connected");
-    Ok(sql_pool)
+        info!("Database connected");
+        Ok(sql_pool)
+    }.instrument(span).await
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -108,24 +111,27 @@ struct RedisConfig {
 }
 
 async fn get_redis_pool(config: Config) -> anyhow::Result<redis::aio::ConnectionManager> {
-    // redis://[<username>][:<password>@]<hostname>[:<port>][/[<db>][?protocol=<protocol>]]
-    let config = config.get_and_parse::<RedisConfig>("redis")?;
+    let span = info_span!("redis");
+    async {
+        // redis://[<username>][:<password>@]<hostname>[:<port>][/[<db>][?protocol=<protocol>]]
+        let config = config.get_and_parse::<RedisConfig>("redis")?;
 
-    let url = format!(
-        "redis://{username}{password}{address}{database}",
-        username = config.username.map_or(String::new(), |u| u),
-        password = config.password.map_or(String::new(), |p| format!(
-            ":{p}@",
-            p = urlencoding::encode(&p)
-        )),
-        address = config.address,
-        database = config.database.map_or(String::new(), |d| format!("/{d}"))
-    );
-    info!("Connecting to redis at {}", config.address);
-    let redis = redis::Client::open(url)?;
-    let redis_conn = redis.get_connection_manager().await?;
-    info!("Redis connected");
-    Ok(redis_conn)
+        let url = format!(
+            "redis://{username}{password}{address}{database}",
+            username = config.username.map_or(String::new(), |u| u),
+            password = config.password.map_or(String::new(), |p| format!(
+                ":{p}@",
+                p = urlencoding::encode(&p)
+            )),
+            address = config.address,
+            database = config.database.map_or(String::new(), |d| format!("/{d}"))
+        );
+        info!("Connecting to redis at {}", config.address);
+        let redis = redis::Client::open(url)?;
+        let redis_conn = redis.get_connection_manager().await?;
+        info!("Redis connected");
+        Ok(redis_conn)
+    }.instrument(span).await
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -171,5 +177,10 @@ struct MeiliCfg {
 async fn get_meilisearch_client(config: Config) -> anyhow::Result<meilisearch_sdk::client::Client> {
     let cfg: MeiliCfg = config.get_and_parse("meilisearch")?;
     let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
+    let span = info_span!("search");
+    async {
+        info!("Setting up search index");
+        search::setup_search_index(&client).await
+    }.instrument(span).await?;
     Ok(client)
 }
