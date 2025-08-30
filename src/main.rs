@@ -9,7 +9,7 @@ use tikv_jemallocator::Jemalloc;
 use tracing::info;
 use app::config::Config;
 use app::file_hosting::FileHost;
-use app::web;
+use app::{search, web};
 use app::web::state::AppState;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
@@ -29,21 +29,33 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::parse("config.yaml")?;
 
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
-    let redis_conn = get_redis_pool(&config).await?;
-    let sql_pool = get_database_pool(&config).await?;
-    
-    let file_host = Arc::new(get_file_host(&config).await?);
 
-    let meilisearch_client = get_meilisearch_client(&config)?;
-    
-    // Initialize auth service
-    let state = AppState {
-        redis_conn,
-        config: Arc::new(config),
-        sql_pool,
-        file_host,
-        meilisearch: Arc::new(meilisearch_client)
+    let all = async {
+        tokio::join!(
+            get_redis_pool(config.clone()),
+            get_database_pool(config.clone()),
+            get_file_host(config.clone()),
+            get_meilisearch_client(config.clone())
+        )
     };
+
+    let state = tokio::select! {
+        (redis_conn, sql_pool, file_host, meilisearch_client) = all => {
+            AppState {
+                redis_conn: redis_conn?,
+                config: Arc::new(config),
+                sql_pool: sql_pool?,
+                file_host: Arc::new(file_host?),
+                meilisearch: Arc::new(meilisearch_client?)
+            }
+        }
+        _ = cancel_token.cancelled() => {
+            info!("Shutdown");
+            return Ok(())
+        }
+    };
+
+    // Initialize auth service
 
     info!("Starting web server at {}", server_cfg.listen);
     web::run_web_app(server_cfg, state, cancel_token).await?;
@@ -62,7 +74,7 @@ struct DatabaseConfig {
 }
 
 
-async fn get_database_pool(config: &Config) -> anyhow::Result<sqlx::PgPool> {
+async fn get_database_pool(config: Config) -> anyhow::Result<sqlx::PgPool> {
     // <type>://<username>:<password>@<host>[:<port>][/[<db>][?<params>]]
     let DatabaseConfig {
         address,
@@ -95,7 +107,7 @@ struct RedisConfig {
     pub database: Option<u16>,
 }
 
-async fn get_redis_pool(config: &Config) -> anyhow::Result<redis::aio::ConnectionManager> {
+async fn get_redis_pool(config: Config) -> anyhow::Result<redis::aio::ConnectionManager> {
     // redis://[<username>][:<password>@]<hostname>[:<port>][/[<db>][?protocol=<protocol>]]
     let config = config.get_and_parse::<RedisConfig>("redis")?;
 
@@ -125,7 +137,7 @@ struct S3Config {
     pub access_key_secret: String,
 }
 
-async fn get_file_host(config: &Config) -> anyhow::Result<FileHost> {
+async fn get_file_host(config: Config) -> anyhow::Result<FileHost> {
     let cfg: S3Config = config.get_and_parse("s3")?;
 
     // Configure the client
@@ -153,10 +165,10 @@ async fn get_file_host(config: &Config) -> anyhow::Result<FileHost> {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 struct MeiliCfg {
     pub host: String,
-    pub api_key: String
+    pub api_key: String,
 }
 
-fn get_meilisearch_client(config: &Config) -> anyhow::Result<meilisearch_sdk::client::Client> {
+async fn get_meilisearch_client(config: Config) -> anyhow::Result<meilisearch_sdk::client::Client> {
     let cfg: MeiliCfg = config.get_and_parse("meilisearch")?;
     let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
     Ok(client)

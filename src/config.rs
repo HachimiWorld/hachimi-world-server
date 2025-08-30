@@ -2,12 +2,13 @@ use anyhow::Context;
 use serde::de::DeserializeOwned;
 use serde_yaml::Value;
 use std::fs;
+use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Config {
-    value: Value,
+    value: Arc<Value>,
 }
 
 impl Config {
@@ -18,11 +19,11 @@ impl Config {
 
     pub fn parse_by_str(str: &str) -> anyhow::Result<Self> {
         let value = serde_yaml::from_str::<Value>(str)?;
-        Ok(Config { value })
+        Ok(Config { value: Arc::new(value) })
     }
 
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Value>> {
-        let result = key.split('.').fold(Some(&self.value), |value, key| {
+        let result = key.split('.').fold(Some(self.value.deref()), |value, key| {
             if let Some(value) = value {
                 value.get(key)
             } else {
