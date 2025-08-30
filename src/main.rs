@@ -13,6 +13,7 @@ use app::{search, web};
 use app::web::state::AppState;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
+use sqlx::PgPool;
 use app::web::ServerCfg;
 
 #[cfg(not(target_env = "msvc"))]
@@ -29,22 +30,21 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::parse("config.yaml")?;
 
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
-
+    let sql_pool = get_database_pool(config.clone()).await?;
     let all = async {
         tokio::join!(
             get_redis_pool(config.clone()),
-            get_database_pool(config.clone()),
             get_file_host(config.clone()),
-            get_meilisearch_client(config.clone())
+            get_meilisearch_client(config.clone(), &sql_pool)
         )
     };
 
     let state = tokio::select! {
-        (redis_conn, sql_pool, file_host, meilisearch_client) = all => {
+        (redis_conn, file_host, meilisearch_client) = all => {
             AppState {
                 redis_conn: redis_conn?,
                 config: Arc::new(config),
-                sql_pool: sql_pool?,
+                sql_pool: sql_pool,
                 file_host: Arc::new(file_host?),
                 meilisearch: Arc::new(meilisearch_client?)
             }
@@ -174,13 +174,13 @@ struct MeiliCfg {
     pub api_key: String,
 }
 
-async fn get_meilisearch_client(config: Config) -> anyhow::Result<meilisearch_sdk::client::Client> {
+async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result<meilisearch_sdk::client::Client> {
     let cfg: MeiliCfg = config.get_and_parse("meilisearch")?;
     let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
     let span = info_span!("search");
     async {
         info!("Setting up search index");
-        search::setup_search_index(&client).await
+        search::setup_search_index(&client, pool).await
     }.instrument(span).await?;
     Ok(client)
 }

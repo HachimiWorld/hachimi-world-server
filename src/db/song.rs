@@ -101,7 +101,9 @@ impl CrudDao for SongDao {
     type Entity = Song;
 
     async fn list(&self) -> sqlx::Result<Vec<Self::Entity>> {
-        todo!()
+        sqlx::query_as!(Song, "SELECT * FROM songs")
+            .fetch_all(&self.pool)
+            .await
     }
 
     async fn page(&self, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {

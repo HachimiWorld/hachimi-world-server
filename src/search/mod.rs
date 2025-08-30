@@ -1,7 +1,15 @@
-use meilisearch_sdk::client::Client;
-use crate::db::song::{Song, SongOriginInfo, SongProductionCrew};
+use std::collections::HashMap;
+use itertools::Itertools;
+use meilisearch_sdk::client::{Client, SwapIndexes};
+use meilisearch_sdk::errors::{Error, ErrorCode};
+use meilisearch_sdk::indexes::Index;
+use metrics::counter;
+use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
 use serde::{Deserialize, Serialize};
-use crate::db::song_tag::SongTag;
+use sqlx::{query, PgPool};
+use tracing::{error, info, info_span, warn, Instrument};
+use crate::db::CrudDao;
+use crate::db::song_tag::{SongTag};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDocument {
@@ -32,36 +40,7 @@ pub async fn add_song_document(
     origin_info: &[SongOriginInfo],
     tags: &[SongTag],
 ) -> Result<(), meilisearch_sdk::errors::Error> {
-    let crew_names: Vec<String> = crew.iter()
-        .map(|c| format!("{}: {}", c.role, c.person_name.as_deref().unwrap_or("Unknown")))
-        .collect();
-
-    let origin_titles: Vec<_> = origin_info.iter().filter_map(|x| x.origin_title.clone())
-        .collect();
-
-    // FIXME(search): If we update the tag name, we should find a way to update the corresponding document in MeiliSearch
-
-    let tag_names: Vec<String> = tags.iter().map(|x| x.name.clone()).collect();
-
-    let document = SongDocument {
-        id: song_id,
-        display_id: song_info.display_id.clone(),
-        title: song_info.title.clone(),
-        subtitle: song_info.subtitle.clone(),
-        description: song_info.description.clone(),
-        cover_url: song_info.cover_art_url.clone(),
-        artist: song_info.artist.clone(),
-        // lyrics: song_info.lyrics.clone(),
-        duration_seconds: song_info.duration_seconds,
-        uploader_uid: song_info.uploader_uid,
-        creation_type: song_info.creation_type,
-        play_count: song_info.play_count,
-        like_count: song_info.like_count,
-        tags: tag_names,
-        origins: origin_titles, // Will be populated from origin_info if needed
-        crew: crew_names,
-        release_time: song_info.release_time.timestamp(),
-    };
+    let document = convert_to_document(song_id, song_info, crew, origin_info, tags);
 
     client.index("songs")
         .add_documents(&[document], Some("id"))
@@ -133,8 +112,43 @@ pub async fn search_songs(
     })
 }
 
-pub async fn setup_search_index(client: &Client) -> Result<(), meilisearch_sdk::errors::Error> {
-    let index = client.index("songs");
+pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(), meilisearch_sdk::errors::Error> {
+    let exists = match client.get_index("songs").await {
+        Ok(_) => { true }
+        Err(Error::Meilisearch(err)) => {
+            if err.error_code == ErrorCode::IndexNotFound {
+                false
+            } else {
+                Err(err)?
+            }
+        }
+        Err(err) => Err(err)?
+    };
+
+    if !exists {
+        info!("Setting up index");
+        setup_search_index_with_name(client, "songs").await?;
+
+        // Startup indexing
+        tokio::spawn({
+            let client = client.clone();
+            let pool = pg_pool.clone();
+            async move {
+                match fully_index_songs(&client, &pool).await {
+                    Ok(_) => {}
+                    Err(err) => {
+                        error!("Failed to index songs: {:?}", err);
+                    }
+                };
+            }.instrument(info_span!("full_index"))
+        });
+    }
+
+    Ok(())
+}
+
+pub async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
+    let index = client.index(index_name);
 
     // Set searchable attributes
     index.set_searchable_attributes([
@@ -150,17 +164,183 @@ pub async fn setup_search_index(client: &Client) -> Result<(), meilisearch_sdk::
     index.set_filterable_attributes([
         "creation_type",
         "uploader_uid",
-        "release_time",
-        "duration_seconds",
+        "release_time"
     ]).await?;
 
     // Set sortable attributes
     index.set_sortable_attributes([
         "play_count",
         "like_count",
-        "release_time",
-        "duration_seconds",
+        "release_time"
     ]).await?;
 
+    Ok(index)
+}
+
+// Schedule to execute fully indexing task
+pub async fn fully_index_songs(
+    client: &Client,
+    pool: &PgPool,
+) -> anyhow::Result<()> {
+    counter!("full_index_count").increment(1);
+
+    // 1. Take all songs from the database (it's best to get a snapshot)
+    // 2. Catch-up new changes
+    // 3. Indexing
+    // 4. Replace it with the new index
+    let time = chrono::Utc::now();
+    let new_index_name = format!("songs_{}", time.format("%Y%m%d%H%M%S"));
+    let song_dao = SongDao::new(pool.clone());
+    // How much RAM is it required to do this job?
+    let songs = song_dao.list().await?;
+
+    let new_index = setup_search_index_with_name(client, &new_index_name).await?;
+
+    let chunks = songs.chunks(1024).collect::<Vec<_>>();
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        info!("indexing chunk {} of {}", index, chunks.len());
+
+        let mut documents: Vec<SongDocument> = vec![];
+        let ids: Vec<_> = chunk.iter().map(|x| x.id).collect();
+        let mut songs: HashMap<i64, _> = song_dao.list_by_ids(&ids).await?.into_iter()
+            .map(|x| (x.id, x))
+            .collect();
+        let mut crews: HashMap<i64, _> = query!(
+            "SELECT song_id, u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
+               LEFT JOIN users u ON u.id = c.uid
+               WHERE song_id = ANY($1)", &ids)
+            .fetch_all(pool).await?
+            .into_iter().into_group_map_by(|x| x.song_id);
+
+        let mut origin_infos: HashMap<i64, _> = query!(
+            "SELECT song_id,
+                s.title  internal_title,
+                s.artist internal_artist,
+                o.origin_type,
+                o.origin_song_id,
+                o.origin_title,
+                o.origin_artist,
+                o.origin_url
+            FROM song_origin_info o
+                 LEFT JOIN songs s ON s.id = o.origin_song_id
+            WHERE o.song_id = ANY($1)", &ids)
+            .fetch_all(pool).await?
+            .into_iter().into_group_map_by(|x| x.song_id);
+
+        let mut tags: HashMap<i64, _> = query!(
+            "SELECT song_id, t.name
+            FROM song_tag_refs r
+                LEFT JOIN song_tags t ON t.id = r.tag_id
+            WHERE r.song_id = ANY($1)", &ids)
+            .fetch_all(pool).await?
+            .into_iter().into_group_map_by(|x| x.song_id);
+
+
+        for id in ids {
+            let song_info = if let Some(x) = songs.get(&id) {
+                x
+            } else {
+                warn!("Song not found for id: {}", id);
+                continue;
+            };
+
+            let origin_titles = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
+                .into_iter()
+                .map(|x| x.internal_title.take().or(x.origin_title.take()).unwrap_or("Unknown".to_string()))
+                .collect();
+
+            let crew_names = crews.get_mut(&id).unwrap_or(&mut vec![])
+                .into_iter()
+                .map(|x| x.internal_username.take()
+                    .or(x.external_username.take())
+                    .unwrap_or("Unknown".to_string())
+                    .to_string()
+                ).collect::<Vec<_>>();
+
+            let tag_names = tags.get_mut(&id).unwrap_or(&mut vec![])
+                .into_iter().map(|x| x.name.take().unwrap_or("Unknown".to_string()))
+                .collect();
+
+            let doc = SongDocument {
+                id: id,
+                display_id: song_info.display_id.clone(),
+                title: song_info.title.clone(),
+                subtitle: song_info.subtitle.clone(),
+                description: song_info.description.clone(),
+                cover_url: song_info.cover_art_url.clone(),
+                artist: song_info.artist.clone(),
+                // lyrics: song_info.lyrics.clone(),
+                duration_seconds: song_info.duration_seconds,
+                uploader_uid: song_info.uploader_uid,
+                creation_type: song_info.creation_type,
+                play_count: song_info.play_count,
+                like_count: song_info.like_count,
+                tags: tag_names,
+                origins: origin_titles, // Will be populated from origin_info if needed
+                crew: crew_names,
+                release_time: song_info.release_time.timestamp(),
+            };
+            documents.push(doc)
+        }
+
+        info!("sync chunk {} to MeiliSearch: {:?}", index, documents.len());
+        let _ = new_index.add_documents(&documents, Some("id")).await?
+            .wait_for_completion(&client, None, None)
+            .await?;
+        info!("sync chunk {index} successfully");
+    }
+
+    info!("sync all chunk successfully, swapping indexes");
+    let _ = client.swap_indexes([&SwapIndexes {
+        indexes: ("songs".to_string(), new_index_name)
+    }]).await?
+        .wait_for_completion(&client, None, None)
+        .await?;
+    info!("swapping indexes successfully");
+    new_index.delete().await?;
+    counter!("full_index_success_count").increment(1);
+
     Ok(())
+}
+
+pub fn convert_to_document(
+    song_id: i64,
+    song_info: &Song,
+    crew: &[SongProductionCrew],
+    origin_info: &[SongOriginInfo],
+    tags: &[SongTag],
+) -> SongDocument {
+    let crew_names: Vec<String> = crew.iter()
+        .map(|c| format!("{}: {}", c.role, c.person_name.as_deref().unwrap_or("Unknown")))
+        .collect();
+
+    let origin_titles: Vec<_> = origin_info.iter().filter_map(|x| x.origin_title.clone())
+        .collect();
+
+    // FIXME(search): If we update the tag name, we should find a way to update the corresponding document in MeiliSearch
+
+    let tag_names: Vec<String> = tags.iter().map(|x| x.name.clone()).collect();
+
+    let document = SongDocument {
+        id: song_id,
+        display_id: song_info.display_id.clone(),
+        title: song_info.title.clone(),
+        subtitle: song_info.subtitle.clone(),
+        description: song_info.description.clone(),
+        cover_url: song_info.cover_art_url.clone(),
+        artist: song_info.artist.clone(),
+        // lyrics: song_info.lyrics.clone(),
+        duration_seconds: song_info.duration_seconds,
+        uploader_uid: song_info.uploader_uid,
+        creation_type: song_info.creation_type,
+        play_count: song_info.play_count,
+        like_count: song_info.like_count,
+        tags: tag_names,
+        origins: origin_titles, // Will be populated from origin_info if needed
+        crew: crew_names,
+        release_time: song_info.release_time.timestamp(),
+    };
+
+    document
 }

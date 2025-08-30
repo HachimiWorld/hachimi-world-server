@@ -43,6 +43,7 @@ futures = "0.3.31"
 meilisearch-sdk = "0.29.1"
 tower-http = { version = "0.6.6", features = ["cors", "request-id", "trace"] }
 tokio-stream = "0.1.17"
+itertools = "0.14.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
