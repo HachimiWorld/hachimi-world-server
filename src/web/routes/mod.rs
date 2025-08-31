@@ -3,6 +3,7 @@ pub mod auth;
 pub mod song;
 pub mod playlist;
 mod upload;
+pub mod version;
 
 use axum::Router;
 use crate::web::state::AppState;
@@ -13,4 +14,5 @@ pub fn router() -> Router<AppState> {
         .nest("/user", user::router())
         .nest("/song", song::router())
         .nest("/playlist", playlist::router())
+        .nest("/version", version::router())
 }
