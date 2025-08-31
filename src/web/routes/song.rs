@@ -3,7 +3,7 @@ use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCre
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
-use crate::service::{recommend, song_like};
+use crate::service::{recommend, song, song_like};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
@@ -19,9 +19,8 @@ use image::{ImageFormat, ImageReader};
 use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::io::Cursor;
-use sqlx::Connection;
+use crate::service::song::PublicSongDetail;
 use crate::util::IsBlank;
 
 pub fn router() -> Router<AppState> {
@@ -55,98 +54,22 @@ pub struct DetailReq {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DetailResp {
-    pub id: i64,
-    pub display_id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub description: String,
-    pub tags: Vec<TagItem>,
-    pub duration_seconds: i32,
-    pub lyrics: String,
-    pub audio_url: String,
-    pub cover_url: String,
-    pub production_crew: Vec<SongProductionCrew>,
-    pub creation_type: i32,
-    pub origin_infos: Vec<CreationTypeInfo>,
-    pub uploader_uid: i64,
-    pub uploader_name: String,
-    pub play_count: i64,
-    pub like_count: i64,
-}
+pub type DetailResp = PublicSongDetail;
 
 #[framed]
 async fn detail(
     state: State<AppState>,
-    params: Query<DetailReq>,
+    params: Query<DetailReq>, 
 ) -> WebResult<DetailResp> {
-    let mut redis = state.redis_conn.clone();
-    let cache_key = format!("song:detail:{}", params.id);
-    let cache: Option<String> = redis.get(&cache_key).await?;
-    if let Some(cache) = cache &&
-        let Ok(v) = serde_json::from_str::<DetailResp>(&cache) {
-        ok!(v)
+    let data = song::get_public_detail_with_cache_by_display_id(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        &params.id
+    ).await?;
+    match data {
+        Some(x) => ok!(x),
+        None => err!("not_found", "Song not found")
     }
-
-    let song = SongDao::get_by_display_id(&state.sql_pool, &params.id).await?
-        .ok_or_else(|| common!("song_not_found", "Song not found"))?;
-
-    let tag_ids = SongDao::list_tags_by_song_id(&state.sql_pool, song.id).await?;
-    let tags = SongTagDao::list_by_ids(&state.sql_pool, &tag_ids).await?.into_iter().map(|x|
-        TagItem {
-            id: x.id,
-            name: x.name,
-            description: x.description,
-        }
-    ).collect();
-
-    let uploader_name = UserDao::get_by_id(&state.sql_pool, song.uploader_uid).await?
-        .map(|x| x.username).unwrap_or_else(|| "Invalid".to_string());
-
-    let origin_infos = SongDao::list_origin_info_by_song_id(&state.sql_pool, song.id).await?;
-    let mut id_display_map = HashMap::new();
-
-    for x in &origin_infos {
-        let x = SongDao::get_by_id(&state.sql_pool, x.song_id).await?
-            .ok_or_else(|| common!("origin_song_not_found", "Origin song not found"))?; // No. Just skip
-        id_display_map.insert(x.id, x.display_id);
-    }
-
-    let origin_infos_mapped = origin_infos.iter().map(|x| CreationTypeInfo {
-        song_display_id: x.origin_song_id.and_then(|x| id_display_map.get(&x).cloned()),
-        title: x.origin_title.clone(),
-        artist: x.origin_artist.clone(),
-        url: x.origin_url.clone(),
-        origin_type: x.origin_type,
-    }).collect();
-
-    let production_crew = SongDao::list_production_crew_by_song_id(&state.sql_pool, song.id).await?;
-
-    let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
-
-    let data = DetailResp {
-        id: song.id,
-        display_id: song.display_id.to_string(),
-        title: song.title.to_string(),
-        subtitle: song.subtitle.to_string(), // What?
-        description: song.description.to_string(),
-        tags: tags,
-        duration_seconds: song.duration_seconds,
-        lyrics: song.lyrics.to_string(),
-        audio_url: song.file_url.to_string(),
-        cover_url: song.cover_art_url.to_string(),
-        production_crew: production_crew,
-        creation_type: song.creation_type,
-        origin_infos: origin_infos_mapped,
-        uploader_uid: song.uploader_uid,
-        uploader_name: uploader_name,
-        play_count: song.play_count,
-        like_count: like_count,
-    };
-
-    let _: () = redis.set_ex(cache_key, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
-    ok!(data)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -720,7 +643,7 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
             update_time: Utc::now(),
         }
     ).await?;
-    
+
     ok!(TagCreateResp { id })
 }
 
