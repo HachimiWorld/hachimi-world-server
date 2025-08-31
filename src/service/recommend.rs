@@ -4,6 +4,7 @@ use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use crate::service::song::PublicSongDetail;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct RecentSongRedisCache {

@@ -3,7 +3,7 @@ use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCre
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
-use crate::service::{recommend, song, song_like};
+use crate::service::{recommend, recommend_v2, song, song_like};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
@@ -36,6 +36,7 @@ pub fn router() -> Router<AppState> {
         // Discovery
         .route("/search", get(search))
         .route("/recent", get(recent))
+        .route("/recent_v2", get(recent_v2))
         .route("/hot", get(hot))
         // User interactions
         .route("/like", post(like))
@@ -59,7 +60,7 @@ pub type DetailResp = PublicSongDetail;
 #[framed]
 async fn detail(
     state: State<AppState>,
-    params: Query<DetailReq>, 
+    params: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
     let data = song::get_public_detail_with_cache_by_display_id(
         state.redis_conn.clone(),
@@ -501,11 +502,13 @@ async fn search(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[deprecated(since = "250831", note = "use /recent_v2 instead")]
 pub struct SongListResp {
     pub song_ids: Vec<String>,
 }
 
 #[framed]
+#[deprecated(since = "250831", note = "use /recent_v2 instead")]
 async fn recent(
     state: State<AppState>
 ) -> WebResult<SongListResp> {
@@ -518,6 +521,21 @@ async fn recent(
         song_ids: ids
     })
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentResp {
+    pub songs: Vec<DetailResp>
+}
+
+#[framed]
+async fn recent_v2(
+    state: State<AppState>
+) -> WebResult<RecentResp> {
+    let songs = recommend_v2::get_recent_songs(&state.redis_conn, &state.sql_pool).await?;
+
+    ok!(RecentResp {songs})
+}
+
 
 #[framed]
 async fn hot(
