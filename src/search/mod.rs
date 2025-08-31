@@ -190,9 +190,9 @@ pub async fn fully_index_songs(
     // 4. Replace it with the new index
     let time = chrono::Utc::now();
     let new_index_name = format!("songs_{}", time.format("%Y%m%d%H%M%S"));
-    let song_dao = SongDao::new(pool.clone());
+    
     // How much RAM is it required to do this job?
-    let songs = song_dao.list().await?;
+    let songs = SongDao::list(pool).await?;
 
     let new_index = setup_search_index_with_name(client, &new_index_name).await?;
 
@@ -203,7 +203,7 @@ pub async fn fully_index_songs(
 
         let mut documents: Vec<SongDocument> = vec![];
         let ids: Vec<_> = chunk.iter().map(|x| x.id).collect();
-        let mut songs: HashMap<i64, _> = song_dao.list_by_ids(&ids).await?.into_iter()
+        let mut songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &ids).await?.into_iter()
             .map(|x| (x.id, x))
             .collect();
         let mut crews: HashMap<i64, _> = query!(

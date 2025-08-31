@@ -2,8 +2,7 @@ pub mod user;
 pub mod auth;
 pub mod song;
 pub mod playlist;
-// pub mod follow;
-// pub mod file;
+mod upload;
 
 use axum::Router;
 use crate::web::state::AppState;

@@ -15,7 +15,7 @@ pub async fn get_song_likes(
         return Ok(x)
     }
 
-    let likes_db = SongDao::new(sql_pool.clone()).count_likes(song_id).await?;
+    let likes_db = SongDao::count_likes(sql_pool, song_id).await?;
     set_likes_cache(&mut redis, song_id, likes_db).await?;
     Ok(likes_db)
 }
@@ -26,7 +26,6 @@ pub async fn like(
     song_id: i64, uid: i64,
 ) -> anyhow::Result<()> {
     let mut redis = redis_conn.clone();
-    let db = SongDao::new(sql_pool.clone());
 
     let cache_is_liked: Option<bool> = redis.get(format!("song:liked:{}:{}", uid, song_id)).await?;
     match cache_is_liked {
@@ -36,7 +35,7 @@ pub async fn like(
             }
         }
         None => {
-            let db_is_liked = db.is_liked(song_id, uid).await?;
+            let db_is_liked = SongDao::is_liked(sql_pool, song_id, uid).await?;
             let _: () = redis.set(format!("song:liked:{}:{}", uid, song_id), false).await?;
 
             if db_is_liked {
@@ -46,7 +45,7 @@ pub async fn like(
     }
 
     let _: () = redis.set(format!("song:liked:{}:{}", uid, song_id), true).await?;
-    db.insert_likes(&[SongLike {
+    SongDao::insert_likes(sql_pool, &[SongLike {
         song_id,
         user_id: uid,
         create_time: Utc::now(),
@@ -61,7 +60,6 @@ pub async fn unlike(
     song_id: i64, uid: i64,
 ) -> anyhow::Result<()> {
     let mut redis = redis_conn.clone();
-    let db = SongDao::new(sql_pool.clone());
 
     let cache_is_liked: Option<bool> = redis.get(format!("song:liked:{}:{}", uid, song_id)).await?;
     match cache_is_liked {
@@ -71,8 +69,8 @@ pub async fn unlike(
             }
         }
         None => {
-            let db_is_liked = db.is_liked(song_id, uid).await?;
-            let _: () = redis.set(format!("song:liked:{}:{}", uid, song_id), false).await?;
+            let db_is_liked = SongDao::is_liked(sql_pool, song_id, uid).await?;
+            let _: () = redis.set_ex(format!("song:liked:{}:{}", uid, song_id), false, 300).await?;
 
             if !db_is_liked {
                 return Ok(())
@@ -81,7 +79,7 @@ pub async fn unlike(
     }
 
     let _: () = redis.set(format!("song:liked:{}:{}", uid, song_id), true).await?;
-    db.delete_like(song_id, uid).await?;
+    SongDao::delete_like(sql_pool, song_id, uid).await?;
     incr_likes_cache(&mut redis, song_id, -1).await?;
     Ok(())
 }
@@ -91,7 +89,7 @@ async fn get_likes_cache(redis: &mut ConnectionManager, song_id: i64) -> anyhow:
 }
 
 async fn set_likes_cache(redis: &mut ConnectionManager, song_id: i64, value: i64) -> anyhow::Result<()> {
-    let _: () = redis.set(format!("song:likes:{}", song_id), value).await?;
+    let _: () = redis.set_ex(format!("song:likes:{}", song_id), value, 300).await?;
     Ok(())
 }
 

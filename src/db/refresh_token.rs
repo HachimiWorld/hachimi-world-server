@@ -1,7 +1,7 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgExecutor, PgPool};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct RefreshToken {
@@ -17,44 +17,38 @@ pub struct RefreshToken {
     pub is_revoked: bool,
 }
 
-pub trait IRefreshTokenDao: CrudDao<Entity = RefreshToken> {
-    async fn get_by_token_id(&self, token_id: &str) -> sqlx::Result<Option<RefreshToken>>;
-    async fn list_by_uid(&self, uid: i64) -> sqlx::Result<Vec<RefreshToken>>;
-    async fn delete_all_by_uid(&self, uid: i64) -> sqlx::Result<u64>;
+pub trait IRefreshTokenDao<'e, E>: CrudDao<'e, E> 
+where E: PgExecutor<'e>{
+    async fn get_by_token_id(executor: E, token_id: &str) -> sqlx::Result<Option<RefreshToken>>;
+    async fn list_by_uid(executor: E, uid: i64) -> sqlx::Result<Vec<RefreshToken>>;
+    async fn delete_all_by_uid(executor: E, uid: i64) -> sqlx::Result<u64>;
 }
 
-pub struct RefreshTokenDao {
-    pool: PgPool,
-}
+pub struct RefreshTokenDao;
 
-impl RefreshTokenDao {
-    pub fn new(pool: PgPool) -> Self {
-        RefreshTokenDao { pool }
-    }
-}
-
-impl CrudDao for RefreshTokenDao {
+impl <'e, E> CrudDao<'e, E> for RefreshTokenDao 
+where E: PgExecutor<'e> {
     type Entity = RefreshToken;
 
-    async fn list(&self) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
-    async fn page(&self, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
-    async fn get_by_id(&self, id: i64) -> sqlx::Result<Option<Self::Entity>> {
+    async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
         sqlx::query_as!(
             Self::Entity,
             "SELECT * FROM refresh_tokens WHERE id = $1",
             id
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(executor)
         .await
     }
 
-    async fn update_by_id(&self, value: &Self::Entity) -> sqlx::Result<()> {
+    async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()> {
         sqlx::query!(
             "UPDATE refresh_tokens SET user_id = $1, token_id = $2, token_value = $3, expires_time = $4, create_time = $5, last_used_time = $6, device_info = $7, ip_address = $8, is_revoked = $9 WHERE id = $10",
             value.user_id,
@@ -67,11 +61,11 @@ impl CrudDao for RefreshTokenDao {
             value.ip_address,
             value.is_revoked,
             value.id
-        ).execute(&self.pool).await?;
+        ).execute(executor).await?;
         Ok(())
     }
 
-    async fn insert(&self, value: &Self::Entity) -> sqlx::Result<i64> {
+    async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         let r = sqlx::query!(
             "INSERT INTO refresh_tokens(user_id, token_id, token_value, expires_time, create_time, last_used_time, device_info, ip_address, is_revoked)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
@@ -84,40 +78,41 @@ impl CrudDao for RefreshTokenDao {
             value.device_info,
             value.ip_address,
             value.is_revoked
-        ).fetch_one(&self.pool).await?;
+        ).fetch_one(executor).await?;
         Ok(r.id)
     }
 
-    async fn delete_by_id(&self, id: i64) -> sqlx::Result<()> {
+    async fn delete_by_id(executor: E, id: i64) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM refresh_tokens WHERE id = $1", id)
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
 }
 
-impl IRefreshTokenDao for RefreshTokenDao {
-    async fn get_by_token_id(&self, token_id: &str) -> sqlx::Result<Option<RefreshToken>> {
+impl <'e, E> IRefreshTokenDao<'e, E> for RefreshTokenDao 
+where E: PgExecutor<'e> {
+    async fn get_by_token_id(executor: E, token_id: &str) -> sqlx::Result<Option<RefreshToken>> {
         sqlx::query_as!(
             RefreshToken,
             "SELECT * FROM refresh_tokens WHERE token_id = $1",
             token_id
         )
-        .fetch_optional(&self.pool)
+        .fetch_optional(executor)
         .await
     }
-    async fn list_by_uid(&self, uid: i64) -> sqlx::Result<Vec<RefreshToken>> {
+    async fn list_by_uid(executor: E, uid: i64) -> sqlx::Result<Vec<RefreshToken>> {
         sqlx::query_as!(
             RefreshToken,
             "SELECT * FROM refresh_tokens WHERE user_id = $1",
             uid
         )
-        .fetch_all(&self.pool)
+        .fetch_all(executor)
         .await
     }
-    async fn delete_all_by_uid(&self, uid: i64) -> sqlx::Result<u64> {
+    async fn delete_all_by_uid(executor: E, uid: i64) -> sqlx::Result<u64> {
         let rows = sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", uid)
-            .execute(&self.pool)
+            .execute(executor)
             .await?.rows_affected();
         Ok(rows)
     }

@@ -14,6 +14,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -61,11 +62,7 @@ async fn detail_private(
     state: State<AppState>,
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let song_dao = SongDao::new(state.sql_pool.clone());
-    let user_dao = UserDao::new(state.sql_pool.clone());
-
-    let playlist = playlist_dao.get_by_id(req.id).await?
+    let playlist = PlaylistDao::get_by_id(&state.sql_pool, req.id).await?
         .ok_or_else(|| common!("not_found", "Playlist not found"))?;
 
     // Check permission if it's private
@@ -75,11 +72,11 @@ async fn detail_private(
         }
     }
 
-    let songs = playlist_dao.list_songs(playlist.id).await?;
+    let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
     let mut result = Vec::<SongItem>::new();
     for x in songs {
-        if let Some(song) = song_dao.get_by_id(x.song_id).await? &&
-            let Some(uploader) = user_dao.get_by_id(song.uploader_uid).await?
+        if let Some(song) = SongDao::get_by_id(&state.sql_pool, x.song_id).await? &&
+            let Some(uploader) = UserDao::get_by_id(&state.sql_pool, song.uploader_uid).await?
         {
             let item = SongItem {
                 song_id: x.song_id,
@@ -135,8 +132,7 @@ async fn list(
     claims: Claims,
     state: State<AppState>,
 ) -> WebResult<ListResp> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlists = playlist_dao.list_by_user(claims.uid()).await?;
+    let playlists = PlaylistDao::list_by_user(&state.sql_pool, claims.uid()).await?;
 
     let mut result = Vec::<PlaylistItem>::new();
     for x in playlists {
@@ -147,7 +143,7 @@ async fn list(
             description: x.description,
             create_time: x.create_time,
             is_public: x.is_public,
-            songs_count: playlist_dao.count_songs(x.id).await?,
+            songs_count: PlaylistDao::count_songs(&state.sql_pool, x.id).await?,
         };
         result.push(item);
     }
@@ -185,10 +181,9 @@ async fn create(
     }
 
     let uid = claims.uid();
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
 
     // TODO[security](playlist): We don't have lock, so there must be some data racing issues
-    let count = playlist_dao.count_by_user(uid).await?;
+    let count = PlaylistDao::count_by_user(&state.sql_pool, uid).await?;
     if count > 256 {
         err!("too_many_playlists", "You have too many playlists")
     }
@@ -203,7 +198,7 @@ async fn create(
         create_time: Utc::now(),
         update_time: Utc::now(),
     };
-    let id = playlist_dao.insert(&entity).await?;
+    let id = PlaylistDao::insert(&state.sql_pool, &entity).await?;
 
     if req.is_public {
         // TODO: Insert to meilisearch
@@ -236,16 +231,16 @@ async fn update(
         err!("description_too_long", "Playlist description is too long")
     }
 
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlist = check_ownership(&claims, &playlist_dao, req.id).await?;
+    let playlist = check_ownership(&claims, &state.sql_pool, req.id).await?;
 
-    playlist_dao.update_by_id(
+    PlaylistDao::update_by_id(
+        &state.sql_pool,
         &Playlist {
             name: req.name.clone(),
             description: req.description.clone(),
             update_time: Utc::now(),
             ..playlist
-        }
+        },
     ).await?;
     ok!(())
 }
@@ -262,9 +257,8 @@ async fn delete(
     state: State<AppState>,
     req: Json<DeletePlaylistReq>,
 ) -> WebResult<()> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlist = check_ownership(&claims, &playlist_dao, req.id).await?;
-    playlist_dao.delete_by_id(playlist.id).await?;
+    let playlist = check_ownership(&claims, &state.sql_pool, req.id).await?;
+    PlaylistDao::delete_by_id(&state.sql_pool, playlist.id).await?;
     ok!(())
 }
 
@@ -280,26 +274,25 @@ async fn add_song(
     state: State<AppState>,
     req: Json<AddSongReq>,
 ) -> WebResult<()> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
-    let song_dao = SongDao::new(state.sql_pool.clone());
-    let song = song_dao.get_by_id(req.song_id).await?
+    let song = SongDao::get_by_id(&state.sql_pool, req.song_id).await?
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
-    let songs = playlist_dao.list_songs(playlist.id).await?;
+    let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
     let existed = songs.iter().any(|x| x.song_id == song.id);
     if existed {
         err!("song_existed", "Song {} already exists in the playlist {}", song.id, playlist.id);
     }
     let target_order = songs.len() as i32;
-    playlist_dao.add_song(
+    PlaylistDao::add_song(
+        &state.sql_pool,
         &PlaylistSong {
             playlist_id: playlist.id,
             song_id: song.id,
             order_index: target_order,
             add_time: Utc::now(),
-        }
+        },
     ).await?;
 
     ok!(())
@@ -317,10 +310,9 @@ async fn remove_song(
     state: State<AppState>,
     req: Json<RemoveSongReq>,
 ) -> WebResult<()> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
-    playlist_dao.remove_song(playlist.id, req.song_id).await?;
+    PlaylistDao::remove_song(&state.sql_pool, playlist.id, req.song_id).await?;
     ok!(())
 }
 
@@ -338,10 +330,9 @@ async fn change_order(
     state: State<AppState>,
     req: Json<ChangeOrderReq>,
 ) -> WebResult<()> {
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
-    let mut songs = playlist_dao.list_songs(playlist.id).await?;
+    let mut songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
     songs.sort_by(|a, b| a.order_index.cmp(&b.order_index));
 
     let src_index = songs.iter().position(|x| x.song_id == req.song_id)
@@ -363,16 +354,19 @@ async fn change_order(
     for (i, song) in songs.iter_mut().enumerate() {
         song.order_index = i as i32;
     }
-    playlist_dao.update_songs_orders(&songs).await?;
+    
+    let mut tx = state.sql_pool.begin().await?;
+    PlaylistDao::update_songs_orders(&mut tx, &songs).await?;
+    tx.commit().await?;
     ok!(())
 }
 
 async fn check_ownership(
     claims: &Claims,
-    playlist_dao: &PlaylistDao,
+    pool: &PgPool,
     playlist_id: i64,
 ) -> Result<Playlist, WebError<CommonError>> {
-    let playlist = playlist_dao.get_by_id(playlist_id).await?
+    let playlist = PlaylistDao::get_by_id(pool, playlist_id).await?
         .ok_or_else(|| common!("not_found", "Playlist not found"))?;
     if playlist.user_id != claims.uid() {
         err!("not_owner", "You are not the owner of this playlist")
@@ -382,21 +376,20 @@ async fn check_ownership(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetCoverReq {
-    pub playlist_id: i64
+    pub playlist_id: i64,
 }
 
 async fn set_cover(
     claims: Claims,
     state: State<AppState>,
-    mut multipart: Multipart
+    mut multipart: Multipart,
 ) -> WebResult<()> {
     let body_field = multipart.next_field().await?
         .with_context(|| "No data field found")?;
     let json = body_field.text().await?;
     let req: SetCoverReq = serde_json::from_str(&json).with_context(|| "Invalid JSON body")?;
-
-    let playlist_dao = PlaylistDao::new(state.sql_pool.clone());
-    let mut playlist = check_ownership(&claims, &playlist_dao, req.playlist_id).await?;
+    
+    let mut playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
     let data_field = multipart
         .next_field()
@@ -416,6 +409,6 @@ async fn set_cover(
     let result = state.file_host.upload(bytes, &filename).await?;
 
     playlist.cover_url = Some(result.public_url);
-    playlist_dao.update_by_id(&playlist).await?;
+    PlaylistDao::update_by_id(&state.sql_pool, &playlist).await?;
     ok!(())
 }

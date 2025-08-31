@@ -21,6 +21,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Cursor;
+use sqlx::Connection;
 use crate::util::IsBlank;
 
 pub fn router() -> Router<AppState> {
@@ -88,15 +89,11 @@ async fn detail(
         ok!(v)
     }
 
-    let song_dao = SongDao::new(state.sql_pool.clone());
-    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
-    let user_dao = UserDao::new(state.sql_pool.clone());
-
-    let song = song_dao.get_by_display_id(&params.id).await?
+    let song = SongDao::get_by_display_id(&state.sql_pool, &params.id).await?
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
-    let tag_ids = song_dao.list_tags_by_song_id(song.id).await?;
-    let tags = song_tag_dao.list_by_ids(&tag_ids).await?.into_iter().map(|x|
+    let tag_ids = SongDao::list_tags_by_song_id(&state.sql_pool, song.id).await?;
+    let tags = SongTagDao::list_by_ids(&state.sql_pool, &tag_ids).await?.into_iter().map(|x|
         TagItem {
             id: x.id,
             name: x.name,
@@ -104,14 +101,14 @@ async fn detail(
         }
     ).collect();
 
-    let uploader_name = user_dao.get_by_id(song.uploader_uid).await?
+    let uploader_name = UserDao::get_by_id(&state.sql_pool, song.uploader_uid).await?
         .map(|x| x.username).unwrap_or_else(|| "Invalid".to_string());
 
-    let origin_infos = song_dao.list_origin_info_by_song_id(song.id).await?;
+    let origin_infos = SongDao::list_origin_info_by_song_id(&state.sql_pool, song.id).await?;
     let mut id_display_map = HashMap::new();
 
     for x in &origin_infos {
-        let x = song_dao.get_by_id(x.song_id).await?
+        let x = SongDao::get_by_id(&state.sql_pool, x.song_id).await?
             .ok_or_else(|| common!("origin_song_not_found", "Origin song not found"))?; // No. Just skip
         id_display_map.insert(x.id, x.display_id);
     }
@@ -124,7 +121,7 @@ async fn detail(
         origin_type: x.origin_type,
     }).collect();
 
-    let production_crew = song_dao.list_production_crew_by_song_id(song.id).await?;
+    let production_crew = SongDao::list_production_crew_by_song_id(&state.sql_pool, song.id).await?;
 
     let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
 
@@ -209,13 +206,8 @@ async fn publish(
     mut state: State<AppState>,
     req: Json<PublishReq>,
 ) -> WebResult<PublishResp> {
-    let user_dao = UserDao::new(state.sql_pool.clone());
-    let song_dao = SongDao::new(state.sql_pool.clone());
-    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
-
     let uid = claims.uid();
-    let user = user_dao.get_by_id(uid).await?
-        .ok_or_else(|| common!("user_not_found", "User not found"))?;
+    let user = UserDao::get_by_id(&state.sql_pool, uid).await?.ok_or_else(|| common!("user_not_found", "User not found"))?;
 
     // Validate input
     // Validate creation_type
@@ -227,7 +219,7 @@ async fn publish(
     }
 
     // Validate tags
-    let tags = song_tag_dao.list_by_ids(&req.tag_ids).await?;
+    let tags = SongTagDao::list_by_ids(&state.sql_pool, &req.tag_ids).await?;
     if tags.len() != req.tag_ids.len() {
         err!("tag_not_found", "Some tags not found");
     }
@@ -242,7 +234,7 @@ async fn publish(
 
     let display_id = loop {
         let id = generate_song_display_id();
-        if song_dao.get_by_display_id(&id).await?.is_some() {
+        if SongDao::get_by_display_id(&state.sql_pool, &id).await?.is_some() {
             continue;
         }
         break id;
@@ -282,8 +274,7 @@ async fn publish(
             }
             // Parse internal song id
             let song = if let Some(ref display_id) = item.song_display_id {
-                let song = song_dao
-                    .get_by_display_id(&display_id)
+                let song = SongDao::get_by_display_id(&state.sql_pool, &display_id)
                     .await?
                     .ok_or_else(|| common!("song_not_found", "Song not found"))?;
                 Some(song)
@@ -310,9 +301,7 @@ async fn publish(
         }
 
         let user = if let Some(uid) = member.uid {
-            let song = user_dao
-                .get_by_id(uid)
-                .await?
+            let song = UserDao::get_by_id(&state.sql_pool, uid).await?
                 .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
             Some(song)
         } else {
@@ -327,12 +316,13 @@ async fn publish(
             person_name: member.name.clone(),
         })
     }
-    let song_id = song_dao.insert(&song).await?;
-    song_dao.update_song_origin_info(song_id, &song_origin_infos).await?;
-    song_dao.update_song_production_crew(song_id, &production_crew).await?;
+    let mut tx = state.sql_pool.begin().await?;
+    let song_id = SongDao::insert(&mut *tx, &song).await?;
+    SongDao::update_song_origin_info(&mut tx, song_id, &song_origin_infos).await?;
+    SongDao::update_song_production_crew(&mut tx, song_id, &production_crew).await?;
 
     let tag_ids = tags.iter().map(|x| x.id).collect();
-    song_dao.update_song_tags(song_id, tag_ids).await?;
+    SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
 
     // Write behind, data consistence is not guaranteed.
     search::add_song_document(
@@ -442,8 +432,7 @@ async fn upload_cover_image(
     mut state: State<AppState>,
     mut multipart: Multipart,
 ) -> WebResult<UploadImageResp> {
-    let user_dao = UserDao::new(state.sql_pool.clone());
-    let mut user = if let Some(x) = user_dao.get_by_id(claims.uid()).await? {
+    let mut user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
         x
     } else {
         err!("not_found", "User not found")
@@ -556,11 +545,10 @@ async fn search(
 
     let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await?;
 
-    let song_dao = SongDao::new(state.sql_pool.clone());
     let mut hits = Vec::new();
 
     for hit in result.hits {
-        if let Ok(Some(song)) = song_dao.get_by_id(hit.id).await {
+        if let Ok(Some(song)) = SongDao::get_by_id(&state.sql_pool, hit.id).await {
             let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
 
             hits.push(SearchSongItem {
@@ -688,9 +676,8 @@ async fn tag_search(
         ok!(TagSearchResp { result: vec![] })
     }
 
-    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
     // TODO[opt](tag): Replace with real full-text search
-    let result = song_tag_dao.search_by_prefix(&req.query).await?
+    let result = SongTagDao::search_by_prefix(&state.sql_pool, &req.query).await?
         .into_iter().map(|x| TagItem {
         id: x.id,
         name: x.name,
@@ -717,12 +704,13 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
         err!("invalid_name", "Invalid name")
     }
 
-    let song_tag_dao = SongTagDao::new(state.sql_pool.clone());
-    if song_tag_dao.get_by_name(req.name.as_str()).await?.is_some() {
+    // TODO[data-racing]: Add a mutex lock for these two operations
+    if SongTagDao::get_by_name(&state.sql_pool, req.name.as_str()).await?.is_some() {
         err!("name_exists", "Tag name already exists")
     }
 
-    let id = song_tag_dao.insert(
+    let id = SongTagDao::insert(
+        &state.sql_pool,
         &SongTag {
             id: 0,
             name: req.name.clone(),
@@ -732,6 +720,7 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
             update_time: Utc::now(),
         }
     ).await?;
+    
     ok!(TagCreateResp { id })
 }
 

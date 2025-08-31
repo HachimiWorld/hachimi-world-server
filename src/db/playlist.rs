@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use sqlx::{FromRow, PgExecutor, PgPool, PgTransaction};
 use crate::db::CrudDao;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -23,44 +23,41 @@ pub struct PlaylistSong {
     pub add_time: DateTime<Utc>,
 }
 
-pub struct PlaylistDao {
-    pool: PgPool,
+pub struct PlaylistDao;
+
+pub trait IPlaylistDao<'e, E>: CrudDao<'e, E>
+where
+    E: PgExecutor<'e>,
+{
+    async fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> sqlx::Result<()>;
+    async fn add_song(executor: E, value: &PlaylistSong) -> sqlx::Result<()>;
+    async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>>;
+    async fn count_songs(executor: E, playlist_id: i64) -> sqlx::Result<i64>;
+    async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
+    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
 }
 
-impl PlaylistDao {
-    pub fn new(pool: PgPool) -> Self {
-        PlaylistDao { pool }
-    }
-}
-
-pub trait IPlaylistDao: CrudDao {
-    async fn remove_song(&self, playlist_id: i64, song_id: i64) -> sqlx::Result<()>;
-    async fn add_song(&self, value: &PlaylistSong) -> sqlx::Result<()>;
-    async fn list_songs(&self, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>>;
-    async fn count_songs(&self, playlist_id: i64) -> sqlx::Result<i64>;
-    async fn list_by_user(&self, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
-    async fn count_by_user(&self, user_id: i64) -> sqlx::Result<i64>;
-    async fn update_songs_orders(&self, values: &[PlaylistSong]) -> sqlx::Result<()>;
-}
-
-impl CrudDao for PlaylistDao {
+impl<'e, E> CrudDao<'e, E> for PlaylistDao
+where
+    E: PgExecutor<'e>,
+{
     type Entity = Playlist;
 
-    async fn list(&self) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
-    async fn page(&self, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
-    async fn get_by_id(&self, id: i64) -> sqlx::Result<Option<Self::Entity>> {
+    async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
         sqlx::query_as!(Self::Entity, "SELECT * FROM playlists WHERE id = $1", id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await
     }
 
-    async fn update_by_id(&self, value: &Self::Entity) -> sqlx::Result<()> {
+    async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()> {
         sqlx::query!(
             "UPDATE playlists SET
                 name = $1,
@@ -79,11 +76,11 @@ impl CrudDao for PlaylistDao {
             value.create_time,
             value.update_time,
             value.id,
-        ).execute(&self.pool).await?;
+        ).execute(executor).await?;
         Ok(())
     }
 
-    async fn insert(&self, value: &Self::Entity) -> sqlx::Result<i64> {
+    async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO playlists (
                name,
@@ -101,75 +98,80 @@ impl CrudDao for PlaylistDao {
             value.is_public,
             value.create_time,
             value.update_time
-        ).fetch_one(&self.pool).await
+        ).fetch_one(executor).await
             .map(|x| x.id)
     }
 
-    async fn delete_by_id(&self, id: i64) -> sqlx::Result<()> {
-        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1", id)
-            .execute(&self.pool).await?;
-        sqlx::query!("DELETE FROM playlists WHERE id = $1", id)
-            .execute(&self.pool).await?;
-        Ok(())
+    async fn delete_by_id(executor: E, id: i64) -> sqlx::Result<()> {
+        todo!()
     }
 }
 
-impl IPlaylistDao for PlaylistDao {
-    async fn remove_song(&self, playlist_id: i64, song_id: i64) -> sqlx::Result<()> {
+impl <'e, E> IPlaylistDao<'e, E> for PlaylistDao
+where E: PgExecutor<'e>,{
+    async fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2", playlist_id, song_id)
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
 
-    async fn add_song(&self, value: &PlaylistSong) -> sqlx::Result<()> {
+    async fn add_song(executor: E, value: &PlaylistSong) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO playlist_songs (playlist_id, song_id, order_index, add_time) VALUES ($1, $2, $3, $4)",
             value.playlist_id,
             value.song_id,
             value.order_index,
             value.add_time,
-        ).execute(&self.pool)
+        ).execute(executor)
             .await?;
         Ok(())
     }
-    async fn list_songs(&self, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>> {
+    async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>> {
         sqlx::query_as!(PlaylistSong, "SELECT * FROM playlist_songs WHERE playlist_id = $1 ORDER BY order_index", playlist_id)
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await
     }
 
-    async fn count_songs(&self, playlist_id: i64) -> sqlx::Result<i64> {
+    async fn count_songs(executor: E, playlist_id: i64) -> sqlx::Result<i64> {
         sqlx::query!("SELECT COUNT(1) FROM playlist_songs WHERE playlist_id = $1", playlist_id)
-            .fetch_one(&self.pool)
+            .fetch_one(executor)
             .await
             .map(|x| x.count.unwrap_or(0))
     }
 
-    async fn list_by_user(&self, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
+    async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
         sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE user_id = $1", user_id)
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await
     }
 
-    async fn count_by_user(&self, user_id: i64) -> sqlx::Result<i64> {
+    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
         sqlx::query!("SELECT COUNT(1) FROM playlists WHERE user_id = $1", user_id)
-            .fetch_one(&self.pool)
+            .fetch_one(executor)
             .await
             .map(|x| x.count.unwrap_or(0))
     }
+}
 
-    async fn update_songs_orders(&self, values: &[PlaylistSong]) -> sqlx::Result<()> {
-        let mut tx = self.pool.begin().await?;
+impl <'e> PlaylistDao {
+    pub async fn update_songs_orders(tx: &mut PgTransaction<'e>, values: &[PlaylistSong]) -> sqlx::Result<()> {
         for value in values {
             sqlx::query!(
                 "UPDATE playlist_songs SET order_index = $1 WHERE playlist_id = $2 AND song_id = $3",
                 value.order_index,
                 value.playlist_id,
                 value.song_id,
-            ).execute(&mut *tx).await?;
+            ).execute(&mut **tx).await?;
         }
-        tx.commit().await?;
+        Ok(())
+    }
+
+    pub async fn delete_cascade_by_id(tx: &mut PgTransaction<'e>, id: i64) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1", id)
+            .execute(&mut **tx).await?;
+        sqlx::query!("DELETE FROM playlists WHERE id = $1", id)
+            .execute(&mut **tx).await?;
         Ok(())
     }
 }

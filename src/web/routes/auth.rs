@@ -17,6 +17,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
+use jsonwebtoken::TokenData;
 use tracing::error;
 
 pub fn router() -> Router<AppState> {
@@ -81,8 +82,7 @@ async fn email_register(
 
     if pass {
         // 1. Check user existence
-        let user_dao = UserDao::new(state.sql_pool.clone());
-        if user_dao.get_by_email(&req.email).await?.is_some() {
+        if UserDao::get_by_email(&state.sql_pool, &req.email).await?.is_some() {
             err!("email_existed", "Email already exists!")
         }
 
@@ -104,7 +104,7 @@ async fn email_register(
             create_time: Utc::now(),
             update_time: Utc::now(),
         };
-        let uid = user_dao.insert(&mut entity).await?;
+        let uid = UserDao::insert(&state.sql_pool, &mut entity).await?;
 
         // 4. Generate tokens
         let token =
@@ -152,14 +152,12 @@ async fn email_login(
     match &req.code {
         None => {
             // TODO[security](auth): Check if 2fa is required.
-            let user_dao = UserDao::new(state.sql_pool.clone());
-
             /*let should_2fa = false;
             if should_2fa {
                 err!("2fa_required", "2FA is required!")
             }*/
 
-            let user = if let Some(user) = user_dao.get_by_email(&req.email).await? {
+            let user = if let Some(user) = UserDao::get_by_email(&state.sql_pool, &req.email).await? {
                 user
             } else {
                 err!("password_not_match", "Password not match!")
@@ -201,10 +199,9 @@ async fn refresh_token(
     XRealIP(ip): XRealIP,
     req: Json<RefreshTokenReq>,
 ) -> WebResult<TokenPair> {
-    let token_dao = RefreshTokenDao::new(state.sql_pool.clone());
     let claims = jwt::decode_and_validate_refresh_token(&req.refresh_token)?;
 
-    let entry = token_dao.get_by_token_id(&claims.jti).await?;
+    let entry = RefreshTokenDao::get_by_token_id(&state.sql_pool, &claims.jti).await?;
 
     // Validate
     let entry = if let Some(v) = entry {
@@ -236,7 +233,7 @@ async fn refresh_token(
         ..entry
     };
 
-    token_dao.update_by_id(&entity).await?;
+    RefreshTokenDao::update_by_id(&state.sql_pool, &entity).await?;
 
     ok!(TokenPair {
         access_token,
@@ -315,8 +312,7 @@ async fn device_list(
     State(state): State<AppState>,
     claims: Claims,
 ) -> WebResult<DeviceListResp> {
-    let devices = RefreshTokenDao::new(state.sql_pool.clone())
-        .list_by_uid(claims.uid()).await?
+    let devices = RefreshTokenDao::list_by_uid(&state.sql_pool, claims.uid()).await?
         .into_iter()
         .map(|x| DeviceItem {
             id: x.id, // Should we use device id instead?
@@ -339,8 +335,7 @@ async fn device_logout(
     claims: Claims,
     req: Json<DeviceLogoutReq>,
 ) -> WebResult<()> {
-    let token_dao = RefreshTokenDao::new(state.sql_pool.clone());
-    let device = if let Some(x) = token_dao.get_by_id(req.device_id).await? {
+    let device = if let Some(x) = RefreshTokenDao::get_by_id(&state.sql_pool, req.device_id).await? {
         x
     } else {
         err!("invalid_device", "Invalid device id");
@@ -351,7 +346,7 @@ async fn device_logout(
     }
 
     // TODO[opt](auth): Utilize the `revoked` field?
-    token_dao.delete_by_id(device.id).await?;
+    RefreshTokenDao::delete_by_id(&state.sql_pool, device.id).await?;
     ok!(())
 }
 
@@ -372,8 +367,8 @@ async fn reset_password(
     req: Json<ResetPasswordReq>,
 ) -> WebResult<()> {
     if verification_code::verify_code(&mut state.redis_conn, req.email.as_str(), req.code.as_str()).await? {
-        let user_dao = UserDao::new(state.sql_pool.clone());
-        let mut user = if let Some(user) = user_dao.get_by_email(req.email.as_str()).await? {
+        let mut tx = state.sql_pool.begin().await?;
+        let mut user = if let Some(user) = UserDao::get_by_email(&mut *tx, req.email.as_str()).await? {
             user
         } else {
             err!("invalid_user", "Invalid user")
@@ -381,12 +376,12 @@ async fn reset_password(
         user.password_hash = bcrypt::hash(req.new_password.as_str(), bcrypt::DEFAULT_COST)?;
         user.update_time = Utc::now();
 
-        user_dao.update_by_id(&user).await?;
+        UserDao::update_by_id(&mut *tx, &user).await?;
 
         if req.logout_all_devices {
-            let token_dao = RefreshTokenDao::new(state.sql_pool.clone());
-            token_dao.delete_all_by_uid(user.id).await?;
+            RefreshTokenDao::delete_all_by_uid(&mut *tx, user.id).await?;
         }
+        tx.commit().await?;
         ok!(())
     } else {
         err!("invalid_user", "Invalid user")
@@ -420,9 +415,8 @@ async fn generate_token_pairs_and_save(
         is_revoked: false,
     };
 
-    RefreshTokenDao::new(sql_pool.clone())
-        .insert(&entity)
-        .await?;
+    RefreshTokenDao::insert(sql_pool, &entity).await?;
+    
     Ok(TokenPair {
         access_token,
         refresh_token,

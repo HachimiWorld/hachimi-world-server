@@ -48,8 +48,7 @@ async fn get_profile(
     req: Query<GetProfileReq>,
 ) -> WebResult<PublicUserProfile> {
     // Fetch user from db
-    let user_dao = UserDao::new(state.sql_pool.clone());
-    let user = if let Some(x) = user_dao.get_by_id(req.uid).await? {
+    let user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, req.uid).await? {
         x
     } else {
         err!("not_found", "User not found")
@@ -79,8 +78,6 @@ async fn update_profile(
     State(state): State<AppState>,
     req: Json<UpdateProfileReq>,
 ) -> WebResult<()> {
-    let user_dao = UserDao::new(state.sql_pool.clone());
-
     // Validate input
     if req.username.is_empty() {
         err!("invalid_username", "Username cannot be empty");
@@ -92,7 +89,7 @@ async fn update_profile(
         );
     }
     
-    if let Some(user) = user_dao.get_by_username(&req.username).await? {
+    if let Some(user) = UserDao::get_by_username(&state.sql_pool, &req.username).await? {
         if user.id != claims.uid() {
             err!("username_exists", "Username already exists");
         }
@@ -112,7 +109,7 @@ async fn update_profile(
     }
 
     // Update user profile
-    let mut user = if let Some(x) = user_dao.get_by_id(claims.uid()).await? {
+    let mut user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
         x
     } else {
         err!("not_found", "User not found")
@@ -121,7 +118,7 @@ async fn update_profile(
     user.gender = req.gender;
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
-    user_dao.update_by_id(&user).await?;
+    UserDao::update_by_id(&state.sql_pool, &user).await?;
 
     ok!(())
 }
@@ -133,8 +130,7 @@ async fn set_avatar(
     mut multipart: Multipart,
 ) -> WebResult<()> {
     // TODO[opt]: Limit access rate
-    let user_dao = UserDao::new(state.sql_pool.clone());
-    let mut user = if let Some(x) = user_dao.get_by_id(claims.uid()).await? {
+    let mut user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
         x
     } else {
         err!("not_found", "User not found")
@@ -173,7 +169,7 @@ async fn set_avatar(
 
     // Save url
     user.avatar_url = Some(result.public_url);
-    user_dao.update_by_id(&mut user).await?;
+    UserDao::update_by_id(&state.sql_pool, &mut user).await?;
 
     ok!(())
 }

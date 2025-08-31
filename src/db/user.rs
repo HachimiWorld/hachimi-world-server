@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool, Result};
+use sqlx::{FromRow, PgExecutor, PgPool, Result};
 use crate::db::CrudDao;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -18,43 +18,37 @@ pub struct User {
     pub update_time: DateTime<Utc>,
 }
 
-pub struct UserDao {
-    pool: PgPool,
+pub struct UserDao;
+
+pub trait IUserDao<'e, E>: CrudDao<'e, E>
+where E: PgExecutor<'e> {
+    async fn get_by_email(executor: E, email: &str) -> Result<Option<User>>;
+    async fn get_by_username(executor: E, username: &str) -> Result<Option<User>>;
 }
 
-pub trait IUserDao: CrudDao {
-    async fn get_by_email(&self, email: &str) -> Result<Option<User>>;
-    async fn get_by_username(&self, username: &str) -> Result<Option<User>>;
-}
-
-impl UserDao {
-    pub fn new(pool: PgPool) -> Self {
-        UserDao { pool }
-    }
-}
-
-impl CrudDao for UserDao {
+impl <'e, E> CrudDao<'e, E> for UserDao
+where E: PgExecutor<'e> {
     type Entity = User;
 
-    async fn list(&self) -> Result<Vec<User>> {
+    async fn list(executor: E) -> Result<Vec<User>> {
         sqlx::query_as!(User, "SELECT * FROM users")
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await
     }
 
-    async fn page(&self, page: i64, size: i64) -> Result<Vec<User>> {
+    async fn page(executor: E, page: i64, size: i64) -> Result<Vec<User>> {
         Ok(sqlx::query_as!(User, "SELECT * FROM users LIMIT $1 OFFSET $2", size, (page - 1) * size)
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await?)
     }
 
-    async fn get_by_id(&self, id: i64) -> Result<Option<User>> {
+    async fn get_by_id(executor: E, id: i64) -> Result<Option<User>> {
         Ok(sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await?)
     }
 
-    async fn insert(&self, value: &User) -> Result<i64> {
+    async fn insert(executor: E, value: &User) -> Result<i64> {
         let result = sqlx::query!(
             "INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
             value.username,
@@ -67,12 +61,12 @@ impl CrudDao for UserDao {
             value.last_login_time,
             value.create_time,
             value.update_time,
-        ).fetch_one(&self.pool).await?;
+        ).fetch_one(executor).await?;
 
         Ok(result.id)
     }
 
-    async fn update_by_id(&self, value: &User) -> Result<()> {
+    async fn update_by_id(executor: E, value: &User) -> Result<()> {
         sqlx::query!(
             "UPDATE users SET username = $1, email = $2, password_hash = $3, avatar_url = $4, bio = $5, gender = $6, is_banned = $7, last_login_time = $8, create_time = $9, update_time = $10 WHERE id = $11",
             value.username,
@@ -86,28 +80,29 @@ impl CrudDao for UserDao {
             value.create_time,
             value.update_time,
             value.id
-        ).execute(&self.pool).await?;
+        ).execute(executor).await?;
         Ok(())
     }
 
-    async fn delete_by_id(&self, id: i64) -> Result<()> {
+    async fn delete_by_id(executor: E, id: i64) -> Result<()> {
         sqlx::query!("DELETE FROM users WHERE id = $1", id)
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
 }
 
-impl IUserDao for UserDao {
-    async fn get_by_email(&self, email: &str) -> Result<Option<User>> {
+impl <'e, E> IUserDao<'e, E> for UserDao 
+where E: PgExecutor<'e> {
+    async fn get_by_email(executor: E, email: &str) -> Result<Option<User>> {
         Ok(sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", email)
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await?)
     }
 
-    async fn get_by_username(&self, username: &str) -> Result<Option<User>> {
+    async fn get_by_username(executor: E, username: &str) -> Result<Option<User>> {
         sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await
     }
 }

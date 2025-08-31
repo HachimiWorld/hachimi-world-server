@@ -1,7 +1,7 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool, QueryBuilder};
+use sqlx::{Executor, FromRow, PgExecutor, PgPool, PgTransaction, Postgres, QueryBuilder};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Song {
@@ -62,61 +62,48 @@ pub struct SongPlay {
     pub create_time: DateTime<Utc>,
 }
 
-pub struct SongDao {
-    pool: PgPool,
+pub struct SongDao;
+
+pub trait ISongDao<'e, E>: CrudDao<'e, E>
+where
+    E: PgExecutor<'e>,
+{
+    async fn get_by_display_id(executor: E, display_id: &str) -> sqlx::Result<Option<Song>>;
+    async fn list_tags_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<i64>>;
+    async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
+    async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
+    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
+    async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64>;
+    async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()>;
+    async fn is_liked(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
+    async fn delete_like(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<()>;
+    async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()>;
 }
 
-impl SongDao {
-    pub fn new(pool: PgPool) -> Self {
-        SongDao { pool }
-    }
-}
-
-pub trait ISongDao: CrudDao {
-    async fn get_by_display_id(&self, display_id: &str) -> sqlx::Result<Option<Song>>;
-    async fn update_song_production_crew(
-        &self,
-        song_id: i64,
-        values: &[SongProductionCrew],
-    ) -> sqlx::Result<()>;
-    async fn update_song_origin_info(
-        &self,
-        song_id: i64,
-        values: &[SongOriginInfo],
-    ) -> sqlx::Result<()>;
-    async fn update_song_tags(&self, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()>;
-    async fn list_tags_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<i64>>;
-    async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
-    async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
-    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn count_likes(&self, song_id: i64) -> sqlx::Result<i64>;
-    async fn count_plays(&self, song_id: i64) -> sqlx::Result<i64>;
-    async fn insert_likes(&self, values: &[SongLike]) -> sqlx::Result<()>;
-    async fn is_liked(&self, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
-    async fn delete_like(&self, song_id: i64, user_id: i64) -> sqlx::Result<()>;
-    async fn insert_plays(&self, values: &[SongPlay]) -> sqlx::Result<()>;
-}
-
-impl CrudDao for SongDao {
+impl<'e, E> CrudDao<'e, E> for SongDao
+where
+    E: PgExecutor<'e>,
+{
     type Entity = Song;
 
-    async fn list(&self) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         sqlx::query_as!(Song, "SELECT * FROM songs")
-            .fetch_all(&self.pool)
+            .fetch_all(executor)
             .await
     }
 
-    async fn page(&self, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
-    async fn get_by_id(&self, id: i64) -> sqlx::Result<Option<Self::Entity>> {
+    async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
         sqlx::query_as!(Song, "SELECT * FROM songs WHERE id = $1", id)
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await
     }
 
-    async fn update_by_id(&self, value: &Self::Entity) -> sqlx::Result<()> {
+    async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()> {
         sqlx::query!(
             "UPDATE songs SET
                 display_id = $1,
@@ -156,12 +143,12 @@ impl CrudDao for SongDao {
             value.update_time,
             value.id
         )
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
 
-    async fn insert(&self, value: &Self::Entity) -> sqlx::Result<i64> {
+    async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO songs (
                 display_id,
@@ -199,37 +186,105 @@ impl CrudDao for SongDao {
             value.release_time,
             value.create_time,
             value.update_time
-        ).fetch_one(&self.pool).await.map(|x| x.id)
+        ).fetch_one(executor).await.map(|x| x.id)
     }
 
-    async fn delete_by_id(&self, id: i64) -> sqlx::Result<()> {
+    async fn delete_by_id(executor: E, id: i64) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM songs WHERE id = $1", id)
-            .execute(&self.pool)
+            .execute(executor)
             .await?;
         Ok(())
     }
 }
 
-impl ISongDao for SongDao {
-    async fn get_by_display_id(&self, display_id: &str) -> sqlx::Result<Option<Song>> {
+impl<'e, E> ISongDao<'e, E> for SongDao
+where
+    E: PgExecutor<'e>,
+{
+    async fn get_by_display_id(executor: E, display_id: &str) -> sqlx::Result<Option<Song>> {
         sqlx::query_as!(
             Song,
             "SELECT * FROM songs WHERE display_id = $1",
             display_id
         )
-            .fetch_optional(&self.pool)
+            .fetch_optional(executor)
             .await
     }
 
-    async fn update_song_production_crew(
-        &self,
+    async fn list_tags_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<i64>> {
+        let rows = sqlx::query!("SELECT tag_id FROM song_tag_refs WHERE song_id = $1", song_id)
+            .fetch_all(executor).await?;
+        let result = rows.into_iter().map(|x| x.tag_id).collect();
+        Ok(result)
+    }
+
+    async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
+        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
+            .fetch_all(executor).await
+    }
+
+    async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
+        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
+            .fetch_all(executor).await
+    }
+
+    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(
+            Song, "SELECT * FROM songs WHERE id = ANY($1)",
+            ids
+        ).fetch_all(executor).await
+    }
+
+    async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1", song_id)
+            .fetch_one(executor)
+            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
+    }
+
+    async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(1) FROM song_plays WHERE song_id = $1", song_id)
+            .fetch_one(executor)
+            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
+    }
+
+    async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()> {
+        let mut builder = QueryBuilder::new("INSERT INTO song_likes (song_id, user_id, create_time)");
+        builder.push_values(values, |mut b, x| {
+            b.push_bind(x.song_id);
+            b.push_bind(x.user_id);
+            b.push_bind(x.create_time);
+        }).build().execute(executor).await?;
+        Ok(())
+    }
+
+    async fn is_liked(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<bool> {
+        let count = sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
+            .fetch_one(executor).await?
+            .count.map(|x| x == 1).unwrap_or(false);
+        Ok(count)
+    }
+    async fn delete_like(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
+            .execute(executor)
+            .await?;
+        Ok(())
+    }
+
+    async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()> {
+        todo!()
+    }
+}
+
+impl <'e> SongDao {
+    pub(crate) async fn update_song_production_crew(
+        executor: &mut PgTransaction<'e>,
         song_id: i64,
         values: &[SongProductionCrew],
     ) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM song_production_crew WHERE song_id = $1",
             song_id
-        ).execute(&self.pool).await?;
+        ).execute(&mut **executor).await?;
         for x in values {
             sqlx::query!(
                 "INSERT INTO song_production_crew (
@@ -242,18 +297,18 @@ impl ISongDao for SongDao {
                 x.role,
                 x.uid,
                 x.person_name
-            ).execute(&self.pool).await?;
+            ).execute(&mut **executor).await?;
         }
         Ok(())
     }
-
-    async fn update_song_origin_info(
-        &self,
+    
+    pub(crate) async fn update_song_origin_info(
+        executor: &mut PgTransaction<'e>,
         song_id: i64,
         values: &[SongOriginInfo],
     ) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM song_origin_info WHERE song_id = $1", song_id)
-            .execute(&self.pool)
+            .execute(&mut **executor)
             .await?;
         for x in values {
             sqlx::query!(
@@ -272,85 +327,22 @@ impl ISongDao for SongDao {
                 x.origin_artist,
                 x.origin_url
             )
-                .execute(&self.pool)
+                .execute(&mut **executor)
                 .await?;
         }
         Ok(())
     }
 
-    async fn update_song_tags(&self, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()> {
+    pub(crate) async fn update_song_tags(executor: &mut PgTransaction<'e>, song_id: i64, tags: Vec<i64>) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM song_tag_refs WHERE song_id = $1", song_id)
-            .execute(&self.pool)
+            .execute(&mut **executor)
             .await?;
         for tag_id in tags {
             sqlx::query!(
                 "INSERT INTO song_tag_refs (song_id, tag_id) VALUES ($1, $2)",
                 song_id, tag_id
-            ).execute(&self.pool).await?;
+            ).execute(&mut **executor).await?;
         }
         Ok(())
-    }
-
-    async fn list_tags_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<i64>> {
-        let rows = sqlx::query!("SELECT tag_id FROM song_tag_refs WHERE song_id = $1", song_id)
-            .fetch_all(&self.pool).await?;
-        let result = rows.into_iter().map(|x| x.tag_id).collect();
-        Ok(result)
-    }
-
-    async fn list_origin_info_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
-        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
-            .fetch_all(&self.pool).await
-    }
-
-    async fn list_production_crew_by_song_id(&self, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
-        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
-            .fetch_all(&self.pool).await
-    }
-
-    async fn list_by_ids(&self, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Song, "SELECT * FROM songs WHERE id = ANY($1)",
-            ids
-        ).fetch_all(&self.pool).await
-    }
-
-    async fn count_likes(&self, song_id: i64) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1", song_id)
-            .fetch_one(&self.pool)
-            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
-    }
-
-    async fn count_plays(&self, song_id: i64) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(1) FROM song_plays WHERE song_id = $1", song_id)
-            .fetch_one(&self.pool)
-            .await.map(|x| x.count).map(|x| x.unwrap_or(0))
-    }
-
-    async fn insert_likes(&self, values: &[SongLike]) -> sqlx::Result<()> {
-        let mut builder = QueryBuilder::new("INSERT INTO song_likes (song_id, user_id, create_time)");
-        builder.push_values(values, |mut b, x| {
-            b.push_bind(x.song_id);
-            b.push_bind(x.user_id);
-            b.push_bind(x.create_time);
-        }).build().execute(&self.pool).await?;
-        Ok(())
-    }
-
-    async fn is_liked(&self, song_id: i64, user_id: i64) -> sqlx::Result<bool> {
-        let count = sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
-            .fetch_one(&self.pool).await?
-            .count.map(|x| x == 1).unwrap_or(false);
-        Ok(count)
-    }
-    async fn delete_like(&self, song_id: i64, user_id: i64) -> sqlx::Result<()> {
-        sqlx::query!("DELETE FROM song_likes WHERE song_id = $1 AND user_id = $2", song_id, user_id)
-            .execute(&self.pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn insert_plays(&self, values: &[SongPlay]) -> sqlx::Result<()> {
-        todo!()
     }
 }
