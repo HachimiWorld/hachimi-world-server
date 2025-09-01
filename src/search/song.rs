@@ -126,7 +126,7 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
     };
 
     if !exists {
-        info!("Setting up index");
+        info!("Setting up songs index");
         setup_search_index_with_name(client, "songs").await?;
 
         // Startup indexing
@@ -140,7 +140,7 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
                         error!("Failed to index songs: {:?}", err);
                     }
                 };
-            }.instrument(info_span!("full_index"))
+            }.instrument(info_span!("full_index_songs"))
         });
     }
 
@@ -182,7 +182,7 @@ pub async fn fully_index_songs(
     client: &Client,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
-    counter!("full_index_count").increment(1);
+    counter!("full_index_song_count").increment(1);
 
     // 1. Take all songs from the database (it's best to get a snapshot)
     // 2. Catch-up new changes
@@ -299,7 +299,7 @@ pub async fn fully_index_songs(
         .await?;
     info!("swapping indexes successfully");
     new_index.delete().await?;
-    counter!("full_index_success_count").increment(1);
+    counter!("full_index_song_success_count").increment(1);
 
     Ok(())
 }

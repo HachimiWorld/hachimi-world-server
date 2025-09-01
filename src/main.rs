@@ -14,6 +14,7 @@ use app::web::state::AppState;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
 use sqlx::PgPool;
+use tokio::join;
 use app::web::ServerCfg;
 
 #[cfg(not(target_env = "msvc"))]
@@ -180,7 +181,11 @@ async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result
     let span = info_span!("search");
     async {
         info!("Setting up search index");
-        search::song::setup_search_index(&client, pool).await
+        let (a, b) = join!(
+            search::song::setup_search_index(&client, pool),
+            search::user::setup_search_index(&client, pool)
+        );
+        a.or(b)
     }.instrument(span).await?;
     Ok(client)
 }
