@@ -6,7 +6,7 @@ use crate::db::user::{IUserDao, UserDao};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{common, err, ok};
+use crate::{common, err, ok, search};
 use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
 use axum::extract::{Multipart, Query};
@@ -15,6 +15,7 @@ use image::imageops::FilterType;
 use image::{ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
+use crate::search::user::UserDocument;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -119,7 +120,13 @@ async fn update_profile(
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
     UserDao::update_by_id(&state.sql_pool, &user).await?;
-
+    search::user::update_user_document(&state.meilisearch, UserDocument {
+        id: user.id,
+        avatar_url: user.avatar_url,
+        name: user.username,
+        follower_count: 0,
+    }).await?;
+    
     ok!(())
 }
 
@@ -170,6 +177,13 @@ async fn set_avatar(
     // Save url
     user.avatar_url = Some(result.public_url);
     UserDao::update_by_id(&state.sql_pool, &mut user).await?;
+    
+    search::user::update_user_document(&state.meilisearch, UserDocument {
+        id: user.id,
+        avatar_url: user.avatar_url,
+        name: user.username,
+        follower_count: 0,
+    }).await?;
 
     ok!(())
 }

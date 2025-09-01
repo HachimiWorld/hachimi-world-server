@@ -7,7 +7,7 @@ use crate::web::jwt::Claims;
 use crate::web::result::{WebResult};
 use crate::web::state::AppState;
 use crate::web::{jwt};
-use crate::{err, ok, service};
+use crate::{err, ok, search, service};
 use axum::http::{StatusCode};
 use axum::response::{Html};
 use axum::routing::get;
@@ -17,8 +17,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
-use jsonwebtoken::TokenData;
 use tracing::error;
+use crate::search::user::{UserDocument};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -105,6 +105,13 @@ async fn email_register(
             update_time: Utc::now(),
         };
         let uid = UserDao::insert(&state.sql_pool, &mut entity).await?;
+        
+        search::user::update_user_document(&state.meilisearch, UserDocument {
+            id: uid,
+            avatar_url: None,
+            name: entity.username,
+            follower_count: 0,
+        }).await?;
 
         // 4. Generate tokens
         let token =
