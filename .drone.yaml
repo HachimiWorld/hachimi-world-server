@@ -67,6 +67,7 @@ trigger:
     - master
   event:
     - push
+    - promote
 
 volumes:
   - name: docker-sock
