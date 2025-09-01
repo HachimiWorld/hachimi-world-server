@@ -6,6 +6,7 @@ use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use crate::util::redlock::RedLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentSongRedisCache {
@@ -14,6 +15,7 @@ pub struct RecentSongRedisCache {
 }
 
 pub async fn get_recent_songs(
+    lock: RedLock,
     redis: &ConnectionManager,
     pool: &PgPool,
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
@@ -24,6 +26,8 @@ pub async fn get_recent_songs(
             Ok(cache.songs)
         }
         None => {
+            let guard = lock.lock("lock:songs:recent_v2").await?;
+            
             let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY release_time DESC LIMIT 50")
                 .fetch_all(pool).await?
                 .into_iter().map(|x| x.id).collect();
@@ -47,6 +51,7 @@ pub async fn get_recent_songs(
 
             // Cache for 5 minutes
             let _: () = redis.clone().set_ex("songs:recent_v2", value, 300).await?;
+            drop(guard);
             Ok(cache.songs)
         }
     }

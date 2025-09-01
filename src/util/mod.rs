@@ -1,4 +1,5 @@
 pub mod gracefully_shutdown;
+pub mod redlock;
 
 pub trait IsBlank {
     fn is_blank(&self) -> bool; 

@@ -531,7 +531,7 @@ pub struct RecentResp {
 async fn recent_v2(
     state: State<AppState>
 ) -> WebResult<RecentResp> {
-    let songs = recommend_v2::get_recent_songs(&state.redis_conn, &state.sql_pool).await?;
+    let songs = recommend_v2::get_recent_songs(state.red_lock.clone(), &state.redis_conn, &state.sql_pool).await?;
 
     ok!(RecentResp {songs})
 }

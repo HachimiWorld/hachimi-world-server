@@ -15,6 +15,7 @@ use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
 use sqlx::PgPool;
 use tokio::join;
+use app::util::redlock::RedLock;
 use app::web::ServerCfg;
 
 #[cfg(not(target_env = "msvc"))]
@@ -42,12 +43,14 @@ async fn main() -> anyhow::Result<()> {
 
     let state = tokio::select! {
         (redis_conn, file_host, meilisearch_client) = all => {
+            let redis_conn = redis_conn?;
             AppState {
-                redis_conn: redis_conn?,
+                redis_conn: redis_conn.clone(),
                 config: Arc::new(config),
                 sql_pool: sql_pool,
                 file_host: Arc::new(file_host?),
-                meilisearch: Arc::new(meilisearch_client?)
+                meilisearch: Arc::new(meilisearch_client?),
+                red_lock: RedLock::new(redis_conn)?
             }
         }
         _ = cancel_token.cancelled() => {
