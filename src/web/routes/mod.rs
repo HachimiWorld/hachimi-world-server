@@ -2,7 +2,6 @@ pub mod user;
 pub mod auth;
 pub mod song;
 pub mod playlist;
-mod upload;
 pub mod version;
 
 use axum::Router;
