@@ -180,7 +180,7 @@ async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result
     let span = info_span!("search");
     async {
         info!("Setting up search index");
-        search::setup_search_index(&client, pool).await
+        search::song::setup_search_index(&client, pool).await
     }.instrument(span).await?;
     Ok(client)
 }

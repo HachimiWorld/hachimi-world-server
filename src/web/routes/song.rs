@@ -249,7 +249,7 @@ async fn publish(
     SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
 
     // Write behind, data consistence is not guaranteed.
-    search::add_song_document(
+    search::song::add_song_document(
         state.meilisearch.as_ref(),
         song_id,
         &song,
@@ -460,14 +460,14 @@ async fn search(
         err!("invalid_query", "Query must not be blank")
     }
 
-    let search_query = search::SearchQuery {
+    let search_query = search::song::SearchQuery {
         q: req.q.clone(),
         limit: req.limit,
         offset: req.offset,
         filter: req.filter.clone(),
     };
 
-    let result = search::search_songs(state.meilisearch.as_ref(), &search_query).await?;
+    let result = search::song::search_songs(state.meilisearch.as_ref(), &search_query).await?;
 
     let mut hits = Vec::new();
 
