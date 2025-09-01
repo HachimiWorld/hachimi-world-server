@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT song_id,\n                s.title  internal_title,\n                s.artist internal_artist,\n                o.origin_type,\n                o.origin_song_id,\n                o.origin_title,\n                o.origin_artist,\n                o.origin_url\n            FROM song_origin_info o\n                 LEFT JOIN songs s ON s.id = o.origin_song_id\n            WHERE o.song_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "internal_title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "internal_artist",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "origin_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 4,
+        "name": "origin_song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "origin_title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "origin_artist",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 7,
+        "name": "origin_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "3115a9f727b6e6847911358a03d91d4da0714455bcb7ba46cf9c1742e441c722"
+}

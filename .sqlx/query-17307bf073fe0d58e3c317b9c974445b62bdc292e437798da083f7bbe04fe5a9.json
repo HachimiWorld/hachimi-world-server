@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id FROM songs ORDER BY release_time DESC LIMIT 50",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "17307bf073fe0d58e3c317b9c974445b62bdc292e437798da083f7bbe04fe5a9"
+}
