@@ -27,6 +27,9 @@ steps:
     volumes:
       - name: docker-sock
         path: /var/run/docker.sock
+    when:
+      event: promote
+      target: production
   - name: deploy-production
     image: appleboy/drone-ssh
     environment:
