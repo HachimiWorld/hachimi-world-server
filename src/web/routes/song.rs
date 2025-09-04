@@ -7,7 +7,7 @@ use crate::service::{recommend, recommend_v2, song, song_like};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{audio, common, err, ok, search};
+use crate::{audio, common, err, ok, search, service};
 use anyhow::{anyhow, Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -258,7 +258,8 @@ async fn publish(
         &song_origin_infos,
         &tags,
     ).await?;
-
+    
+    service::recommend_v2::notify_update(song_id, &state.redis_conn).await?;
 
     ok!(PublishResp {
         song_display_id: display_id

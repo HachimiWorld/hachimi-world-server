@@ -3,7 +3,7 @@ use crate::service::song::PublicSongDetail;
 use anyhow::bail;
 use chrono::{DateTime, Utc};
 use redis::aio::ConnectionManager;
-use redis::AsyncCommands;
+use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use crate::util::redlock::RedLock;
@@ -55,4 +55,11 @@ pub async fn get_recent_songs(
             Ok(cache.songs)
         }
     }
+}
+
+pub async fn notify_update(song_id: i64, redis: &ConnectionManager) -> anyhow::Result<()> {
+    // Just delete the cache
+    // TODO: Use event based notification
+    let _: () = redis.clone().del("songs:recent_v2").await?;
+    Ok(())
 }
