@@ -247,7 +247,8 @@ async fn publish(
 
     let tag_ids = tags.iter().map(|x| x.id).collect();
     SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
-
+    tx.commit().await?;
+    
     // Write behind, data consistence is not guaranteed.
     search::song::add_song_document(
         state.meilisearch.as_ref(),
