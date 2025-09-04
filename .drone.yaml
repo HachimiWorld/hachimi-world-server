@@ -60,6 +60,7 @@ steps:
       script:
         - docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD $REGISTRY_SERVER
         - cd $DEPLOY_DIR
+        - docker compose pull app
         - docker compose up -d
     when:
       event: promote
