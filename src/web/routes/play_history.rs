@@ -16,6 +16,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/cursor", get(cursor))
         .route("/touch", post(touch))
+        .route("/touch_anonymous", post(touch_anonymous))
         .route("/delete", post(delete))
 }
 
@@ -105,12 +106,14 @@ async fn touch_anonymous(
 }
 
 fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
-    // xxx.xxx.xxx.xxx
-    // pick xxx_xxx_xxx_xxx
+    // 23.224.125.1
+    // to 23224125001
     let parts = ip.split('.').take(4)
-        .map(|x| format!("{:03}", x))
-        .collect::<Vec<_>>()
-        .join("");
+        .map(|x| x.parse::<i64>())
+        .map(|x| x.map(|x| format!("{:03}", x)))
+        .collect::<Result<Vec<_>, _>>()
+        .map(|x| x.join(""))
+        .with_context(|| "Invalid IP address")?;
     parts.parse::<i64>()
         .context("Invalid IP address")
 }
@@ -127,4 +130,14 @@ async fn delete(
 ) -> WebResult<()> {
     SongDao::delete_play(&state.sql_pool, claims.uid(), req.history_id).await?;
     ok!(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::web::routes::play_history::convert_ip_to_anonymous_uid;
+
+    #[test]
+    fn test_convert_ip_to_anonymous_uid() {
+        assert_eq!(23224125001, convert_ip_to_anonymous_uid("23.224.125.1").unwrap());
+    }
 }
