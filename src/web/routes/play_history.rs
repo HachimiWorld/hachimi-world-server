@@ -10,6 +10,8 @@ use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
+use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 
 pub fn router() -> Router<AppState> {
@@ -72,9 +74,13 @@ pub struct TouchReq {
 
 async fn touch(
     claims: Claims,
-    state: State<AppState>,
+    mut state: State<AppState>,
     req: Json<TouchReq>
 ) -> WebResult<()> {
+    if cooldown(claims.uid(), req.song_id, &mut state.redis_conn).await? {
+        err!("cooldown", "Please wait 60 seconds before touching again");
+    }
+
     let data = SongPlay {
         id: 0,
         song_id: req.song_id,
@@ -88,12 +94,15 @@ async fn touch(
 
 async fn touch_anonymous(
     ip: XRealIP,
-    state: State<AppState>,
+    mut state: State<AppState>,
     req: Json<TouchReq>
 ) -> WebResult<()>{
     // Convert to anonymous uid
     let anonymous_uid = convert_ip_to_anonymous_uid(&ip.0)?;
 
+    if cooldown(anonymous_uid, req.song_id, &mut state.redis_conn).await? {
+        err!("cooldown", "Please wait 60 seconds before touching again");
+    }
     let data = SongPlay {
         id: 0,
         song_id: req.song_id,
@@ -130,6 +139,20 @@ async fn delete(
 ) -> WebResult<()> {
     SongDao::delete_play(&state.sql_pool, claims.uid(), req.history_id).await?;
     ok!(())
+}
+
+async fn cooldown(
+    user_id: i64,
+    song_id: i64,
+    redis: &mut ConnectionManager
+) -> anyhow::Result<bool> {
+    let cooldown_key = format!("play:touch_cooldown:{}:{}", user_id, song_id);
+    let cooldown_absent: bool = redis.set_options(
+        cooldown_key, 0,
+        SetOptions::default().conditional_set(ExistenceCheck::NX)
+            .with_expiration(SetExpiry::EX(60)) // CD for 60 secs
+    ).await?;
+    Ok(!cooldown_absent)
 }
 
 #[cfg(test)]
