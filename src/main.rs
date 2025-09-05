@@ -29,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let (cancel_token, cancel_handle) = gracefully_shutdown::gen_cancel_token();
-    let config = Config::parse("config.yaml")?;
+    let config = Config::parse(&std::env::var("CONFIG_PATH").unwrap_or_else(|_| String::from("config.yaml")))?;
 
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
     let sql_pool = get_database_pool(config.clone()).await?;
