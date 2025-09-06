@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n                RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "518b70f847fa83859c3a665ccb1b2c85f487fdebbf82c8b754648eac7a6ca0fe"
+}
