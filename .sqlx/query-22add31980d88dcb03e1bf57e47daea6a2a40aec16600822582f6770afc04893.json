@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE song_publishing_review SET\n                user_id = $1,\n                song_display_id = $2,\n                data = $3,\n                submit_time = $4,\n                update_time = $5,\n                review_time = $6,\n                review_comment = $7,\n                status = $8\n            WHERE id = $9",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Jsonb",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Text",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "22add31980d88dcb03e1bf57e47daea6a2a40aec16600822582f6770afc04893"
+}

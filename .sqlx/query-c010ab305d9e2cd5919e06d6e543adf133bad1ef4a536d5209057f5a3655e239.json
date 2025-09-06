@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO song_plays (song_id, user_id, anonymous_uid, create_time)\n            SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::bigint[], $4::timestamptz[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8Array",
+        "Int8Array",
+        "TimestamptzArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c010ab305d9e2cd5919e06d6e543adf133bad1ef4a536d5209057f5a3655e239"
+}

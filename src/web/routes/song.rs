@@ -7,7 +7,7 @@ use crate::service::{recommend, recommend_v2, song, song_like};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{audio, common, err, ok, search};
+use crate::{audio, common, err, ok, search, service};
 use anyhow::{anyhow, Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -20,8 +20,11 @@ use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use itertools::Itertools;
+use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
 use crate::util::IsBlank;
+use crate::web::routes::publish::InternalSongPublishReviewData;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -106,6 +109,18 @@ pub struct CreationTypeInfo {
     pub origin_type: i32,
 }
 
+impl CreationTypeInfo {
+    pub fn from_song_origin_info(x: SongOriginInfo, song_display_id: Option<String>) -> Self {
+        CreationTypeInfo {
+            song_display_id,
+            title: x.origin_title.clone(),
+            artist: x.origin_artist.clone(),
+            url: x.origin_url.clone(),
+            origin_type: x.origin_type,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductionItem {
     pub role: String,
@@ -121,6 +136,7 @@ pub struct ExternalLink {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishResp {
+    pub review_id: i64,
     pub song_display_id: String,
 }
 
@@ -165,7 +181,7 @@ async fn publish(
     };
     let now = Utc::now();
 
-    let song = Song {
+    let mut song = Song {
         id: 0,
         display_id: display_id.to_string(),
         title: req.title.to_string(),
@@ -224,42 +240,54 @@ async fn publish(
             err!("name_missed", "One of uid or name must be set")
         }
 
-        let user = if let Some(uid) = member.uid {
-            let song = UserDao::get_by_id(&state.sql_pool, uid).await?
+        if let Some(uid) = member.uid {
+            let user = UserDao::get_by_id(&state.sql_pool, uid).await?
                 .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
-            Some(song)
-        } else {
-            None
-        };
+            production_crew.push(SongProductionCrew {
+                id: 0,
+                song_id: 0,
+                role: member.role.clone(),
+                uid: Some(user.id),
+                person_name: Some(user.username),
+            });
+        }
 
-        production_crew.push(SongProductionCrew {
-            id: 0,
-            song_id: 0,
-            role: member.role.clone(),
-            uid: user.map(|x| x.id),
-            person_name: member.name.clone(),
-        })
+        if let Some(ref name) = member.name {
+            production_crew.push(SongProductionCrew {
+                id: 0,
+                song_id: 0,
+                role: member.role.clone(),
+                uid: None,
+                person_name: Some(name.clone()),
+            });
+        }
     }
-    let mut tx = state.sql_pool.begin().await?;
-    let song_id = SongDao::insert(&mut *tx, &song).await?;
-    SongDao::update_song_origin_info(&mut tx, song_id, &song_origin_infos).await?;
-    SongDao::update_song_production_crew(&mut tx, song_id, &production_crew).await?;
 
-    let tag_ids = tags.iter().map(|x| x.id).collect();
-    SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
+    song.artist = production_crew.iter().map(|x| x.person_name.clone().unwrap_or_else(|| "Unknown".to_string())).join(", ");
 
-    // Write behind, data consistence is not guaranteed.
-    search::song::add_song_document(
-        state.meilisearch.as_ref(),
-        song_id,
-        &song,
-        &production_crew,
-        &song_origin_infos,
-        &tags,
-    ).await?;
+    let data = InternalSongPublishReviewData {
+        song_info: song,
+        song_origin_infos: song_origin_infos,
+        song_production_crew: production_crew,
+        song_tags: tags,
+        song_external_links: vec![], // TODO: Support external links
+    };
+    let review = SongPublishingReview {
+        id: 0,
+        user_id: claims.uid(),
+        song_display_id: display_id.clone(),
+        data: serde_json::to_value(data)?,
+        submit_time: Utc::now(),
+        update_time: Utc::now(),
+        review_time: None,
+        review_comment: None,
+        status: 0,
+    };
 
+    let review_id = SongPublishingReviewDao::insert(&state.sql_pool, &review).await?;
 
     ok!(PublishResp {
+        review_id: review_id,
         song_display_id: display_id
     })
 }

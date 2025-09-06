@@ -1,4 +1,4 @@
-use crate::db::song::{ISongDao, Song, SongDao, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
@@ -162,12 +162,9 @@ async fn get_from_db(
         }
     }
 
-    let origin_infos_mapped = origin_infos.iter().map(|x| CreationTypeInfo {
-        song_display_id: x.origin_song_id.and_then(|x| id_display_map.get(&x).cloned()),
-        title: x.origin_title.clone(),
-        artist: x.origin_artist.clone(),
-        url: x.origin_url.clone(),
-        origin_type: x.origin_type,
+    let origin_infos_mapped = origin_infos.into_iter().map(|x| {
+        let id = x.origin_song_id;
+        CreationTypeInfo::from_song_origin_info(x, id.and_then(|x| id_display_map.get(&x).cloned()))
     }).collect();
 
     let production_crew = SongDao::list_production_crew_by_song_id(sql_pool, song.id).await?;

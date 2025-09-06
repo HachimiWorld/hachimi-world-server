@@ -1,9 +1,8 @@
 mod common;
 
 use common::with_test_environment;
-use hachimi_world_server::web::result::WebResponse;
 use hachimi_world_server::web::routes::user::{GetProfileReq, PublicUserProfile, UpdateProfileReq};
-use crate::common::{assert_is_ok, auth};
+use crate::common::{assert_is_ok, auth, CommonParse};
 
 #[tokio::test]
 async fn test_get_and_update_profile() {
@@ -22,17 +21,17 @@ async fn test_get_and_update_profile() {
         }).await;
         assert_is_ok(resp).await;
 
-        let resp: WebResponse<PublicUserProfile> = env.api.post("/user/profile", &GetProfileReq {
+        let resp: PublicUserProfile = env.api.get_query("/user/profile", &GetProfileReq {
             uid: user.uid,
-        }).await.json().await.unwrap();
+        }).await.parse_resp().await.unwrap();
 
-        assert_eq!(Some(test_bio), resp.data.bio);
-        assert_eq!(test_username, resp.data.username);
-        assert_eq!(Some(0), resp.data.gender);
+        assert_eq!(Some(test_bio), resp.bio);
+        assert_eq!(test_username, resp.username);
+        assert_eq!(Some(0), resp.gender);
     }).await
 }
 
 #[tokio::test]
 async fn test_set_avatar() {
-    // TODO
+    // TODO[integrated-test]: Test set user avatar and update profile
 }

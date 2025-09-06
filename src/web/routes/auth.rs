@@ -334,7 +334,7 @@ async fn device_list(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceLogoutReq {
-    device_id: i64,
+    pub device_id: i64,
 }
 
 async fn device_logout(

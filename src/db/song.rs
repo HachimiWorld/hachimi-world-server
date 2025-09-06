@@ -56,6 +56,7 @@ pub struct SongLike {
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongPlay {
+    pub id: i64,
     pub song_id: i64,
     pub user_id: Option<i64>,
     pub anonymous_uid: Option<i64>,
@@ -79,6 +80,8 @@ where
     async fn is_liked(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
     async fn delete_like(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<()>;
     async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()>;
+    async fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>>;
+    async fn delete_play(executor: E, id: i64, user_id: i64) -> sqlx::Result<()>;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongDao
@@ -271,7 +274,31 @@ where
     }
 
     async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()> {
-        todo!()
+        let ids = values.iter().map(|x| x.song_id).collect::<Vec<_>>();
+        let user_ids = values.iter().map(|x| x.user_id).collect::<Vec<_>>();
+        let anonymous_uids = values.iter().map(|x| x.anonymous_uid).collect::<Vec<_>>();
+        let create_times = values.iter().map(|x| x.create_time).collect::<Vec<_>>();
+        sqlx::query!(
+            "INSERT INTO song_plays (song_id, user_id, anonymous_uid, create_time)
+            SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::bigint[], $4::timestamptz[])",
+            &ids[..], &user_ids as &[Option<i64>], &anonymous_uids as &[Option<i64>], &create_times[..]
+        ).execute(executor).await?;
+        Ok(())
+    }
+    async fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>> {
+        sqlx::query_as!(
+            SongPlay,
+            "SELECT * FROM song_plays WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
+            user_id,
+            max_create_time,
+            size as i64
+        ).fetch_all(executor).await
+    }
+    
+    async fn delete_play(executor: E, id: i64, user_id: i64) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_plays WHERE id = $1 AND user_id = $2", id, user_id)
+            .execute(executor).await?;
+        Ok(())
     }
 }
 

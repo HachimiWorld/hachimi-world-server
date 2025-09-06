@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod song;
 
 use axum::http::HeaderMap;
 use hachimi_world_server::web::result::CommonError;
