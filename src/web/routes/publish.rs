@@ -5,10 +5,10 @@ use crate::db::CrudDao;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
-use crate::{common, err, ok};
+use crate::{common, err, ok, search, service};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,8 @@ use tracing::warn;
 use crate::db::song::{Song, SongDao, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::SongTag;
+use crate::util::IsBlank;
+use crate::web::routes::auth::EmailConfig;
 use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
 
 pub(crate) fn router() -> Router<AppState> {
@@ -44,6 +46,7 @@ pub struct PageResp {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongPublishReviewBrief {
     pub review_id: i64,
+    pub display_id: String,
     pub title: String,
     pub subtitle: String,
     pub artist: String,
@@ -60,6 +63,7 @@ impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
         serde_json::from_value::<InternalSongPublishReviewData>(value.data).map(|decode|
             SongPublishReviewBrief {
                 review_id: value.id,
+                display_id: decode.song_info.display_id,
                 title: decode.song_info.title,
                 subtitle: decode.song_info.subtitle,
                 artist: decode.song_info.artist,
@@ -100,6 +104,7 @@ async fn page(
                 warn!("Error during decoding song publish review data: {:?}", err);
                 SongPublishReviewBrief {
                     review_id: x.id,
+                    display_id: "Unknown".to_string(),
                     title: "Unknown".to_string(),
                     subtitle: "Unknown".to_string(),
                     artist: "Unknown".to_string(),
@@ -142,6 +147,7 @@ async fn page_contributor(
                 warn!("Error during decoding song publish review data: {:?}", err);
                 SongPublishReviewBrief {
                     review_id: x.id,
+                    display_id: "Unknown".to_string(),
                     title: "Unknown".to_string(),
                     subtitle: "Unknown".to_string(),
                     artist: "Unknown".to_string(),
@@ -212,7 +218,7 @@ async fn detail(
                 "Invalid".to_string()
             });
 
-        
+
         let mut id_display_map = HashMap::new();
 
         for x in &data.song_origin_infos {
@@ -231,7 +237,7 @@ async fn detail(
             let id = x.origin_song_id;
             CreationTypeInfo::from_song_origin_info(x, id.and_then(|x| id_display_map.get(&x).cloned()))
         }).collect();
-        
+
         let result = PublishSongPublishReviewData {
             review_id: review.id,
             submit_time: review.submit_time,
@@ -263,41 +269,121 @@ async fn detail(
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApproveReviewReq {
+    pub review_id: i64,
+    pub comment: Option<String>,
+}
+
 async fn review_approve(
     claims: Claims,
     state: State<AppState>,
+    req: Json<ApproveReviewReq>,
 ) -> WebResult<()> {
     ensure_contributor(state.clone().0, claims.uid()).await?;
 
-    /*let mut tx = state.sql_pool.begin().await?;
-    let song_id = SongDao::insert(&mut *tx, &song).await?;
-    SongDao::update_song_origin_info(&mut tx, song_id, &song_origin_infos).await?;
-    SongDao::update_song_production_crew(&mut tx, song_id, &production_crew).await?;
+    if let Some(ref x) = req.comment && x.chars().count() > 1000 {
+        err!("comment_too_long", "Comment is too long")
+    }
 
-    let tag_ids = tags.iter().map(|x| x.id).collect();
+    let mut review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    if review.status != 0 {
+        err!("invalid_status", "Invalid review status")
+    }
+    
+    let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+        .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+    let uploader = UserDao::get_by_id(&state.sql_pool, review.user_id).await?
+        .with_context(|| format!("User {} not found", review.user_id))?;
+
+    let mut tx = state.sql_pool.begin().await?;
+
+    // Formally insert data to the song table
+    let song_id = SongDao::insert(&mut *tx, &data.song_info).await?;
+    SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
+    SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
+    // TODO: SongDao::update_song_external_links()
+
+    let tag_ids = data.song_tags.iter().map(|x| x.id).collect();
     SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
+
+    // Update review data
+    review.review_comment = req.comment.clone();
+    review.review_time = Some(Utc::now());
+    review.status = 2;
+    SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
     tx.commit().await?;
 
     // Write behind, data consistence is not guaranteed.
     search::song::add_song_document(
         state.meilisearch.as_ref(),
         song_id,
-        &song,
-        &production_crew,
-        &song_origin_infos,
-        &tags,
+        &data.song_info,
+        &data.song_production_crew,
+        &data.song_origin_infos,
+        &data.song_tags,
     ).await?;
-    service::recommend_v2::notify_update(song_id, &state.redis_conn).await?;*/
+    service::recommend_v2::notify_update(song_id, &state.redis_conn).await?;
 
-    todo!();
+    let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+    service::mailer::send_review_approved_notification(
+        &email_cfg,
+        &uploader.email,
+        &data.song_info.display_id,
+        &data.song_info.title,
+        &uploader.username,
+        review.review_comment.as_deref()
+    ).await?;
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RejectReviewReq {
+    pub review_id: i64,
+    pub comment: String,
 }
 
 async fn review_reject(
     claims: Claims,
     state: State<AppState>,
+    req: Json<RejectReviewReq>,
 ) -> WebResult<()> {
     ensure_contributor(state.0.clone(), claims.uid()).await?;
-    todo!()
+
+    if req.comment.is_blank() {
+        err!("comment_required", "Comment is required")
+    }
+    if req.comment.chars().count() > 1000 {
+        err!("comment_too_long", "Comment is too long")
+    }
+
+    let mut review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+
+    if review.status != 0 {
+        err!("invalid_status", "Invalid review status")
+    }
+    let uploader = UserDao::get_by_id(&state.sql_pool, review.user_id).await?
+        .with_context(|| format!("User {} not found", review.user_id))?;
+    let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+        .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+
+    review.review_comment = Some(req.comment.clone());
+    review.review_time = Some(Utc::now());
+    review.status = 2;
+    SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
+
+    let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+    service::mailer::send_review_approved_notification(
+        &email_cfg,
+        &uploader.email,
+        &data.song_info.title,
+        &data.song_info.display_id,
+        &uploader.username,
+        review.review_comment.as_deref()
+    ).await?;
+    ok!(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

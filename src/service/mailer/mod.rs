@@ -41,6 +41,30 @@ pub async fn send_verification_code(
     Ok(())
 }
 
+pub async fn send_review_approved_notification(
+    cfg: &EmailConfig,
+    to: &str,
+    song_display_id: &str,
+    song_title: &str,
+    user_name: &str,
+    comment: Option<&str>
+) -> anyhow::Result<()> {
+    // TODO
+    Ok(())
+}
+
+pub async fn send_review_rejected_notification(
+    cfg: &EmailConfig,
+    to: &str,
+    song_display_id: &str,
+    song_title: &str,
+    user_name: &str,
+    comment: &str
+) -> anyhow::Result<()> {
+    // TODO
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use std::fs;
