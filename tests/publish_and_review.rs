@@ -133,6 +133,9 @@ async fn test_publish() {
             comment: "Reject for testing".to_string(),
         }).await;
         assert_is_ok(resp).await;
+        let resp = env.api.get_query("/song/detail", &DetailReq { id: second_review.display_id.clone() })
+            .await.parse_resp::<DetailResp>().await;
+        assert!(resp.is_err());
 
         // Test approve first review
         let resp = env.api.post("/publish/review/approve", &ApproveReviewReq {

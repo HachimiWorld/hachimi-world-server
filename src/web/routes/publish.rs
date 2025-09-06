@@ -311,7 +311,7 @@ async fn review_approve(
     // Update review data
     review.review_comment = req.comment.clone();
     review.review_time = Some(Utc::now());
-    review.status = 2;
+    review.status = 1;
     SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
     tx.commit().await?;
 
