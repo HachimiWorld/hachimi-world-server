@@ -24,7 +24,7 @@ use itertools::Itertools;
 use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
 use crate::util::IsBlank;
-use crate::web::routes::publish::SongPublishReviewData;
+use crate::web::routes::publish::InternalSongPublishReviewData;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -107,6 +107,18 @@ pub struct CreationTypeInfo {
     pub artist: Option<String>,
     pub url: Option<String>,
     pub origin_type: i32,
+}
+
+impl CreationTypeInfo {
+    pub fn from_song_origin_info(x: SongOriginInfo, song_display_id: Option<String>) -> Self {
+        CreationTypeInfo {
+            song_display_id,
+            title: x.origin_title.clone(),
+            artist: x.origin_artist.clone(),
+            url: x.origin_url.clone(),
+            origin_type: x.origin_type,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -239,7 +251,7 @@ async fn publish(
                 person_name: Some(user.username),
             });
         }
-        
+
         if let Some(ref name) = member.name {
             production_crew.push(SongProductionCrew {
                 id: 0,
@@ -250,10 +262,10 @@ async fn publish(
             });
         }
     }
-    
+
     song.artist = production_crew.iter().map(|x| x.person_name.clone().unwrap_or_else(|| "Unknown".to_string())).join(", ");
-    
-    let data = SongPublishReviewData {
+
+    let data = InternalSongPublishReviewData {
         song_info: song,
         song_origin_infos: song_origin_infos,
         song_production_crew: production_crew,

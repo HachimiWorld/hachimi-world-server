@@ -1,27 +1,28 @@
+use std::collections::HashMap;
+use anyhow::Context;
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
-use crate::{common, err, ok, service};
+use crate::{common, err, ok};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::Router;
 use chrono::{DateTime, Utc};
-use futures::future::ok;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
-use serde_json::Error;
 use tracing::warn;
 use crate::db::song::{Song, SongDao, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::SongTag;
-use crate::web::routes::song::{ExternalLink, TagItem};
+use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
         .route("/review/page", get(page))
         .route("/review/page_contributor", get(page_contributor))
+        .route("/review/detail", get(detail))
         .route("/review/approve", post(review_approve))
         .route("/review/reject", post(review_reject))
 }
@@ -56,7 +57,7 @@ pub struct SongPublishReviewBrief {
 impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
     type Error = serde_json::Error;
     fn try_from(value: SongPublishingReview) -> Result<Self, Self::Error> {
-        serde_json::from_value::<SongPublishReviewData>(value.data).map(|decode|
+        serde_json::from_value::<InternalSongPublishReviewData>(value.data).map(|decode|
             SongPublishReviewBrief {
                 review_id: value.id,
                 title: decode.song_info.title,
@@ -73,7 +74,7 @@ impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SongPublishReviewData {
+pub struct InternalSongPublishReviewData {
     pub song_info: Song,
     pub song_origin_infos: Vec<SongOriginInfo>,
     pub song_production_crew: Vec<SongProductionCrew>,
@@ -163,6 +164,105 @@ async fn page_contributor(
     ok!(resp)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetailReq {
+    pub review_id: i64,
+}
+
+pub type DetailResp = PublishSongPublishReviewData;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublishSongPublishReviewData {
+    pub review_id: i64,
+    pub submit_time: DateTime<Utc>,
+    pub review_time: Option<DateTime<Utc>>,
+    pub review_comment: Option<String>,
+    pub status: i32,
+    pub display_id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+    pub duration_seconds: i32,
+    pub lyrics: String,
+    pub uploader_uid: i64,
+    pub uploader_name: String,
+    pub audio_url: String,
+    pub cover_url: String,
+    pub tags: Vec<TagItem>,
+    pub production_crew: Vec<SongProductionCrew>,
+    pub creation_type: i32,
+    pub origin_infos: Vec<CreationTypeInfo>,
+}
+
+async fn detail(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<DetailReq>,
+) -> WebResult<DetailResp> {
+    ensure_contributor(state.clone().0, claims.uid()).await?;
+    let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?;
+    if let Some(review) = review {
+        let data = serde_json::from_value::<InternalSongPublishReviewData>(review.data)
+            .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+
+        let uploader_name = UserDao::get_by_id(&state.sql_pool, data.song_info.uploader_uid).await?
+            .map(|x| x.username)
+            .unwrap_or_else(|| {
+                warn!("User {} not found during compose review({}) detail data", data.song_info.uploader_uid, review.id);
+                "Invalid".to_string()
+            });
+
+        
+        let mut id_display_map = HashMap::new();
+
+        for x in &data.song_origin_infos {
+            match SongDao::get_by_id(&state.sql_pool, x.song_id).await? {
+                Some(y) => {
+                    id_display_map.insert(x.id, y.display_id);
+                }
+                None => {
+                    // TODO: Consider to use other way to indicate the song was deleted
+                    id_display_map.insert(x.id, "deleted".to_string());
+                }
+            }
+        }
+
+        let origin_infos_mapped = data.song_origin_infos.into_iter().map(|x| {
+            let id = x.origin_song_id;
+            CreationTypeInfo::from_song_origin_info(x, id.and_then(|x| id_display_map.get(&x).cloned()))
+        }).collect();
+        
+        let result = PublishSongPublishReviewData {
+            review_id: review.id,
+            submit_time: review.submit_time,
+            review_time: review.review_time,
+            review_comment: review.review_comment,
+            status: review.status,
+            display_id: data.song_info.display_id,
+            title: data.song_info.title,
+            subtitle: data.song_info.subtitle,
+            description: data.song_info.description,
+            duration_seconds: data.song_info.duration_seconds,
+            tags: data.song_tags.into_iter().map(|x| TagItem {
+                id: x.id,
+                name: x.name,
+                description: x.description,
+            }).collect(),
+            lyrics: data.song_info.lyrics,
+            audio_url: data.song_info.file_url,
+            cover_url: data.song_info.cover_art_url,
+            production_crew: data.song_production_crew,
+            creation_type: data.song_info.creation_type,
+            origin_infos: origin_infos_mapped,
+            uploader_uid: data.song_info.uploader_uid,
+            uploader_name: uploader_name,
+        };
+        ok!(result)
+    } else {
+        err!("not_found", "Review not found")
+    }
+}
+
 async fn review_approve(
     claims: Claims,
     state: State<AppState>,
@@ -239,5 +339,3 @@ async fn ensure_contributor(
         }
     }
 }
-
-fn map() {}
