@@ -5,6 +5,7 @@ pub mod user;
 pub mod song;
 pub mod song_tag;
 pub mod playlist;
+pub mod song_publishing_review;
 
 pub trait CrudDao<'e, E> 
 where E: PgExecutor<'e> {
