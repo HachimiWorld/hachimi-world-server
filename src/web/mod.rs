@@ -18,7 +18,9 @@ mod jwt;
 pub mod result;
 mod web_metrics;
 mod extractors;
- 
+mod governor;
+mod request_id;
+
 #[derive(Deserialize)]
 pub struct ServerCfg {
     pub listen: String,
@@ -78,7 +80,6 @@ async fn start_main_server(
         )
         // send headers from request to response headers
         .layer(PropagateRequestIdLayer::new(x_request_id));
-
     let app = Router::new()
         .nest("/api", routes::router())
         .route("/health", get(health))
@@ -88,7 +89,8 @@ async fn start_main_server(
             .allow_origin(allow_origin.parse::<HeaderValue>()?)
             .allow_methods([Method::GET, Method::POST])
         )
-        .layer(request_id_layer);
+        .layer(request_id_layer)
+        .layer(governor::governor_layer());
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
