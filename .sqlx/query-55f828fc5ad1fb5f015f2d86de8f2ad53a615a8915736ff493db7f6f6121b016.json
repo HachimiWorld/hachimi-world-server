@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM song_external_links WHERE song_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "55f828fc5ad1fb5f015f2d86de8f2ad53a615a8915736ff493db7f6f6121b016"
+}

@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO song_external_links (song_id, platform, url) SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[])",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "8cd14b2b3412a3050dd13509689478502d93e57a07b37b3e586d8b7ced5caaee"
+}
