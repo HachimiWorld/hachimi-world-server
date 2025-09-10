@@ -1,12 +1,12 @@
 mod common;
 
-use crate::common::CommonParse;
 use crate::common::auth::{with_new_random_test_user, with_new_test_user, with_test_contributor_user};
+use crate::common::CommonParse;
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
-use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ExternalLink, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::{ApproveReviewReq, PageReq, PageResp, RejectReviewReq};
+use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ExternalLink, ProductionItem, PublishReq, PublishResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
-use hachimi_world_server::web::routes::publish::{ApproveReviewReq, PageReq, PageResp, RejectReviewReq};
 
 #[tokio::test]
 async fn test_publish() {
@@ -175,7 +175,7 @@ async fn create_tags(api: &ApiClient) {
 #[tokio::test]
 async fn test_get_reviews() {
     with_test_environment(|mut env| async move {
-        let contributor_user = with_test_contributor_user(&mut env).await;
+        let _contributor_user = with_test_contributor_user(&mut env).await;
         let resp: PageResp = env.api.get_query("/publish/review/page_contributor", &PageReq {
             page_index: 0,
             page_size: 20,
