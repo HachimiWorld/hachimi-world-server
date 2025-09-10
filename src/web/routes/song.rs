@@ -1,11 +1,12 @@
+use std::collections::HashMap;
 use crate::audio::ParseError;
-use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::{recommend, recommend_v2, song, song_like};
 use crate::web::jwt::Claims;
-use crate::web::result::WebResult;
+use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service};
 use anyhow::{anyhow, Context};
@@ -20,7 +21,9 @@ use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
+use std::sync::LazyLock;
 use itertools::Itertools;
+use url::Url;
 use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
 use crate::util::IsBlank;
@@ -265,12 +268,25 @@ async fn publish(
 
     song.artist = production_crew.iter().map(|x| x.person_name.clone().unwrap_or_else(|| "Unknown".to_string())).join(", ");
 
+    let mut links = Vec::new();
+    for link in &req.external_links {
+        validate_platforms(&link.platform, &link.url)?;
+
+        let x = SongExternalLink {
+            id: 0,
+            song_id: 0,
+            platform: link.platform.clone(),
+            url: link.url.clone(),
+        };
+        links.push(x)
+    }
+
     let data = InternalSongPublishReviewData {
         song_info: song,
         song_origin_infos: song_origin_infos,
         song_production_crew: production_crew,
         song_tags: tags,
-        song_external_links: vec![], // TODO: Support external links
+        song_external_links: links
     };
     let review = SongPublishingReview {
         id: 0,
@@ -711,3 +727,48 @@ fn generate_song_display_id() -> String {
     format!("JM-{}-{}", letters, numbers)
 }
 
+static PLATFORM_HOST_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    map.insert("bilibili", vec!["www.bilibili.com"]);
+    map.insert("douyin", vec!["v.douyin.com"]);
+    map.insert("youtube", vec!["www.youtube.com", "youtu.be"]);
+    map.insert("niconico", vec!["www.nicovideo.jp"]);
+    map
+});
+
+fn validate_platforms(platform: &str, url: &str) -> Result<bool, WebError<CommonError>>{
+    let url = match Url::parse(&url) {
+        Ok(url) => url,
+        Err(_) => err!("invalid_external_link_url", "Invalid url in external link")
+    };
+    let host = url.host_str().ok_or_else(|| common!("invalid_url", "Invalid url in external link"))?;
+    // Validate for all supported platforms
+    let domains = PLATFORM_HOST_MAP.get(platform);
+    match domains {
+        Some(domains) => {
+            if !domains.iter().any(|&domain| host.ends_with(domain)) {
+                err!("invalid_external_link", "Invalid Bilibili url")
+            }
+            Ok(true)
+        }
+        None => {
+            Ok(false)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::web::routes::song::validate_platforms;
+
+    #[test]
+    fn test_validate_platforms() {
+        assert!(validate_platforms("bilibili", "https://www.bilibili.com/video/BV114514").unwrap());
+        assert!(validate_platforms("niconico", "https://www.nicovideo.jp/watch/sm114514").unwrap());
+        assert!(validate_platforms("douyin", "https://v.douyin.com/114514-1145/").unwrap());
+        assert!(validate_platforms("youtube", "https://youtu.be/114514").unwrap());
+        assert!(validate_platforms("youtube", "https://www.youtube.com/watch?v=114514").unwrap());
+        assert!(validate_platforms("bilibili", "https://www.youtube.com/watch?v=114514").is_err());
+        assert_eq!(validate_platforms("instgram", "https://www.youtube.com/watch?v=114514").unwrap(), false);
+    }
+}

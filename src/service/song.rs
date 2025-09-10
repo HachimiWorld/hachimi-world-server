@@ -1,9 +1,9 @@
-use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::song_like;
-use crate::web::routes::song::{CreationTypeInfo, TagItem};
+use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,7 @@ pub struct PublicSongDetail {
     pub uploader_name: String,
     pub play_count: i64,
     pub like_count: i64,
+    pub external_links: Vec<ExternalLink>
 }
 
 pub async fn get_public_detail_with_cache_by_display_id(
@@ -171,6 +172,11 @@ async fn get_from_db(
 
     let like_count = song_like::get_song_likes(&redis, sql_pool, song.id).await?;
 
+    let external_links = SongDao::list_external_link_by_song_id(sql_pool, song.id).await?
+        .into_iter().map(|x| ExternalLink {
+        platform: x.platform,
+        url: x.url,
+    }).collect();
     let data = PublicSongDetail {
         id: song.id,
         display_id: song.display_id.to_string(),
@@ -189,6 +195,7 @@ async fn get_from_db(
         uploader_name: uploader_name,
         play_count: song.play_count,
         like_count: like_count,
+        external_links: external_links,
     };
 
     Ok(Some(data))

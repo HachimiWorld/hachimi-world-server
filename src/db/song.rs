@@ -63,6 +63,14 @@ pub struct SongPlay {
     pub create_time: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct SongExternalLink {
+    pub id: i64,
+    pub song_id: i64,
+    pub platform: String,
+    pub url: String,
+}
+
 pub struct SongDao;
 
 pub trait ISongDao<'e, E>: CrudDao<'e, E>
@@ -73,6 +81,7 @@ where
     async fn list_tags_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<i64>>;
     async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
+    async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>>;
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
     async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
     async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64>;
@@ -231,6 +240,11 @@ where
             .fetch_all(executor).await
     }
 
+    async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>> {
+        sqlx::query_as!(SongExternalLink, "SELECT * FROM song_external_links WHERE song_id = $1", song_id)
+            .fetch_all(executor).await
+    }
+
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
         sqlx::query_as!(
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
@@ -294,7 +308,7 @@ where
             size as i64
         ).fetch_all(executor).await
     }
-    
+
     async fn delete_play(executor: E, id: i64, user_id: i64) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM song_plays WHERE id = $1 AND user_id = $2", id, user_id)
             .execute(executor).await?;
@@ -302,7 +316,7 @@ where
     }
 }
 
-impl <'e> SongDao {
+impl<'e> SongDao {
     pub(crate) async fn update_song_production_crew(
         executor: &mut PgTransaction<'e>,
         song_id: i64,
@@ -328,7 +342,7 @@ impl <'e> SongDao {
         }
         Ok(())
     }
-    
+
     pub(crate) async fn update_song_origin_info(
         executor: &mut PgTransaction<'e>,
         song_id: i64,
@@ -370,6 +384,16 @@ impl <'e> SongDao {
                 song_id, tag_id
             ).execute(&mut **executor).await?;
         }
+        Ok(())
+    }
+
+    pub async fn update_song_external_links(executor: &mut PgTransaction<'e>, song_id: i64, values: &[SongExternalLink]) -> sqlx::Result<()> {
+        sqlx::query!("DELETE FROM song_external_links WHERE song_id = $1", song_id).execute(&mut **executor).await?;
+        sqlx::query!("INSERT INTO song_external_links (song_id, platform, url) SELECT * FROM UNNEST($1::bigint[], $2::text[], $3::text[])",
+            &values.iter().map(|_| song_id).collect::<Vec<_>>(),
+            &values.iter().map(|x| x.platform.clone()).collect::<Vec<_>>(),
+            &values.iter().map(|x| x.url.clone()).collect::<Vec<_>>()
+        ).execute(&mut **executor).await?;
         Ok(())
     }
 }

@@ -13,12 +13,12 @@ use chrono::{DateTime, Utc};
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
-use crate::db::song::{Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::SongTag;
 use crate::util::IsBlank;
 use crate::web::routes::auth::EmailConfig;
-use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
+use crate::web::routes::song::{CreationTypeInfo, TagItem};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -83,7 +83,7 @@ pub struct InternalSongPublishReviewData {
     pub song_origin_infos: Vec<SongOriginInfo>,
     pub song_production_crew: Vec<SongProductionCrew>,
     pub song_tags: Vec<SongTag>,
-    pub song_external_links: Vec<ExternalLink>,
+    pub song_external_links: Vec<SongExternalLink>,
 }
 
 async fn page(
@@ -303,7 +303,7 @@ async fn review_approve(
     let song_id = SongDao::insert(&mut *tx, &data.song_info).await?;
     SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
     SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
-    // TODO: SongDao::update_song_external_links()
+    SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
 
     let tag_ids = data.song_tags.iter().map(|x| x.id).collect();
     SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
