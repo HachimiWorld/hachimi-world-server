@@ -44,6 +44,8 @@ meilisearch-sdk = "0.29.1"
 tower-http = { version = "0.6.6", features = ["cors", "request-id", "trace"] }
 tokio-stream = "0.1.17"
 itertools = "0.14.0"
+tower_governor = "0.8.0"
+governor = "0.10.1"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
