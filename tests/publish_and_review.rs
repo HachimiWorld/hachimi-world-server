@@ -3,7 +3,7 @@ mod common;
 use crate::common::CommonParse;
 use crate::common::auth::{with_new_random_test_user, with_new_test_user, with_test_contributor_user};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
-use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::song::{CreationInfo, CreationTypeInfo, DetailReq, DetailResp, ExternalLink, ProductionItem, PublishReq, PublishResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp, UploadAudioFileResp, UploadImageResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
 use hachimi_world_server::web::routes::publish::{ApproveReviewReq, PageReq, PageResp, RejectReviewReq};
@@ -99,7 +99,12 @@ async fn test_publish() {
                                 name: None,
                             },
                         ],
-                        external_links: vec![],
+                        external_links: vec![
+                            ExternalLink {
+                                platform: "bilibili".to_string(),
+                                url: "https://www.bilibili.com/video/av114514/".to_string(),
+                            }
+                        ],
                     },
                 )
                 .await
