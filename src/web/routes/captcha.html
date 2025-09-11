@@ -2,15 +2,16 @@
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Captcha</title>
 </head>
 <body>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
 
-<div style="text-align: center; margin-top: 100px;">
-    正在进行人机验证，请稍后
-    <div id="my-widget"></div>
-    <div id="status"></div>
+<div style="text-align: center; margin-top: 20vh;">
+    <div>正在进行人机验证，请稍后</div>
+    <div id="my-widget" style="margin-top: 12px"></div>
+    <div id="status" style="margin-top: 12px"></div>
 </div>
 
 <script>
