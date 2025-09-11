@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use crate::web::state::AppState;
 use axum::http::{HeaderValue, Method, StatusCode};
 use axum::routing::get;
-use axum::Router;
+use axum::{Router, ServiceExt};
 use serde::Deserialize;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
@@ -66,7 +67,7 @@ async fn start_main_server(
         .layer(request_id::request_id_layer())
         .layer(governor::governor_layer());
 
-    axum::serve(listener, app)
+    axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {
             cancel_token.cancelled().await;
             info!("Shutting down web server...");
