@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE version SET \n                version_name = $1,\n                version_number = $2,\n                changelog = $3,\n                variant = $4,\n                url = $5,\n                release_time = $6,\n                update_time = $7\n            WHERE id = $8",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Int4",
+        "Text",
+        "Varchar",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f86a0f9db6d9b3c35ad7d473f6e3e60f2de19fe1a98a763afdcb5a0f70563aaf"
+}
