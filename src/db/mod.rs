@@ -1,4 +1,4 @@
-use sqlx::{PgExecutor, PgTransaction};
+use sqlx::PgExecutor;
 
 pub mod refresh_token;
 pub mod user;
@@ -6,6 +6,7 @@ pub mod song;
 pub mod song_tag;
 pub mod playlist;
 pub mod song_publishing_review;
+pub mod version;
 
 pub trait CrudDao<'e, E> 
 where E: PgExecutor<'e> {
