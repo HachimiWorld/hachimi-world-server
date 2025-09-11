@@ -121,13 +121,35 @@ impl FromRequestParts<AppState> for Claims {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct AdminClaims {
-    pub sub: String,
-    pub iss: String,
-    pub exp: usize,
-    pub jti: String,
+pub struct PublishVersionClaims {
+
 }
 
+static PUBLISH_VERSION_ACCESS_TOKEN: OnceLock<String> = OnceLock::new();
+
+pub fn initialize_version_token(token: String) {
+    match PUBLISH_VERSION_ACCESS_TOKEN.set(token) {
+        Ok(_) => {}
+        Err(_) => {
+            panic!("Version token already initialized");
+        }
+    };
+}
+
+impl FromRequestParts<AppState> for PublishVersionClaims {
+    type Rejection = AuthError;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &AppState) -> Result<Self, Self::Rejection> {
+        let TypedHeader(Authorization(bearer)) = (*parts).extract::<TypedHeader<Authorization<Bearer>>>()
+            .await
+            .map_err(|_| AuthError::MissingCredentials)?;
+        if bearer.token() != PUBLISH_VERSION_ACCESS_TOKEN.get().unwrap() {
+            return Err(AuthError::InvalidToken);
+        }
+
+        Ok(PublishVersionClaims {})
+    }
+}
 #[derive(Debug)]
 pub enum AuthError {
     WrongCredentials,

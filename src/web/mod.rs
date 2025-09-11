@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
 use tower_http::cors::CorsLayer;
-use tracing::{info};
+use tracing::info;
 
 pub mod routes;
 pub mod state;
@@ -24,6 +24,7 @@ pub struct ServerCfg {
     pub metrics_listen: String,
     pub jwt_secret: String,
     pub allow_origin: String,
+    pub publish_version_token: String
 }
 
 pub async fn run_web_app(
@@ -32,6 +33,7 @@ pub async fn run_web_app(
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     jwt::initialize_jwt_key(jwt::Keys::new(cfg.jwt_secret.as_bytes()));
+    jwt::initialize_version_token(cfg.publish_version_token);
     
     let (_main_server, _metrics_server) = tokio::join!(
         start_main_server(app_state, cfg.listen, cfg.allow_origin, cancel_token.clone()),
