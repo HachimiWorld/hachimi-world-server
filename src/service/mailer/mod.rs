@@ -20,7 +20,7 @@ pub async fn send_verification_code(
             cfg.no_reply_email.parse()?,
         ))
         .to(Mailbox::new(None, to.parse()?))
-        .subject("你的邮箱验证吗 - 基米天堂")
+        .subject("请查收你的邮箱验证码")
         .multipart(MultiPart::alternative()
             .singlepart(SinglePart::plain(plain_content))
             .singlepart(SinglePart::builder()
