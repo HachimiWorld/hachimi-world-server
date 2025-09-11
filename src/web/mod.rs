@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 use crate::web::state::AppState;
-use axum::http::{HeaderValue, Method, StatusCode};
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
 use axum::routing::get;
 use axum::{Router, ServiceExt};
 use serde::Deserialize;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
-use tower_http::cors::CorsLayer;
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 pub mod routes;
@@ -63,6 +63,7 @@ async fn start_main_server(
         .layer(CorsLayer::new()
             .allow_origin(allow_origin.parse::<HeaderValue>()?)
             .allow_methods([Method::GET, Method::POST])
+            .allow_headers(Any)
         )
         .layer(request_id::request_id_layer())
         .layer(governor::governor_layer());
