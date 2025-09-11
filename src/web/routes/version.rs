@@ -33,13 +33,11 @@ async fn server() -> WebResult<ServerVersion> {
 
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LatestVersionReq {
     pub variant: String
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct LatestVersionResp {
     pub version_name: String,
     pub version_number: i32,
