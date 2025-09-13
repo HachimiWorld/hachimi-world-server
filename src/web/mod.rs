@@ -18,13 +18,14 @@ mod web_metrics;
 mod extractors;
 mod governor;
 mod request_id;
+mod cors;
 
 #[derive(Deserialize)]
 pub struct ServerCfg {
     pub listen: String,
     pub metrics_listen: String,
     pub jwt_secret: String,
-    pub allow_origin: String,
+    pub allow_origins: Vec<String>,
     pub publish_version_token: String
 }
 
@@ -35,9 +36,10 @@ pub async fn run_web_app(
 ) -> anyhow::Result<()> {
     jwt::initialize_jwt_key(jwt::Keys::new(cfg.jwt_secret.as_bytes()));
     jwt::initialize_version_token(cfg.publish_version_token);
-    
+
+    let allow_origins = cfg.allow_origins.iter().map(|x| x.as_str()).collect::<Vec<&str>>();
     let (_main_server, _metrics_server) = tokio::join!(
-        start_main_server(app_state, cfg.listen, cfg.allow_origin, cancel_token.clone()),
+        start_main_server(app_state, cfg.listen, &allow_origins, cancel_token.clone()),
         web_metrics::start_metrics_server(cfg.metrics_listen, cancel_token)
     );
 
@@ -49,7 +51,7 @@ pub async fn run_web_app(
 async fn start_main_server(
     app_state: AppState,
     addr: impl ToSocketAddrs,
-    allow_origin: String,
+    allow_origins: &[&str],
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -60,11 +62,7 @@ async fn start_main_server(
         .route("/health", get(health))
         .with_state(app_state)
         .route_layer(axum::middleware::from_fn(web_metrics::track_metrics))
-        .layer(CorsLayer::new()
-            .allow_origin(allow_origin.parse::<HeaderValue>()?)
-            .allow_methods([Method::GET, Method::POST])
-            .allow_headers(Any)
-        )
+        .layer(cors::cors_layer(allow_origins))
         .layer(request_id::request_id_layer())
         .layer(governor::governor_layer());
 
