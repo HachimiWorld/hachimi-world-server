@@ -10,7 +10,7 @@ use axum_extra::TypedHeader;
 use jsonwebtoken::{encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
 use uuid::Uuid;
 
 static JWT_KEYS: OnceLock<Keys> = OnceLock::new();
@@ -57,6 +57,14 @@ pub struct RefreshTokenClaims {
     pub jti: String,
 }
 
+pub fn decode_and_validate_access_token(token: &str) -> anyhow::Result<Claims> {
+    let r = jsonwebtoken::decode::<Claims>(
+        token,
+        &JWT_KEYS.get().unwrap().decoding,
+        &Validation::default(),
+    )?;
+    Ok(r.claims)
+}
 
 pub fn decode_and_validate_refresh_token(token: &str) -> anyhow::Result<RefreshTokenClaims> {
     let r = jsonwebtoken::decode::<RefreshTokenClaims>(
@@ -109,14 +117,9 @@ impl FromRequestParts<AppState> for Claims {
             .await
             .map_err(|_| AuthError::MissingCredentials)?;
         // Decode the user data
-        let token_data = jsonwebtoken::decode::<Claims>(
-            bearer.token(),
-            &JWT_KEYS.get().unwrap().decoding,
-            &Validation::default(),
-        )
-        .map_err(|_| AuthError::InvalidToken)?;
-
-        Ok(token_data.claims)
+        let token_data = decode_and_validate_access_token(&bearer.token())
+            .map_err(|_| AuthError::InvalidToken)?;
+        Ok(token_data)
     }
 }
 
@@ -175,4 +178,30 @@ impl IntoResponse for AuthError {
 }
 
 #[cfg(test)]
-mod test {}
+mod test {
+    use crate::web::jwt;
+    use crate::web::jwt::{initialize_jwt_key, Keys};
+    use chrono::{DateTime, Utc};
+    use jsonwebtoken::errors::ErrorKind::ExpiredSignature;
+
+    #[test]
+    fn test_generate_and_validate() {
+
+        initialize_jwt_key(Keys::new(b"test"));
+        let expires_in = Utc::now() + chrono::Duration::days(1);
+        let access_token = jwt::generate_access_token(&"test", expires_in.timestamp());
+        let token = jwt::decode_and_validate_access_token(&access_token).unwrap();
+        assert_eq!(token.sub, "test");
+    }
+
+    #[test]
+    fn test_validate_expired_token() {
+        initialize_jwt_key(Keys::new(b"test"));
+        let expires_in = DateTime::parse_from_rfc3339("2023-01-01T00:00:00+00:00").unwrap();
+        let access_token = jwt::generate_access_token(&"test", expires_in.timestamp());
+        let token = jwt::decode_and_validate_access_token(&access_token);
+        let token_err = token.unwrap_err();
+        let err = token_err.downcast::<jsonwebtoken::errors::Error>().unwrap();
+        assert_eq!(err.kind(), &ExpiredSignature);
+    }
+}
