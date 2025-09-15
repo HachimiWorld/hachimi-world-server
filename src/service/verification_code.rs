@@ -50,7 +50,7 @@ pub async fn set_code(conn: &mut ConnectionManager, email: &str, code: &str) -> 
 }
 
 pub fn generate_verify_code() -> String {
-    format!("{:08}", rand::rng().random_range(0..1000000))
+    format!("{:06}", rand::rng().random_range(0..1000000))
 }
 
 pub fn get_verify_code_key(email: &str) -> String {
