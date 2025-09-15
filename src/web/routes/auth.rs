@@ -19,6 +19,7 @@ use sqlx::PgPool;
 use axum::extract::Query;
 use tracing::error;
 use crate::search::user::{UserDocument};
+use crate::service::captcha::verify_captcha;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -105,7 +106,7 @@ async fn email_register(
             update_time: Utc::now(),
         };
         let uid = UserDao::insert(&state.sql_pool, &mut entity).await?;
-        
+
         search::user::update_user_document(&state.meilisearch, UserDocument {
             id: uid,
             avatar_url: None,
@@ -367,6 +368,7 @@ pub struct ResetPasswordReq {
     pub code: String,
     pub new_password: String,
     pub logout_all_devices: bool,
+    pub captcha_key: String,
 }
 
 async fn reset_password(
@@ -374,6 +376,11 @@ async fn reset_password(
     req: Json<ResetPasswordReq>,
 ) -> WebResult<()> {
     if verification_code::verify_code(&mut state.redis_conn, req.email.as_str(), req.code.as_str()).await? {
+        let captcha_pass = verify_captcha(&mut state.redis_conn, req.captcha_key.as_str()).await?;
+        if !captcha_pass {
+            err!("invalid_captcha", "Invalid captcha")
+        }
+
         let mut tx = state.sql_pool.begin().await?;
         let mut user = if let Some(user) = UserDao::get_by_email(&mut *tx, req.email.as_str()).await? {
             user
@@ -423,7 +430,7 @@ async fn generate_token_pairs_and_save(
     };
 
     RefreshTokenDao::insert(sql_pool, &entity).await?;
-    
+
     Ok(TokenPair {
         access_token,
         refresh_token,
