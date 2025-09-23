@@ -4,7 +4,7 @@ use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions, Value};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
-use chrono::Duration;
+use std::time::Duration;
 use tracing::log::log;
 
 #[derive(Clone)]
@@ -59,7 +59,7 @@ impl RedLock {
             match self.try_lock(res_name).await? {
                 Some(guard) => return Ok(guard),
                 None => {
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
@@ -72,10 +72,10 @@ impl RedLock {
             match self.try_lock(res_name).await? {
                 Some(guard) => return Ok(Some(guard)),
                 None => {
-                    if start.elapsed().as_secs() > timeout.num_seconds() as u64 {
+                    if start.elapsed().as_secs() > timeout.as_secs() {
                         return Ok(None);
                     }
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                    tokio::time::sleep(Duration::from_millis(100)).await;
                 }
             }
         }
