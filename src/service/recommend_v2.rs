@@ -1,3 +1,4 @@
+use std::time::Duration;
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use anyhow::bail;
@@ -6,6 +7,7 @@ use redis::aio::ConnectionManager;
 use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use tracing::warn;
 use crate::util::redlock::RedLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,11 +25,20 @@ pub async fn get_recent_songs(
     match cache {
         Some(cache) => {
             let cache: RecentSongRedisCache = serde_json::from_str(&cache)?;
+            warn!("Got recent songs data from cache but could not be parsed");
             Ok(cache.songs)
         }
         None => {
-            let guard = lock.lock("lock:songs:recent_v2").await?;
-            
+            let guard = lock.lock_with_timeout("lock:songs:recent_v2", Duration::from_secs(10)).await?;
+
+            // Double check if the cache is available now
+            let cache: Option<String> = redis.clone().get("songs:recent_v2").await?;
+            if let Some(cache) = cache {
+                let cache: RecentSongRedisCache = serde_json::from_str(&cache)?;
+                warn!("Got recent songs data from cache but could not be parsed");
+                return Ok(cache.songs)
+            }
+
             let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY release_time DESC LIMIT 50")
                 .fetch_all(pool).await?
                 .into_iter().map(|x| x.id).collect();
