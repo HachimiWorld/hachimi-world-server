@@ -17,6 +17,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
+use jsonwebtoken::errors::ErrorKind;
 use tracing::error;
 use crate::search::user::{UserDocument};
 use crate::service::captcha::verify_captcha;
@@ -207,7 +208,24 @@ async fn refresh_token(
     XRealIP(ip): XRealIP,
     req: Json<RefreshTokenReq>,
 ) -> WebResult<TokenPair> {
-    let claims = jwt::decode_and_validate_refresh_token(&req.refresh_token)?;
+    let claims = jwt::decode_and_validate_refresh_token(&req.refresh_token);
+    let claims = match claims {
+        Ok(claims) => { claims }
+        Err(e) => {
+            match e.kind() {
+                ErrorKind::InvalidToken => {
+                    err!("invalid_token", "Invalid refresh token")
+                }
+                ErrorKind::InvalidSignature => {
+                    err!("invalid_token", "Invalid refresh token")
+                }
+                ErrorKind::ExpiredSignature => {
+                    err!("token_expired", "Refresh token expired, please login again")
+                }
+                _ => { Err(e)? }
+            }
+        }
+    };
 
     let entry = RefreshTokenDao::get_by_token_id(&state.sql_pool, &claims.jti).await?;
 
