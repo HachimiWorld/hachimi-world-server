@@ -122,9 +122,9 @@ fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
         .map(|x| x.map(|x| format!("{:03}", x)))
         .collect::<Result<Vec<_>, _>>()
         .map(|x| x.join(""))
-        .with_context(|| "Invalid IP address")?;
+        .with_context(|| format!("Invalid IP address: {ip}"))?;
     parts.parse::<i64>()
-        .context("Invalid IP address")
+        .context(format!("Invalid IP address: {ip}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
