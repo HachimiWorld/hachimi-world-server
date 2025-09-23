@@ -40,7 +40,7 @@ pub fn generate_refresh_token(uid: &str) -> (String, RefreshTokenClaims) {
         r#type: "refresh_token".to_string(),
         uid: uid.to_string(),
         iss: "hachimi-world".to_string(),
-        exp: (chrono::Utc::now() + chrono::Duration::days(365)).timestamp() as usize,
+        exp: (chrono::Utc::now() + chrono::Duration::days(7)).timestamp() as usize,
         jti: Uuid::new_v4().to_string(),
     };
     let encoded = encode(&Header::default(), &claims, &JWT_KEYS.get().unwrap().encoding).unwrap();
@@ -66,7 +66,7 @@ pub fn decode_and_validate_access_token(token: &str) -> anyhow::Result<Claims> {
     Ok(r.claims)
 }
 
-pub fn decode_and_validate_refresh_token(token: &str) -> anyhow::Result<RefreshTokenClaims> {
+pub fn decode_and_validate_refresh_token(token: &str) -> jsonwebtoken::errors::Result<RefreshTokenClaims> {
     let r = jsonwebtoken::decode::<RefreshTokenClaims>(
         token,
         &JWT_KEYS.get().unwrap().decoding,
