@@ -147,7 +147,7 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
     Ok(())
 }
 
-pub async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
+async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
     let index = client.index(index_name);
 
     // Set searchable attributes
@@ -178,7 +178,7 @@ pub async fn setup_search_index_with_name(client: &Client, index_name: &str) -> 
 }
 
 // Schedule to execute fully indexing task
-pub async fn fully_index_songs(
+async fn fully_index_songs(
     client: &Client,
     pool: &PgPool,
 ) -> anyhow::Result<()> {

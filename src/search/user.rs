@@ -86,7 +86,7 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
 
     if !exists {
         info!("Setting up users index");
-        crate::search::song::setup_search_index_with_name(client, "users").await?;
+        setup_search_index_with_name(client, "users").await?;
 
         // Startup indexing
         tokio::spawn({
@@ -116,7 +116,7 @@ async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Resu
     Ok(index)
 }
 
-pub async fn fully_index_users(
+async fn fully_index_users(
     client: &Client,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
