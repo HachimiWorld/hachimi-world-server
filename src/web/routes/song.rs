@@ -4,7 +4,7 @@ use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo,
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
-use crate::service::{recommend, recommend_v2, song, song_like};
+use crate::service::{recommend, recommend_v2, song, song_like, song_play};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -492,6 +492,8 @@ pub struct SearchSongItem {
     pub like_count: i64,
     pub cover_art_url: String,
     pub audio_url: String,
+    pub uploader_uid: i64,
+    pub uploader_name: String
 }
 
 #[framed]
@@ -516,21 +518,23 @@ async fn search(
     let mut hits = Vec::new();
 
     for hit in result.hits {
-        if let Ok(Some(song)) = SongDao::get_by_id(&state.sql_pool, hit.id).await {
-            let like_count = song_like::get_song_likes(&state.redis_conn, &state.sql_pool, song.id).await?;
+        let song_detail = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, hit.id).await?;
 
+        if let Some(song) = song_detail {
             hits.push(SearchSongItem {
                 id: song.id,
                 display_id: song.display_id,
                 title: song.title,
                 subtitle: song.subtitle,
                 description: song.description,
-                artist: song.artist,
+                artist: song.uploader_name.clone(),
                 duration_seconds: song.duration_seconds,
                 play_count: song.play_count,
-                like_count: like_count,
-                cover_art_url: song.cover_art_url,
-                audio_url: song.file_url,
+                like_count: song.like_count,
+                cover_art_url: song.cover_url,
+                audio_url: song.audio_url,
+                uploader_uid: song.uploader_uid,
+                uploader_name: song.uploader_name,
             });
         }
     }
