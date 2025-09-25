@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgExecutor, PgPool, Result};
+use sqlx::{FromRow, PgExecutor, PgPool, Pool, Postgres, Result};
 use crate::db::CrudDao;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -24,6 +24,7 @@ pub trait IUserDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
     async fn get_by_email(executor: E, email: &str) -> Result<Option<User>>;
     async fn get_by_username(executor: E, username: &str) -> Result<Option<User>>;
+    async fn get_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>>;
 }
 
 impl <'e, E> CrudDao<'e, E> for UserDao
@@ -103,6 +104,12 @@ where E: PgExecutor<'e> {
     async fn get_by_username(executor: E, username: &str) -> Result<Option<User>> {
         sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
             .fetch_optional(executor)
+            .await
+    }
+
+    async fn get_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>> {
+        sqlx::query_as!(User, "SELECT * FROM users WHERE id = ANY($1)", ids)
+            .fetch_all(executor)
             .await
     }
 }

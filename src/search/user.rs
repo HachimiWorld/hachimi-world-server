@@ -7,13 +7,61 @@ use sqlx::PgPool;
 use tracing::{error, info, info_span, Instrument};
 use crate::db::CrudDao;
 use crate::db::user::UserDao;
+use crate::search::song::SearchResultHitsInfo;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDocument {
     pub id: i64,
     pub avatar_url: Option<String>,
     pub name: String,
     pub follower_count: i64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub hits: Vec<UserDocument>,
+    pub query: String,
+    pub processing_time_ms: u64,
+    pub hits_info: SearchResultHitsInfo,
+}
+
+/// Search users in MeiliSearch
+///
+/// # Arguments
+///
+/// * `client` - MeiliSearch client instance
+/// * `query` - Search query string
+/// * `limit` - Maximum number of results to return
+/// * `offset` - Number of results to skip
+///
+/// # Returns
+///
+/// Returns a Result containing a vector of UserDocument matches
+pub async fn search_users(
+    client: &Client,
+    query: &str,
+    limit: Option<usize>,
+    offset: Option<usize>,
+) -> Result<SearchResult, meilisearch_sdk::errors::Error> {
+    let search_results = client.index("users")
+        .search()
+        .with_query(query)
+        .with_limit(limit.unwrap_or(20))
+        .with_offset(offset.unwrap_or(0))
+        .execute::<UserDocument>()
+        .await?;
+
+    let r = SearchResult {
+        hits: search_results.hits.into_iter().map(|hit| hit.result).collect(),
+        query: query.to_string(),
+        processing_time_ms: search_results.processing_time_ms as u64,
+        hits_info: SearchResultHitsInfo {
+            total_hits: search_results.total_hits,
+            limit: search_results.limit.unwrap_or(20),
+            offset: search_results.offset.unwrap_or(0),
+        },
+    };
+    Ok(r)
 }
 
 pub async fn update_user_document(client: &Client, document: UserDocument) -> anyhow::Result<()> {

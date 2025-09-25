@@ -1,7 +1,7 @@
 mod common;
 
 use common::with_test_environment;
-use hachimi_world_server::web::routes::user::{GetProfileReq, PublicUserProfile, UpdateProfileReq};
+use hachimi_world_server::web::routes::user::{GetProfileReq, PublicUserProfile, SearchReq, SearchResp, UpdateProfileReq};
 use crate::common::{assert_is_ok, auth, CommonParse};
 
 #[tokio::test]
@@ -34,4 +34,16 @@ async fn test_get_and_update_profile() {
 #[tokio::test]
 async fn test_set_avatar() {
     // TODO[integrated-test]: Test set user avatar and update profile
+}
+
+#[tokio::test]
+async fn test_search() {
+    with_test_environment(|mut env| async move {
+        let resp: SearchResp = env.api.get_query("/user/search", &SearchReq {
+            q: "神".to_string(),
+            page: 0,
+            size: 20,
+        }).await.parse_resp().await.unwrap();
+        println!("{:?}", resp);
+    }).await
 }

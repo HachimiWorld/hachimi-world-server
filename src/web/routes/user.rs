@@ -16,6 +16,7 @@ use image::{ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use crate::search::user::UserDocument;
+use crate::web::routes::song::SearchSongItem;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,6 +24,7 @@ pub fn router() -> Router<AppState> {
         .route("/profile", get(get_profile))
         .route("/update_profile", post(update_profile))
         .route("/set_avatar", post(set_avatar))
+        .route("/search", get(search))
 }
 
 async fn greet() -> WebResult<&'static str> {
@@ -89,7 +91,7 @@ async fn update_profile(
             "Username must be less than 10 characters"
         );
     }
-    
+
     if let Some(user) = UserDao::get_by_username(&state.sql_pool, &req.username).await? {
         if user.id != claims.uid() {
             err!("username_exists", "Username already exists");
@@ -126,7 +128,7 @@ async fn update_profile(
         name: user.username,
         follower_count: 0,
     }).await?;
-    
+
     ok!(())
 }
 
@@ -177,7 +179,7 @@ async fn set_avatar(
     // Save url
     user.avatar_url = Some(result.public_url);
     UserDao::update_by_id(&state.sql_pool, &mut user).await?;
-    
+
     search::user::update_user_document(&state.meilisearch, UserDocument {
         id: user.id,
         avatar_url: user.avatar_url,
@@ -186,4 +188,62 @@ async fn set_avatar(
     }).await?;
 
     ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchReq {
+    pub q: String,
+    pub page: u32,
+    #[serde(default = "default_search_size")]
+    pub size: u32,
+}
+
+fn default_search_size() -> u32 { 20 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResp {
+    pub hits: Vec<PublicUserProfile>,
+    pub query: String,
+    pub processing_time_ms: u64,
+    pub total_hits: Option<usize>,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+async fn search(
+    state: State<AppState>,
+    req: Query<SearchReq>,
+) -> WebResult<SearchResp> {
+    if req.size > 50 { err!("invalid_size", "Size must be less than 50"); }
+
+    let offset = req.page * req.size;
+    let result = search::user::search_users(
+        &state.meilisearch,
+        &req.q,
+        Some(req.size as usize),
+        Some(offset as usize),
+    ).await?;
+
+    let user_ids: Vec<i64> = result.hits.iter().map(|u| u.id).collect();
+    let db_users = UserDao::get_by_ids(&state.sql_pool, &user_ids).await?;
+
+    let profiles: Vec<PublicUserProfile> = db_users.into_iter()
+        .map(|u| PublicUserProfile {
+            uid: u.id,
+            username: u.username,
+            avatar_url: u.avatar_url,
+            bio: u.bio,
+            gender: u.gender,
+            is_banned: u.is_banned,
+        })
+        .collect();
+
+    ok!(SearchResp {
+        hits: profiles,
+        query: result.query,
+        processing_time_ms: result.processing_time_ms,
+        total_hits: result.hits_info.total_hits,
+        limit: result.hits_info.limit,
+        offset: result.hits_info.offset,
+    })
 }
