@@ -22,7 +22,7 @@ where
     Fut: Future<Output = ()> + Send + 'static
 {
     // TODO: Launch a test server?
-    dotenv::dotenv().ok();
+    dotenv::dotenv().unwrap();
     let api = ApiClient::new(env::var("TEST_HTTP_BASE_URL").unwrap());
     let pool = get_sql_pool().await;
     let redis = get_redis_conn().await;

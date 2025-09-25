@@ -1,5 +1,3 @@
-use serde::Serialize;
-
 pub type ServiceResult<T, K> = Result<T, ServiceError<K>>;
 
 pub enum ServiceError<K> {

@@ -400,7 +400,7 @@ async fn upload_cover_image(
     mut state: State<AppState>,
     mut multipart: Multipart,
 ) -> WebResult<UploadImageResp> {
-    let mut user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
+    let _ = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
         x
     } else {
         err!("not_found", "User not found")
