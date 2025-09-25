@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM users WHERE id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "password_hash",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "avatar_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "bio",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "gender",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
+        "name": "is_banned",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 8,
+        "name": "last_login_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 9,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "update_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "e4568529cfbdc9207c1ba481ae77489e756927d45b7963842215098d51bc3d0b"
+}
