@@ -10,7 +10,7 @@ pub struct Song {
     pub title: String,
     pub subtitle: String,
     pub description: String,
-    /// Artist is deprecated, because the artist is a group of people
+    /// Artist is deprecated because the artist might be a group of people
     #[deprecated]
     pub artist: String,
     pub file_url: String,
@@ -19,7 +19,11 @@ pub struct Song {
     pub duration_seconds: i32,
     pub uploader_uid: i64,
     pub creation_type: i32,
+    /// Play count is deprecated because it should be got from play history
+    #[deprecated(since = "20250925")]
     pub play_count: i64,
+    // Like count is deprecated because it should be got from like history
+    #[deprecated(since = "20250925")]
     pub like_count: i64,
     pub is_private: bool,
     pub release_time: DateTime<Utc>,

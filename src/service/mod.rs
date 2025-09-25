@@ -7,3 +7,5 @@ pub mod captcha;
 pub mod upload;
 pub mod song;
 pub mod recommend_v2;
+pub mod song_play;
+pub mod errors;

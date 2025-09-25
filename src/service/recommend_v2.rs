@@ -31,7 +31,7 @@ pub async fn get_recent_songs(
         None => {
             let guard = lock.lock_with_timeout("lock:songs:recent_v2", Duration::from_secs(10)).await?;
 
-            // Double check if the cache is available now
+            // Double-check if the cache is available now
             let cache: Option<String> = redis.clone().get("songs:recent_v2").await?;
             if let Some(cache) = cache {
                 let cache: RecentSongRedisCache = serde_json::from_str(&cache)?;

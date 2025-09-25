@@ -2,7 +2,7 @@ use crate::db::song::{ISongDao, Song, SongDao, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
-use crate::service::song_like;
+use crate::service::{song_like};
 use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
@@ -171,6 +171,7 @@ async fn get_from_db(
     let production_crew = SongDao::list_production_crew_by_song_id(sql_pool, song.id).await?;
 
     let like_count = song_like::get_song_likes(&redis, sql_pool, song.id).await?;
+    let play_count = SongDao::count_plays(sql_pool, song.id).await?;
 
     let external_links = SongDao::list_external_link_by_song_id(sql_pool, song.id).await?
         .into_iter().map(|x| ExternalLink {
@@ -193,7 +194,7 @@ async fn get_from_db(
         origin_infos: origin_infos_mapped,
         uploader_uid: song.uploader_uid,
         uploader_name: uploader_name,
-        play_count: song.play_count,
+        play_count: play_count,
         like_count: like_count,
         external_links: external_links,
     };
