@@ -324,7 +324,7 @@ async fn review_approve(
         &data.song_origin_infos,
         &data.song_tags,
     ).await?;
-    service::recommend_v2::notify_update(song_id, &state.redis_conn).await?;
+    service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
 
     let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
     service::mailer::send_review_approved_notification(
