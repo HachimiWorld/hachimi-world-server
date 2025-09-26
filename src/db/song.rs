@@ -1,7 +1,7 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{Executor, FromRow, PgExecutor, PgPool, PgTransaction, Postgres, QueryBuilder};
+use sqlx::{Executor, FromRow, PgExecutor, PgPool, PgTransaction, Pool, Postgres, QueryBuilder};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Song {
@@ -87,6 +87,8 @@ where
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
     async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>>;
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
     async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
     async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64>;
     async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()>;
@@ -254,6 +256,23 @@ where
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
             ids
         ).fetch_all(executor).await
+    }
+
+    async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(
+            Song,
+            "SELECT * FROM songs WHERE uploader_uid = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
+            user_id,
+            size,
+            page * size
+        ).fetch_all(executor).await
+    }
+
+    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!(
+            "SELECT COUNT(*) FROM songs WHERE uploader_uid = $1",
+            user_id
+        ).fetch_one(executor).await.map(|r| r.count.unwrap_or(0))
     }
 
     async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64> {
