@@ -22,7 +22,10 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
 use std::sync::LazyLock;
+use std::time::Duration;
 use itertools::Itertools;
+use redis::aio::ConnectionManager;
+use tracing::log::warn;
 use url::Url;
 use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
@@ -39,9 +42,9 @@ pub fn router() -> Router<AppState> {
         .route("/detail", get(detail))
         .route("/publish", post(publish))
         .route("/delete", post(delete))
+        .route("/page_by_user", get(page_by_user))
         // Discovery
         .route("/search", get(search))
-        .route("/recent", get(recent))
         .route("/recent_v2", get(recent_v2))
         .route("/hot", get(hot))
         // User interactions
@@ -452,11 +455,98 @@ fn build_image_temp_key(temp_id: &str) -> String {
     let key = format!("songs_upload:cover_temp:{}", temp_id);
     key
 }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageByUserReq {
+    pub user_id: i64,
+    pub page: Option<i64>,
+    pub size: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageByUserResp {
+    pub songs: Vec<DetailResp>,
+    pub total: i64,
+    pub page: i64,
+    pub size: i64,
+}
+
 pub struct DeleteReq {
     pub song_id: i64,
 }
 
 #[framed]
+async fn page_by_user(
+    state: State<AppState>,
+    req: Query<PageByUserReq>,
+) -> WebResult<PageByUserResp> {
+    let page = req.page.unwrap_or(0).max(0);
+    let size = req.size.unwrap_or(20).min(50);
+
+
+    // Try to get from the cache first
+    if let Some(cached) = page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size).await? {
+        ok!(cached)
+    }
+
+    // Acquire lock
+    let lock = state.red_lock.lock_with_timeout(&format!("user_songs_lock:{}", req.user_id), Duration::from_secs(10)).await?;
+
+    // If the lock is gotten, try to get from the cache again
+    if let Some(cached) = page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size).await? {
+        ok!(cached)
+    }
+
+    let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, page, size).await?;
+    let total = SongDao::count_by_user(&state.sql_pool, req.user_id).await?;
+
+    let mut details = Vec::new();
+    for song in songs {
+        if let Some(detail) = song::get_public_detail_with_cache(
+            state.redis_conn.clone(),
+            &state.sql_pool,
+            song.id,
+        ).await? {
+            details.push(detail);
+        }
+    }
+
+    let resp = PageByUserResp {
+        songs: details,
+        total,
+        page,
+        size,
+    };
+
+    // Cache for 5 minutes
+    let _: () = set_page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size, resp.clone()).await?;
+
+    drop(lock);
+    ok!(resp)
+}
+
+async fn page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page: i64, size: i64) -> anyhow::Result<Option<PageByUserResp>> {
+    let cache_key = format!("user_songs:{}:{}:{}", user_id, page, size);
+    if let Some(cached) = redis.get::<_, Option<String>>(&cache_key).await? {
+        match serde_json::from_str::<PageByUserResp>(&cached) {
+            Ok(x) => {
+                Ok(Some(x))
+            }
+            Err(e) => {
+                warn!("Failed to parse cache: {:?}", e);
+                Ok(None)
+            }
+        }
+    } else {
+        Ok(None)
+    }
+}
+
+async fn set_page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page: i64, size: i64, resp: PageByUserResp) -> anyhow::Result<()> {
+    let cache_key = format!("user_songs:{}:{}:{}", user_id, page, size);
+    let _: () = redis.set_ex(&cache_key, serde_json::to_string(&resp)?, 300).await?;
+    Ok(())
+}
+
 async fn delete() -> WebResult<()> {
     err!("no_impl", "Not implemented yet");
 }
@@ -579,7 +669,7 @@ pub struct RecentResp {
 async fn recent_v2(
     state: State<AppState>
 ) -> WebResult<RecentResp> {
-    let songs = recommend_v2::get_recent_songs(state.red_lock.clone(), &state.redis_conn, &state.sql_pool).await?;
+    let songs = recommend_v2::get_recent_songs(state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
 
     ok!(RecentResp {songs})
 }
