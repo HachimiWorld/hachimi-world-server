@@ -15,7 +15,7 @@ ENV SQLX_OFFLINE=true
 RUN cargo build --release --bin hachimi-world-server
 
 # We do not need the Rust toolchain to run the binary!
-FROM debian:12.12-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 RUN apt-get update -y \
     && apt-get install -y --no-install-recommends openssl ca-certificates \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* # Clean up
