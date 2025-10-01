@@ -1,3 +1,4 @@
+use std::any::Any;
 use axum::http::StatusCode;
 use axum::Json;
 use axum::response::IntoResponse;
@@ -90,10 +91,17 @@ impl WebError<CommonError> {
     }
 }
 
-impl<E: Serialize> IntoResponse for WebError<E> {
+impl<E: Serialize + 'static> IntoResponse for WebError<E> {
     fn into_response(self) -> axum::response::Response {
         match self {
-            WebError::Business(resp) => {
+            WebError::Business(ref resp) => {
+                let value_any = resp as &dyn Any;
+                if let Some(as_common_err) = value_any.downcast_ref::<CommonError>() {
+                    tracing::info!("Common error: {}, {}", as_common_err.code, as_common_err.msg);
+                } else {
+                    tracing::info!("Business error")
+                }
+
                 Json(WebResponse::err(resp)).into_response()
             }
             WebError::Internal(err) => {

@@ -24,11 +24,13 @@ pub fn trace_layer<T>() -> TraceLayer<HttpMakeClassifier, fn(&Request<T>) -> Spa
     TraceLayer::new_for_http().make_span_with(|request: &Request<T>| {
         // Log the request id as generated.
         let request_id = request.headers().get(REQUEST_ID_HEADER);
+        let endpoint = request.uri().path();
         match request_id {
             Some(request_id) => info_span!(
-                        "http_request",
-                        request_id = ?request_id,
-                    ),
+                "http_request",
+                request_id = ?request_id,
+                endpoint = ?endpoint
+            ),
             None => {
                 error!("could not extract request_id");
                 info_span!("http_request")

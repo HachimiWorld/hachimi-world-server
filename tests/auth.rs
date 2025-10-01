@@ -108,12 +108,14 @@ async fn test_register_and_login() {
         assert_is_err(resp).await;
 
         // Test reset password
+        let captcha_key = generate_pass_captcha_key(&env.api).await;
         service::verification_code::set_code(&mut env.redis, &random_email, "12345678").await.unwrap();
         let resp = env.api.post("/auth/reset_password", &ResetPasswordReq {
             email: random_email.to_string(),
             code: "12345678".to_string(),
             new_password: "test-changed".to_string(),
             logout_all_devices: true,
+            captcha_key,
         }).await;
         assert_is_ok(resp).await;
 
