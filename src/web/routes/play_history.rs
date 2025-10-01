@@ -115,16 +115,37 @@ async fn touch_anonymous(
 }
 
 fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
-    // 23.224.125.1
-    // to 23224125001
-    let parts = ip.split('.').take(4)
-        .map(|x| x.parse::<i64>())
-        .map(|x| x.map(|x| format!("{:03}", x)))
-        .collect::<Result<Vec<_>, _>>()
-        .map(|x| x.join(""))
-        .with_context(|| format!("Invalid IP address: {ip}"))?;
-    parts.parse::<i64>()
-        .context(format!("Invalid IP address: {ip}"))
+    use regex::Regex;
+
+    // IPv4 pattern
+    let ipv4_re = Regex::new(r"^(\d{1,3}\.){3}\d{1,3}$").unwrap();
+    // IPv6 pattern (simplified, handles basic format)
+    let ipv6_re = Regex::new(r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$").unwrap();
+
+    if ipv4_re.is_match(ip) {
+        // Convert IPv4 to number
+        let parts: Vec<i64> = ip.split('.')
+            .map(|x| x.parse::<i64>())
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| format!("Invalid IPv4 address: {ip}"))?;
+
+        if parts.iter().any(|&x| x > 255) {
+            anyhow::bail!("Invalid IPv4 address: {ip}");
+        }
+
+        Ok(parts[0] * 1_000_000_000 + parts[1] * 1_000_000 + parts[2] * 1_000 + parts[3])
+    } else if ipv6_re.is_match(ip) {
+        // Convert IPv6 to number by taking first 4 segments
+        let parts: Vec<i64> = ip.split(':')
+            .take(4)
+            .map(|x| i64::from_str_radix(x, 16))
+            .collect::<Result<Vec<_>, _>>()
+            .with_context(|| format!("Invalid IPv6 address: {ip}"))?;
+
+        Ok(parts[0] * 1_000_000_000 + parts[1] * 1_000_000 + parts[2] * 1_000 + parts[3])
+    } else {
+        anyhow::bail!("Unsupported IP address format: {ip}")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,12 +176,17 @@ async fn cooldown(
     Ok(!cooldown_absent)
 }
 
+
 #[cfg(test)]
 mod tests {
-    use crate::web::routes::play_history::convert_ip_to_anonymous_uid;
+    use super::*;
 
     #[test]
     fn test_convert_ip_to_anonymous_uid() {
         assert_eq!(23224125001, convert_ip_to_anonymous_uid("23.224.125.1").unwrap());
+        assert_eq!(192168001254, convert_ip_to_anonymous_uid("192.168.1.254").unwrap());
+        assert_eq!(4660086001929, convert_ip_to_anonymous_uid("1234:0056:0000:0789:1234:5678:9abc:def0").unwrap());
+        assert!(convert_ip_to_anonymous_uid("256.1.2.3").is_err());
+        assert!(convert_ip_to_anonymous_uid("invalid").is_err());
     }
 }
