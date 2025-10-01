@@ -17,7 +17,7 @@ async fn test_playlist() {
             is_public: false,
         }).await.parse_resp::<CreatePlaylistResp>().await;
         assert!(resp.is_err(), "CreatePlaylist with long name should return an error");
-        assert_eq!(resp.err().unwrap().code, "name_too_long");
+        assert_eq!(resp.err().unwrap().code, "invalid_name");
 
         // Create a playlist without cover
         let playlist_resp = env.api.post("/playlist/create", &CreatePlaylistReq {
@@ -96,7 +96,7 @@ async fn test_invalid_input() {
             is_public: false,
         }).await.parse_resp::<CreatePlaylistResp>().await;
         assert!(resp.is_err(), "CreatePlaylist with long name should return an error");
-        assert_eq!(resp.err().unwrap().code, "name_too_long");
+        assert_eq!(resp.err().unwrap().code, "invalid_name");
 
         // Create a playlist with invalid input
         let resp = env.api.post("/playlist/create", &CreatePlaylistReq {
