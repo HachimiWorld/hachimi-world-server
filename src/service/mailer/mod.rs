@@ -74,6 +74,6 @@ mod test {
         let content = fs::read_to_string("config.yaml").unwrap();
         let value = serde_yaml::from_str::<serde_yaml::Value>(content.as_str()).unwrap();
         let cfg: EmailConfig = serde_yaml::from_value(value["email"].clone()).unwrap();
-        send_verification_code(&cfg, "atwzj233@gmail.com", "114514").await.unwrap();
+        send_verification_code(&cfg, "mail@example.com", "114514").await.unwrap();
     }
 }
