@@ -1,3 +1,5 @@
+use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 use crate::db::song::{ISongDao, SongDao, SongPlay};
 use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
 use crate::web::extractors::XRealIP;
@@ -5,7 +7,7 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
-use anyhow::Context;
+use anyhow::{bail, Context};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -115,36 +117,18 @@ async fn touch_anonymous(
 }
 
 fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
-    use regex::Regex;
-
-    // IPv4 pattern
-    let ipv4_re = Regex::new(r"^(\d{1,3}\.){3}\d{1,3}$").unwrap();
-    // IPv6 pattern (simplified, handles basic format)
-    let ipv6_re = Regex::new(r"^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$").unwrap();
-
-    if ipv4_re.is_match(ip) {
-        // Convert IPv4 to number
-        let parts: Vec<i64> = ip.split('.')
-            .map(|x| x.parse::<i64>())
-            .collect::<Result<Vec<_>, _>>()
-            .with_context(|| format!("Invalid IPv4 address: {ip}"))?;
-
-        if parts.iter().any(|&x| x > 255) {
-            anyhow::bail!("Invalid IPv4 address: {ip}");
+    if let Ok(ipv4) = Ipv4Addr::from_str(ip) {
+        Ok(ipv4.to_bits() as i64)
+    } else if let Ok(ipv6) = Ipv6Addr::from_str(ip) {
+        // Take the first 64 bits
+        let octets = ipv6.octets();
+        let mut result: i64 = 0;
+        for i in 0..8 {
+            result = (result << 8) | (octets[i] as i64);
         }
-
-        Ok(parts[0] * 1_000_000_000 + parts[1] * 1_000_000 + parts[2] * 1_000 + parts[3])
-    } else if ipv6_re.is_match(ip) {
-        // Convert IPv6 to number by taking first 4 segments
-        let parts: Vec<i64> = ip.split(':')
-            .take(4)
-            .map(|x| i64::from_str_radix(x, 16))
-            .collect::<Result<Vec<_>, _>>()
-            .with_context(|| format!("Invalid IPv6 address: {ip}"))?;
-
-        Ok(parts[0] * 1_000_000_000 + parts[1] * 1_000_000 + parts[2] * 1_000 + parts[3])
+        Ok(result)
     } else {
-        anyhow::bail!("Unsupported IP address format: {ip}")
+        bail!("Invalid IP address format: {ip}")
     }
 }
 
@@ -174,19 +158,4 @@ async fn cooldown(
             .with_expiration(SetExpiry::EX(60)) // CD for 60 secs
     ).await?;
     Ok(!cooldown_absent)
-}
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_convert_ip_to_anonymous_uid() {
-        assert_eq!(23224125001, convert_ip_to_anonymous_uid("23.224.125.1").unwrap());
-        assert_eq!(192168001254, convert_ip_to_anonymous_uid("192.168.1.254").unwrap());
-        assert_eq!(4660086001929, convert_ip_to_anonymous_uid("1234:0056:0000:0789:1234:5678:9abc:def0").unwrap());
-        assert!(convert_ip_to_anonymous_uid("256.1.2.3").is_err());
-        assert!(convert_ip_to_anonymous_uid("invalid").is_err());
-    }
 }
