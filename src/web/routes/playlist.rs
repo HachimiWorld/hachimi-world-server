@@ -15,6 +15,7 @@ use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use crate::service::upload::ValidationError;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -401,7 +402,19 @@ async fn set_cover(
     if bytes.len() > 8 * 1024 * 1024 {
         err!("image_too_large", "Image size must be less than 8MB");
     }
-    let format_ext = service::upload::validate_image_and_get_ext(bytes.clone()).await?;
+    let format_ext = match service::upload::validate_image_and_get_ext(bytes.clone()).await {
+        Ok(x) => {x}
+        Err(e) => {
+            match e {
+                ValidationError::InvalidImage => {
+                    err!("invalid_image", "Invalid image")
+                }
+                ValidationError::UnsupportedFormat => {
+                    err!("unsupported_format", "Unsupported image format")
+                }
+            }
+        }
+    };
 
     // Upload image
     let sha1 = openssl::sha::sha1(&bytes);
