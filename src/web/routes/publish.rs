@@ -375,13 +375,13 @@ async fn review_reject(
     SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
 
     let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-    service::mailer::send_review_approved_notification(
+    service::mailer::send_review_rejected_notification(
         &email_cfg,
         &uploader.email,
         &data.song_info.title,
         &data.song_info.display_id,
         &uploader.username,
-        review.review_comment.as_deref()
+        req.comment.as_str()
     ).await?;
     ok!(())
 }
