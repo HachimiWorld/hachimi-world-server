@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
 use jsonwebtoken::errors::ErrorKind;
-use tracing::error;
+use tracing::{error, warn};
 use crate::search::user::{UserDocument};
 use crate::service::captcha::verify_captcha;
 
@@ -214,10 +214,10 @@ async fn refresh_token(
         Err(e) => {
             match e.kind() {
                 ErrorKind::InvalidToken => {
-                    err!("invalid_token", "Invalid refresh token")
+                    err!("invalid_token", "Invalid refresh token pattern")
                 }
                 ErrorKind::InvalidSignature => {
-                    err!("invalid_token", "Invalid refresh token")
+                    err!("invalid_token", "Invalid refresh token signature")
                 }
                 ErrorKind::ExpiredSignature => {
                     err!("token_expired", "Refresh token expired, please login again")
@@ -233,10 +233,10 @@ async fn refresh_token(
     let entry = if let Some(v) = entry {
         v
     } else {
-        err!("invalid_token", "Invalid refresh token")
+        err!("token_not_found", "You might using an outdated token")
     };
     if entry.is_revoked {
-        err!("invalid_token", "Invalid refresh token")
+        err!("token_revoked", "Token revoked")
     }
     if Some(req.device_info.clone()) != entry.device_info {
         err!("inconsistent_device", "Inconsistent device info")
