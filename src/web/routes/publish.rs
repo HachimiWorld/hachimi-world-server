@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use anyhow::Context;
-use crate::db::user::UserDao;
+use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
@@ -398,8 +398,8 @@ async fn ensure_contributor(
     let config = state.config;
     let pool = &state.sql_pool;
     let redis = &mut state.redis_conn;
-    let contributors = redis.get("contributors").await?;
-    if let Some(contributors) = contributors {
+    let contributor_emails = redis.get("contributors").await?;
+    if let Some(contributors) = contributor_emails {
         let contributors: Vec<i64> = serde_json::from_str(&contributors)?;
         if contributors.contains(&uid) {
             Ok(())
@@ -409,16 +409,16 @@ async fn ensure_contributor(
     } else {
         // TODO: Get from github repository
         let cfg: CommunityCfg = config.get_and_parse("community")?;
-        let mut user_ids = Vec::new();
-        for x in cfg.contributors {
-            if let Some(user) = UserDao::get_by_id(pool, uid).await? {
-                user_ids.push(user.id);
+        let mut contributor_uids = HashSet::new();
+        for email in cfg.contributors {
+            if let Some(user) = UserDao::get_by_email(pool, &email).await? {
+                contributor_uids.insert(user.id);
             } else {
-                warn!("Contributor {} was configured but not found in database", x);
+                warn!("Contributor {} was configured but not found in database", email);
             }
         }
-        redis.set("contributors", serde_json::to_string(&user_ids)?).await?;
-        if user_ids.contains(&uid) {
+        redis.set("contributors", serde_json::to_string(&contributor_uids)?).await?;
+        if contributor_uids.contains(&uid) {
             Ok(())
         } else {
             Err(common!("permission_denied", "You are not a contributor"))
