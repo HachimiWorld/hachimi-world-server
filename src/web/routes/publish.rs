@@ -398,10 +398,10 @@ async fn ensure_contributor(
     let config = state.config;
     let pool = &state.sql_pool;
     let redis = &mut state.redis_conn;
-    let contributor_emails = redis.get("contributors").await?;
-    if let Some(contributors) = contributor_emails {
-        let contributors: Vec<i64> = serde_json::from_str(&contributors)?;
-        if contributors.contains(&uid) {
+    let contributors = redis.get("contributors").await?;
+    if let Some(contributors) = contributors {
+        let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
+        if contributor_uids.contains(&uid) {
             Ok(())
         } else {
             Err(common!("permission_denied", "You are not a contributor"))
