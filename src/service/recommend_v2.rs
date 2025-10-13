@@ -1,8 +1,9 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use anyhow::bail;
 use chrono::{DateTime, Utc};
+use metrics::histogram;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
@@ -76,7 +77,8 @@ async fn save_cache(mut redis: ConnectionManager, songs: &[PublicSongDetail]) ->
 }
 
 async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
-    let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY release_time DESC LIMIT 50")
+    let start = Instant::now();
+    let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY release_time DESC LIMIT 300")
         .fetch_all(pool).await?
         .into_iter().map(|x| x.id).collect();
 
@@ -84,7 +86,9 @@ async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Res
 
     for x in recent_song_ids {
         match song::get_public_detail_with_cache(redis.clone(), pool, x).await? {
-            Some(data) => {
+            Some(mut data) => {
+                // TODO: Lyrics is unnecessary for recomment result, temporarily set to empty to save network usage.
+                data.lyrics.clear();
                 songs.push(data);
             }
             None => {
@@ -93,6 +97,7 @@ async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Res
             }
         };
     }
+    histogram!("recommend_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
     Ok(songs)
 }
 
