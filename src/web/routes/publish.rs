@@ -18,7 +18,7 @@ use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishing
 use crate::db::song_tag::SongTag;
 use crate::util::IsBlank;
 use crate::web::routes::auth::EmailConfig;
-use crate::web::routes::song::{CreationTypeInfo, TagItem};
+use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -198,6 +198,7 @@ pub struct PublishSongPublishReviewData {
     pub production_crew: Vec<SongProductionCrew>,
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
+    pub external_link: Vec<ExternalLink>
 }
 
 async fn detail(
@@ -262,6 +263,10 @@ async fn detail(
             origin_infos: origin_infos_mapped,
             uploader_uid: data.song_info.uploader_uid,
             uploader_name: uploader_name,
+            external_link: data.song_external_links.into_iter().map(|x| ExternalLink {
+                platform: x.platform,
+                url: x.url,
+            }).collect()
         };
         ok!(result)
     } else {
