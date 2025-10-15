@@ -1,5 +1,6 @@
+use std::time::Duration;
 use axum::http::{HeaderValue, Method};
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, Any, CorsLayer, MaxAge};
 
 pub fn cors_layer(allow_origins: &[&str]) -> CorsLayer {
     let has_any = allow_origins.contains(&"*");
@@ -9,4 +10,5 @@ pub fn cors_layer(allow_origins: &[&str]) -> CorsLayer {
         .allow_origin(if has_any { AllowOrigin::any() } else { AllowOrigin::list(origins) })
         .allow_methods([Method::GET, Method::POST])
         .allow_headers(Any)
+        .max_age(MaxAge::exact(Duration::from_secs(86400)))
 }
