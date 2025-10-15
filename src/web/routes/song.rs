@@ -216,13 +216,13 @@ async fn publish(
         if let Some(item) = x {
             // Validate, must set one of the id or title
             if item.song_display_id.is_none() && item.title.is_none() {
-                err!("title_missed", "Origin info title must be set")
+                err!("title_missed", "Origin info title must not be empty")
             }
             // Parse internal song id
             let song = if let Some(ref display_id) = item.song_display_id {
                 let song = SongDao::get_by_display_id(&state.sql_pool, &display_id)
                     .await?
-                    .ok_or_else(|| common!("song_not_found", "Song not found"))?;
+                    .ok_or_else(|| common!("song_not_found", "The song (ID={}) specified in origin info was not found", display_id))?;
                 Some(song)
             } else {
                 None
@@ -823,7 +823,7 @@ fn generate_song_display_id() -> String {
 
 static PLATFORM_HOST_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
-    map.insert("bilibili", vec!["www.bilibili.com"]);
+    map.insert("bilibili", vec!["www.bilibili.com", "b23.tv"]);
     map.insert("douyin", vec!["v.douyin.com"]);
     map.insert("youtube", vec!["www.youtube.com", "youtu.be"]);
     map.insert("niconico", vec!["www.nicovideo.jp"]);
