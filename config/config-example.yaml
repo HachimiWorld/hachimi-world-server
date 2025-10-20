@@ -1,7 +1,37 @@
 server:
-  port: 8080
-postgres:
-  host: 127.0.0.1
-  port: 9999
-  user: postgres
-  password: postgres
+  listen: 0.0.0.0:8080
+  metrics_listen: 0.0.0.0:3001
+  jwt_secret: 12345678
+  allow_origins:
+    - "http://localhost"
+  publish_version_token: 12345678
+db:
+  address: postgresql:5432
+  username: user
+  password: 12345678
+  database: db
+redis:
+  address: redis:6379
+  database: 0
+email:
+  host: email.example.com
+  username: noreply@example.com
+  password: 12345678
+  no_reply_email: noreply@example.com
+s3:
+  bucket_name: bucket-name
+  endpoint_url: https://endpoint.example.com
+  public_domain: storage.example.com
+  access_key_id: abcdef
+  access_key_secret: abcdef
+meilisearch:
+  host: http://localhost:7700
+  api_key: 12345678
+turnstile:
+  captcha_page_url: "http://localhost:8080/api/auth/captcha"
+  api_base_url: "http://localhost:8080/api"
+  site_key: "1x00000000000000000000AA"
+  secret_key: "1x0000000000000000000000000000000AA"
+community:
+  contributors:
+    - "maintainer@example.com"
