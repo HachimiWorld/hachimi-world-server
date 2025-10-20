@@ -38,6 +38,18 @@ impl FileHost {
             public_url: url,
         })
     }
+
+    pub async fn rename(&self, old_key: &str, new_key: &str) -> anyhow::Result<()> {
+        self.client
+            .copy_object()
+            .bucket(self.bucket_name.clone())
+            .copy_source(format!("/{}/{}", self.bucket_name, old_key))
+            .key(new_key)
+            .send()
+            .await
+            .with_context(|| format!("Failed to rename {}", old_key))?;
+        Ok(())
+    }
 }
 
 pub struct UploadResult {

@@ -20,7 +20,7 @@ use image::{ImageFormat, ImageReader};
 use rand::Rng;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use std::io::Cursor;
+use std::io::{Cursor, Read};
 use std::sync::LazyLock;
 use std::time::Duration;
 use itertools::Itertools;
@@ -29,6 +29,7 @@ use tracing::log::warn;
 use url::Url;
 use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
+use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::util::IsBlank;
 use crate::web::routes::publish::InternalSongPublishReviewData;
 
@@ -421,26 +422,16 @@ async fn upload_cover_image(
     if bytes.len() > 8 * 1024 * 1024 {
         err!("image_too_large", "Image size must be less than 8MB");
     }
-    let format = ImageReader::new(Cursor::new(bytes.clone()))
-        .with_guessed_format()
-        .map_err(|_| common!("invalid_image", "Invalid image"))?
-        .format()
-        .ok_or_else(|| common!("invalid_image", "Invalid image"))?;
 
-    let format_ext = match format {
-        ImageFormat::Png | ImageFormat::Jpeg | ImageFormat::WebP | ImageFormat::Avif => {
-            format.extensions_str().first().ok_or_else(|| anyhow!("Cannot get extension name"))?
-        }
-        _ => err!("format_unsupported", "Image format unsupported")
-    };
+    let webp = scale_down_to_webp(1024, 1024, bytes.clone(), ResizeType::Fit, 90f32)
+        .map_err(|_| common!("invalid_image", "The image is not supported"))?;
 
     // Upload image
-    let sha1 = openssl::sha::sha1(&bytes);
-    let filename = format!("images/cover/{}.{}", hex::encode(sha1), format_ext);
-    let result = state.file_host.upload(bytes, &filename).await?;
+    let sha1 = openssl::sha::sha1(&webp);
+    let filename = format!("images/cover/{}.webp", hex::encode(sha1));
+    let result = state.file_host.upload(webp.into(), &filename).await?;
     let temp_id = uuid::Uuid::new_v4().to_string();
-    let _: () = state
-        .redis_conn
+    let _: () = state.redis_conn
         .set_ex(build_image_temp_key(&temp_id), result.public_url, 3600)
         .await?;
 

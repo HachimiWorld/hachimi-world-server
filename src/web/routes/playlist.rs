@@ -12,10 +12,11 @@ use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use crate::service::upload::ValidationError;
+use crate::service::upload::{ResizeType, ValidationError};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -355,7 +356,7 @@ async fn change_order(
     for (i, song) in songs.iter_mut().enumerate() {
         song.order_index = i as i32;
     }
-    
+
     let mut tx = state.sql_pool.begin().await?;
     PlaylistDao::update_songs_orders(&mut tx, &songs).await?;
     tx.commit().await?;
@@ -389,7 +390,7 @@ async fn set_cover(
         .with_context(|| "No data field found")?;
     let json = body_field.text().await?;
     let req: SetCoverReq = serde_json::from_str(&json).with_context(|| "Invalid JSON body")?;
-    
+
     let mut playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
     let data_field = multipart
@@ -402,24 +403,14 @@ async fn set_cover(
     if bytes.len() > 8 * 1024 * 1024 {
         err!("image_too_large", "Image size must be less than 8MB");
     }
-    let format_ext = match service::upload::validate_image_and_get_ext(bytes.clone()).await {
-        Ok(x) => {x}
-        Err(e) => {
-            match e {
-                ValidationError::InvalidImage => {
-                    err!("invalid_image", "Invalid image")
-                }
-                ValidationError::UnsupportedFormat => {
-                    err!("unsupported_format", "Unsupported image format")
-                }
-            }
-        }
-    };
+
+    let webp = service::upload::scale_down_to_webp(512, 512, bytes.clone(), ResizeType::Crop, 80f32)
+        .map_err(|_| common!("invalid_image", "The image is not supported"))?;
 
     // Upload image
-    let sha1 = openssl::sha::sha1(&bytes);
-    let filename = format!("images/playlist/{}.{}", hex::encode(sha1), format_ext);
-    let result = state.file_host.upload(bytes, &filename).await?;
+    let sha1 = openssl::sha::sha1(&webp);
+    let filename = format!("images/playlist/{}.webp", hex::encode(sha1));
+    let result = state.file_host.upload(Bytes::from(webp), &filename).await?;
 
     playlist.cover_url = Some(result.public_url);
     PlaylistDao::update_by_id(&state.sql_pool, &playlist).await?;

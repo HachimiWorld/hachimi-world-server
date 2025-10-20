@@ -47,6 +47,7 @@ itertools = "0.14.0"
 tower_governor = "0.8.0"
 governor = "0.10.1"
 url = "2.5.4"
+webp = "0.3.1"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
