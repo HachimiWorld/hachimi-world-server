@@ -1,4 +1,18 @@
 services:
+  meilisearch:
+    image: getmeili/meilisearch
+    ports:
+      - '7700:7700'
+    volumes:
+      - meilisearch-data:/data.ms
+    environment:
+      MEILI_MASTER_KEY: hachimi-world
+    healthcheck:
+      test: ['CMD', 'curl', '--fail', 'http://localhost:7700/health']
+      interval: 3s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
   postgres_db:
     image: postgres:alpine
     volumes:
@@ -14,15 +28,20 @@ services:
       interval: 3s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
   redis:
     image: redis:alpine
-    restart: on-failure
     ports:
       - '6379:6379'
     volumes:
       - redis-data:/data
     healthcheck:
-      test: [ 'CMD', 'redis-cli', 'PING' ]
+      test: ['CMD', 'redis-cli', 'PING']
       interval: 3s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+volumes:
+  db-data:
+  redis-data:
+  meilisearch-data:
