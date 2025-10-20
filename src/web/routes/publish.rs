@@ -383,8 +383,8 @@ async fn review_reject(
     service::mailer::send_review_rejected_notification(
         &email_cfg,
         &uploader.email,
-        &data.song_info.title,
         &data.song_info.display_id,
+        &data.song_info.title,
         &uploader.username,
         req.comment.as_str()
     ).await?;
