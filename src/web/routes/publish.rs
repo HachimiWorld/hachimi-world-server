@@ -297,7 +297,7 @@ async fn review_approve(
         err!("invalid_status", "Invalid review status")
     }
     
-    let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+    let mut data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
         .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
     let uploader = UserDao::get_by_id(&state.sql_pool, review.user_id).await?
         .with_context(|| format!("User {} not found", review.user_id))?;
@@ -305,6 +305,7 @@ async fn review_approve(
     let mut tx = state.sql_pool.begin().await?;
 
     // Formally insert data to the song table
+    data.song_info.create_time = Utc::now();
     let song_id = SongDao::insert(&mut *tx, &data.song_info).await?;
     SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
     SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
