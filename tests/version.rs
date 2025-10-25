@@ -1,7 +1,7 @@
 use crate::common::with_test_environment;
 use crate::common::CommonParse;
 use chrono::Utc;
-use hachimi_world_server::web::routes::version::{LatestVersionReq, LatestVersionResp, PublishVersionReq, PublishVersionResp};
+use hachimi_world_server::web::routes::version::{LatestVersionBatchReq, LatestVersionReq, LatestVersionResp, PublishVersionReq, PublishVersionResp};
 use std::env;
 
 mod common;
@@ -30,5 +30,15 @@ async fn test_publish_version() {
         assert_eq!(resp.url, "https://test.example.com/android/latest.apk");
         assert_eq!(resp.release_time, now);
         ()
+    }).await
+}
+
+#[tokio::test]
+async fn test_get_version_batch() {
+    with_test_environment(|mut env| async move {
+        let result = env.api.post("/version/latest_batch", &LatestVersionBatchReq{
+            variants: vec!["dev-windows".to_string(), "dev-macos".to_string()],
+        }).await.parse_resp::<Vec<LatestVersionResp>>().await.unwrap();
+        println!("{:?}", result);
     }).await
 }
