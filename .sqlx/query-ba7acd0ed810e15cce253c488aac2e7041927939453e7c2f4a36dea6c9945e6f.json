@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM songs ORDER BY release_time DESC LIMIT 300",
+  "query": "SELECT id FROM songs ORDER BY create_time DESC LIMIT 300",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       false
     ]
   },
-  "hash": "7f5fab76072c72d793beeb58248d87a0c8f8f21b5651e12fa4ae5d34ae2d505e"
+  "hash": "ba7acd0ed810e15cce253c488aac2e7041927939453e7c2f4a36dea6c9945e6f"
 }
