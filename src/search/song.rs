@@ -28,6 +28,7 @@ pub struct SongDocument {
     pub like_count: i64,
     pub tags: Vec<String>,
     pub origins: Vec<String>,
+    pub origin_artists: Vec<String>,
     pub crew: Vec<String>,
     pub release_time: i64,
 }
@@ -154,14 +155,16 @@ async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Resu
     index.set_searchable_attributes([
         "title",
         "subtitle",
-        "description",
         "artist",
+        "origins",
+        "origin_artists",
         "tags",
         "crew",
     ]).await?;
 
     // Set filterable attributes
     index.set_filterable_attributes([
+        "tags",
         "creation_type",
         "uploader_uid",
         "release_time"
@@ -250,6 +253,11 @@ async fn fully_index_songs(
                 .map(|x| x.internal_title.take().or(x.origin_title.take()).unwrap_or("Unknown".to_string()))
                 .collect();
 
+            let origin_artists = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
+                .into_iter()
+                .map(|x| x.internal_artist.take().or(x.origin_artist.take()).unwrap_or("Unknown".to_string()))
+                .collect();
+
             let crew_names = crews.get_mut(&id).unwrap_or(&mut vec![])
                 .into_iter()
                 .map(|x| x.internal_username.take()
@@ -278,6 +286,7 @@ async fn fully_index_songs(
                 like_count: song_info.like_count,
                 tags: tag_names,
                 origins: origin_titles, // Will be populated from origin_info if needed
+                origin_artists: origin_artists,
                 crew: crew_names,
                 release_time: song_info.release_time.timestamp(),
             };
@@ -318,6 +327,9 @@ pub fn convert_to_document(
     let origin_titles: Vec<_> = origin_info.iter().filter_map(|x| x.origin_title.clone())
         .collect();
 
+    let origin_artists = origin_info.iter().filter_map(|x| x.origin_artist.clone())
+        .collect();
+
     // FIXME(search): If we update the tag name, we should find a way to update the corresponding document in MeiliSearch
 
     let tag_names: Vec<String> = tags.iter().map(|x| x.name.clone()).collect();
@@ -338,6 +350,7 @@ pub fn convert_to_document(
         like_count: song_info.like_count,
         tags: tag_names,
         origins: origin_titles, // Will be populated from origin_info if needed
+        origin_artists: origin_artists,
         crew: crew_names,
         release_time: song_info.release_time.timestamp(),
     };
