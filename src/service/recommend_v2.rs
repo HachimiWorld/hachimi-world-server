@@ -78,7 +78,7 @@ async fn save_cache(mut redis: ConnectionManager, songs: &[PublicSongDetail]) ->
 
 async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
     let start = Instant::now();
-    let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY release_time DESC LIMIT 300")
+    let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY create_time DESC LIMIT 300")
         .fetch_all(pool).await?
         .into_iter().map(|x| x.id).collect();
 
