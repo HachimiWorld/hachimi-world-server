@@ -7,11 +7,12 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
-use anyhow::{bail, Context};
+use anyhow::{bail};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
+use metrics::gauge;
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
@@ -91,6 +92,15 @@ async fn touch(
         create_time: Utc::now(),
     };
     SongDao::insert_plays(&state.sql_pool, &[data]).await?;
+
+    let dau_key = format!("dau:hll:{}", Utc::now().date_naive().to_string());
+
+    let r: bool = state.redis_conn.pfadd(&dau_key, claims.uid()).await?;
+    if r {
+        let dau: i64 = state.redis_conn.pfcount(dau_key).await?;
+        gauge!("daily_active_user").set(dau as f64);
+    }
+
     ok!(())
 }
 
@@ -113,6 +123,14 @@ async fn touch_anonymous(
         create_time: Utc::now(),
     };
     SongDao::insert_plays(&state.sql_pool, &[data]).await?;
+
+    let daau = format!("dau_anonymous:hll:{}", Utc::now().date_naive().to_string());
+
+    let r: bool = state.redis_conn.pfadd(&daau, &ip.0).await?;
+    if r {
+        let dau: i64 = state.redis_conn.pfcount(daau).await?;
+        gauge!("daily_active_anonymous_user").set(dau as f64);
+    }
     ok!(())
 }
 
