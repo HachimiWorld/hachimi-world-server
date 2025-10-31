@@ -47,7 +47,7 @@ pub async fn send_notification(
     subject: &str,
     content: &str,
 ) -> anyhow::Result<()> {
-    let html_content = EMAIL_NOTIFICATION_TEMPLATE.replace("{{CONTENT}}", &content.replace("\n", "<br>"));
+    let html_content = EMAIL_NOTIFICATION_TEMPLATE.replace("{{CONTENT}}", &askama_escape::escape(content, askama_escape::Html).to_string().replace("\n", "<br>"));
     let email_msg = lettre::Message::builder()
         .from(Mailbox::new(
             Some("基米天堂".to_string()),
