@@ -672,7 +672,12 @@ async fn recent_v2(
     state: State<AppState>,
     req: Query<RecentReq>,
 ) -> WebResult<RecentResp> {
-    let limit = req.limit.unwrap_or(50);
+    let limit = req.limit.unwrap_or(300);
+    if limit > 300 || limit < 50 {
+        // TODO: Decrease the limit to 300 when most users are using the new API
+        err!("invalid_limit", "Limit must be between 50 and 300")
+    }
+
     let after = req.after.unwrap_or(false);
 
     let songs = recommend_v2::get_recent_songs(
