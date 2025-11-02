@@ -6,7 +6,7 @@ use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::{err, ok};
+use crate::{err, ok, util};
 use anyhow::{bail};
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
@@ -110,7 +110,7 @@ async fn touch_anonymous(
     req: Json<TouchReq>
 ) -> WebResult<()>{
     // Convert to anonymous uid
-    let anonymous_uid = convert_ip_to_anonymous_uid(&ip.0)?;
+    let anonymous_uid = util::convert_ip_to_anonymous_uid(&ip.0)?;
 
     if cooldown(anonymous_uid, req.song_id, &mut state.redis_conn).await? {
         err!("cooldown", "Please wait 60 seconds before touching again");
@@ -132,22 +132,6 @@ async fn touch_anonymous(
         gauge!("daily_active_anonymous_user").set(dau as f64);
     }
     ok!(())
-}
-
-fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
-    if let Ok(ipv4) = Ipv4Addr::from_str(ip) {
-        Ok(ipv4.to_bits() as i64)
-    } else if let Ok(ipv6) = Ipv6Addr::from_str(ip) {
-        // Take the first 64 bits
-        let octets = ipv6.octets();
-        let mut result: i64 = 0;
-        for i in 0..8 {
-            result = (result << 8) | (octets[i] as i64);
-        }
-        Ok(result)
-    } else {
-        bail!("Invalid IP address format: {ip}")
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
