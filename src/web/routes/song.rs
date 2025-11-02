@@ -8,7 +8,7 @@ use crate::service::{recommend, recommend_v2, song, song_like, song_play};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
-use crate::{audio, common, err, ok, search, service};
+use crate::{audio, common, err, ok, search, service, util};
 use anyhow::{anyhow, Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -31,6 +31,7 @@ use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingRevi
 use crate::service::song::PublicSongDetail;
 use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::util::IsBlank;
+use crate::web::extractors::XRealIP;
 use crate::web::routes::publish::InternalSongPublishReviewData;
 
 pub fn router() -> Router<AppState> {
@@ -48,6 +49,8 @@ pub fn router() -> Router<AppState> {
         .route("/search", get(search))
         .route("/recent_v2", get(recent_v2))
         .route("/hot", get(hot))
+        .route("/recommend", get(recommend))
+        .route("/recommend_anonymous", get(recommend_anonymous))
         // User interactions
         .route("/like", post(like))
         .route("/unlike", post(unlike))
@@ -678,6 +681,29 @@ async fn hot(
     ok!(SongListResp {
         song_ids: ids
     })
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RecommendResp {
+    pub songs: Vec<DetailResp>
+}
+
+async fn recommend(
+    claims: Claims,
+    state: State<AppState>,
+) -> WebResult<RecommendResp> {
+    let recommend = recommend_v2::get_recommend(claims.uid(), state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
+    let resp = RecommendResp {songs: recommend};
+    ok!(resp)
+}
+
+async fn recommend_anonymous(
+    ip: XRealIP,
+    state: State<AppState>,
+) -> WebResult<RecommendResp> {
+    let recommend = recommend_v2::get_recommend_anonymous(&ip.0, state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
+    let resp = RecommendResp {songs: recommend};
+    ok!(resp)
 }
 
 #[derive(Debug, Serialize, Deserialize)]

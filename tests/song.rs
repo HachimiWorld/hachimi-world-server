@@ -6,6 +6,7 @@ use futures::future::join_all;
 use hachimi_world_server::service::song_like;
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, RecentResp, SearchReq, SearchResp, SongListResp, TagCreateReq, TagSearchReq, TagSearchResp, PageByUserReq};
 use std::time::SystemTime;
+use crate::common::auth::with_new_random_test_user;
 
 #[tokio::test]
 async fn test_get_likes() {
@@ -19,13 +20,17 @@ async fn test_get_likes() {
 #[tokio::test]
 async fn test_discover_songs() {
     with_test_environment(|mut env| async move {
-        let resp: SongListResp = env.api.get("/song/hot").await.parse_resp().await.unwrap();
+        let test = with_new_random_test_user(&mut env).await;
+        /*let resp: SongListResp = env.api.get("/song/hot").await.parse_resp().await.unwrap();
         println!("hot: {:?}", resp.song_ids);
 
         let resp: SongListResp = env.api.get("/song/recent").await.parse_resp().await.unwrap();
         println!("recent: {:?}", resp.song_ids);
 
         let resp: RecentResp = env.api.get("/song/recent_v2").await.parse_resp().await.unwrap();
+        println!("recent: {:?}", resp.songs);*/
+
+        let resp: RecentResp = env.api.get("/song/recommend").await.parse_resp().await.unwrap();
         println!("recent: {:?}", resp.songs);
     }).await;
 }

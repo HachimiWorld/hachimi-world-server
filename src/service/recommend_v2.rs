@@ -1,14 +1,17 @@
+use std::ops::Sub;
 use std::time::{Duration, Instant};
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use anyhow::bail;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use metrics::histogram;
+use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::warn;
+use crate::util;
 use crate::util::redlock::RedLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,4 +109,123 @@ pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow
     // TODO: Use event based notification
     let _: () = redis.del("songs:recent_v2").await?;
     Ok(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecommendRedisCache {
+    pub songs: Vec<PublicSongDetail>,
+    pub create_time: DateTime<Utc>,
+}
+
+pub async fn get_recommend_anonymous(
+    ip: &str,
+    lock: RedLock,
+    redis: ConnectionManager,
+    pool: &PgPool,
+) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let anonymous_uid = util::convert_ip_to_anonymous_uid(&ip)?;
+    // 32 groups
+    let hash = anonymous_uid % 32 + 1;
+
+    get_recommend(-hash, lock, redis, pool).await
+}
+
+/// Return random 30 songs for a user in one day
+pub async fn get_recommend(
+    user_id: i64,
+    lock: RedLock,
+    redis: ConnectionManager,
+    pool: &PgPool,
+) -> anyhow::Result<Vec<PublicSongDetail>> {
+    // Refresh at 06:00+8
+    let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
+    let cache = get_from_cache_recommend(redis.clone(), user_id, &date).await?;
+    match cache {
+        Some(cache) => Ok(cache),
+        None => {
+            let guard = lock.lock_with_timeout(
+                &format!("lock:songs:recommend:{}", user_id),
+                Duration::from_secs(10),
+            ).await?;
+
+            let cache = get_from_cache_recommend(redis.clone(), user_id, &date).await?;
+            if let Some(cache) = cache {
+                return Ok(cache);
+            }
+
+            let mut songs = get_from_db_recommend(redis.clone(), pool).await?;
+            songs.shuffle(&mut rand::rng());
+
+            save_cache_recommend(redis, user_id, &songs, &date).await?;
+            drop(guard);
+            Ok(songs)
+        }
+    }
+}
+
+async fn get_from_cache_recommend(
+    mut redis: ConnectionManager,
+    user_id: i64,
+    date: &NaiveDate,
+) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
+    let cache: Option<String> = redis.get(format!("songs:recommend:{}:{}", user_id, date)).await?;
+    match cache {
+        Some(cache) => match serde_json::from_str::<RecommendRedisCache>(&cache) {
+            Ok(x) => Ok(Some(x.songs)),
+            Err(e) => {
+                warn!("Got recommend songs data from cache but could not be parsed: {e:?}");
+                Ok(None)
+            }
+        },
+        None => Ok(None),
+    }
+}
+
+async fn save_cache_recommend(
+    mut redis: ConnectionManager,
+    user_id: i64,
+    songs: &[PublicSongDetail],
+    date: &NaiveDate,
+) -> anyhow::Result<()> {
+    let cache = RecommendRedisCache {
+        songs: songs.to_vec(),
+        create_time: Utc::now(),
+    };
+    let value = serde_json::to_string(&cache)?;
+
+    // Cache for 1 day
+    let _: () = redis
+        .set_ex(format!("songs:recommend:{}:{}", user_id, date.to_string()), value, 86400)
+        .await?;
+    Ok(())
+}
+
+async fn get_from_db_recommend(
+    redis: ConnectionManager,
+    pool: &PgPool,
+) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let start = Instant::now();
+    let random_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs TABLESAMPLE SYSTEM_ROWS(30)")
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|x| x.id)
+        .collect();
+
+    let mut songs = Vec::new();
+
+    for x in random_song_ids {
+        match song::get_public_detail_with_cache(redis.clone(), pool, x).await? {
+            Some(mut data) => {
+                data.description = data.description.chars().take(128).collect();
+                data.lyrics.clear();
+                songs.push(data);
+            }
+            None => {
+                bail!("get_recommend got none during getting song({x})")
+            }
+        };
+    }
+    histogram!("recommend_random_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
+    Ok(songs)
 }
