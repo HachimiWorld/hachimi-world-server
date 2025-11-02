@@ -4,10 +4,11 @@ use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use anyhow::bail;
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
+use futures::{TryStreamExt};
 use metrics::histogram;
 use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
-use redis::{AsyncCommands};
+use redis::{AsyncIter, AsyncTypedCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::warn;
@@ -120,7 +121,10 @@ async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool, cursor: Option
 pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow::Result<()> {
     // Just delete the cache
     // TODO: Use event based notification
-    let _: () = redis.del("songs:recent_v2").await?;
+    let keys: AsyncIter<String> = redis.scan_match("songs:recent_v2:latest:*").await?;
+    let keys = keys.try_collect::<Vec<_>>().await?;
+
+    redis.del(&keys).await?;
     Ok(())
 }
 
