@@ -30,7 +30,7 @@ use url::Url;
 use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::service::song::PublicSongDetail;
 use crate::service::upload::{scale_down_to_webp, ResizeType};
-use crate::util::IsBlank;
+use crate::util::{validate_platforms, IsBlank};
 use crate::web::extractors::XRealIP;
 use crate::web::routes::publish::InternalSongPublishReviewData;
 
@@ -860,50 +860,4 @@ fn generate_song_display_id() -> String {
 
     // 组合成目标格式
     format!("JM-{}-{}", letters, numbers)
-}
-
-static PLATFORM_HOST_MAP: LazyLock<HashMap<&'static str, Vec<&'static str>>> = LazyLock::new(|| {
-    let mut map = HashMap::new();
-    map.insert("bilibili", vec!["www.bilibili.com", "b23.tv"]);
-    map.insert("douyin", vec!["v.douyin.com"]);
-    map.insert("youtube", vec!["www.youtube.com", "youtu.be"]);
-    map.insert("niconico", vec!["www.nicovideo.jp"]);
-    map
-});
-
-fn validate_platforms(platform: &str, url: &str) -> Result<bool, WebError<CommonError>>{
-    let url = match Url::parse(&url) {
-        Ok(url) => url,
-        Err(_) => err!("invalid_external_link_url", "Invalid url in external link")
-    };
-    let host = url.host_str().ok_or_else(|| common!("invalid_url", "Invalid url in external link"))?;
-    // Validate for all supported platforms
-    let domains = PLATFORM_HOST_MAP.get(platform);
-    match domains {
-        Some(domains) => {
-            if !domains.iter().any(|&domain| host.ends_with(domain)) {
-                err!("invalid_external_link", "Invalid Bilibili url")
-            }
-            Ok(true)
-        }
-        None => {
-            Ok(false)
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::web::routes::song::validate_platforms;
-
-    #[test]
-    fn test_validate_platforms() {
-        assert!(validate_platforms("bilibili", "https://www.bilibili.com/video/BV114514").unwrap());
-        assert!(validate_platforms("niconico", "https://www.nicovideo.jp/watch/sm114514").unwrap());
-        assert!(validate_platforms("douyin", "https://v.douyin.com/114514-1145/").unwrap());
-        assert!(validate_platforms("youtube", "https://youtu.be/114514").unwrap());
-        assert!(validate_platforms("youtube", "https://www.youtube.com/watch?v=114514").unwrap());
-        assert!(validate_platforms("bilibili", "https://www.youtube.com/watch?v=114514").is_err());
-        assert_eq!(validate_platforms("instgram", "https://www.youtube.com/watch?v=114514").unwrap(), false);
-    }
 }
