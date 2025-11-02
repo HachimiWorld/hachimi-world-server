@@ -1,12 +1,12 @@
 mod common;
 
+use crate::common::auth::with_new_random_test_user;
 use crate::common::{assert_is_ok, CommonParse};
 use crate::common::{with_test_environment, TestEnvironment};
 use futures::future::join_all;
 use hachimi_world_server::service::song_like;
-use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, RecentResp, SearchReq, SearchResp, SongListResp, TagCreateReq, TagSearchReq, TagSearchResp, PageByUserReq};
+use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, PageByUserReq, RecentReq, RecentResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp};
 use std::time::SystemTime;
-use crate::common::auth::with_new_random_test_user;
 
 #[tokio::test]
 async fn test_get_likes() {
@@ -18,18 +18,38 @@ async fn test_get_likes() {
 }
 
 #[tokio::test]
-async fn test_discover_songs() {
+async fn test_get_recent_songs() {
+    with_test_environment(|mut env| async move {
+        // Compatible check for API before 251102
+        let resp: RecentResp = env.api.get("/song/recent_v2").await.parse_resp().await.unwrap();
+        println!("recent: {:?}", resp.songs);
+
+        // Pagination test
+        let resp: RecentResp = env.api.get_query("/song/recent_v2", &RecentReq {
+            cursor: None,
+            limit: None,
+            after: None,
+        }).await.parse_resp().await.unwrap();
+        println!("recent2: {:?}", resp);
+
+        let last = resp.songs.last().unwrap();
+        let next_page: RecentResp = env.api.get_query("/song/recent_v2", &RecentReq {
+            cursor: Some(last.create_time),
+            limit: None,
+            after: None,
+        }).await.parse_resp().await.unwrap();
+        
+        // Check resp.songs and next_page.songs if not duplicate
+        assert!(resp.songs.iter().all(|song1|
+            !next_page.songs.iter().any(|song2| song1.id == song2.id)
+        ));
+    }).await;
+}
+
+#[tokio::test]
+async fn test_get_recommend_songs() {
     with_test_environment(|mut env| async move {
         let test = with_new_random_test_user(&mut env).await;
-        /*let resp: SongListResp = env.api.get("/song/hot").await.parse_resp().await.unwrap();
-        println!("hot: {:?}", resp.song_ids);
-
-        let resp: SongListResp = env.api.get("/song/recent").await.parse_resp().await.unwrap();
-        println!("recent: {:?}", resp.song_ids);
-
-        let resp: RecentResp = env.api.get("/song/recent_v2").await.parse_resp().await.unwrap();
-        println!("recent: {:?}", resp.songs);*/
-
         let resp: RecentResp = env.api.get("/song/recommend").await.parse_resp().await.unwrap();
         println!("recent: {:?}", resp.songs);
     }).await;

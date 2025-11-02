@@ -87,6 +87,8 @@ where
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
     async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>>;
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
     async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>>;
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
     async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
@@ -256,6 +258,16 @@ where
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
             ids
         ).fetch_all(executor).await
+    }
+
+    async fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(Song, "SELECT * FROM songs WHERE create_time > $1 ORDER BY create_time ASC LIMIT $2", create_time, limit)
+            .fetch_all(executor).await
+    }
+
+    async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(Song, "SELECT * FROM songs WHERE create_time < $1 ORDER BY create_time DESC LIMIT $2", create_time, limit)
+            .fetch_all(executor).await
     }
 
     async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {

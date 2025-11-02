@@ -11,6 +11,7 @@ use redis::{AsyncCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::warn;
+use crate::db::song::{ISongDao, SongDao};
 use crate::util;
 use crate::util::redlock::RedLock;
 
@@ -24,8 +25,9 @@ pub async fn get_recent_songs(
     lock: RedLock,
     redis: ConnectionManager,
     pool: &PgPool,
+    cursor: Option<DateTime<Utc>>, limit: i32, after: bool
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
-    let cache = get_from_cache(redis.clone()).await?;
+    let cache = get_from_cache(redis.clone(), cursor, limit, after).await?;
 
     match cache {
         Some(cache) => {
@@ -36,22 +38,22 @@ pub async fn get_recent_songs(
 
             // Double-check if the cache is available now
             // TODO: Rewrite this use redis based RwLock? Or we can just use memory RwLock for single instance because the service instances wont be too many.
-            let cache = get_from_cache(redis.clone()).await?;
+            let cache = get_from_cache(redis.clone(), cursor, limit, after).await?;
             if let Some(cache) = cache {
                 return Ok(cache);
             }
 
             // Or get it from the database
-            let songs = get_from_db(redis.clone(), pool).await?;
-            save_cache(redis, &songs).await?;
+            let songs = get_from_db(redis.clone(), pool, cursor, limit, after).await?;
+            save_cache(redis, &songs, cursor, limit, after).await?;
             drop(guard);
             Ok(songs)
         }
     }
 }
 
-async fn get_from_cache(redis: ConnectionManager) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
-    let cache: Option<String> = redis.clone().get("songs:recent_v2").await?;
+async fn get_from_cache(redis: ConnectionManager, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
+    let cache: Option<String> = redis.clone().get(build_recent_redis_key(cursor, limit, after)).await?;
     match cache {
         Some(cache) => {
             match serde_json::from_str::<RecentSongRedisCache>(&cache) {
@@ -70,25 +72,36 @@ async fn get_from_cache(redis: ConnectionManager) -> anyhow::Result<Option<Vec<P
     }
 }
 
-async fn save_cache(mut redis: ConnectionManager, songs: &[PublicSongDetail]) -> anyhow::Result<()> {
+async fn save_cache(mut redis: ConnectionManager, songs: &[PublicSongDetail], cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<()> {
     let cache = RecentSongRedisCache { songs: songs.to_vec(), create_time: Utc::now() };
     let value = serde_json::to_string(&cache)?;
 
     // Cache for 5 minutes
-    let _: () = redis.set_ex("songs:recent_v2", value, 300).await?;
+    let _: () = redis.set_ex(build_recent_redis_key(cursor, limit, after), value, 300).await?;
     Ok(())
 }
 
-async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
+fn build_recent_redis_key(cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> String {
+    format!(
+        "songs:recent_v2:{cursor}:{limit}:{after}",
+        cursor = cursor.map(|x| x.date_naive().to_string()
+    ).unwrap_or("latest".to_string()))
+}
+
+async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let cursor = cursor.unwrap_or_else(|| Utc::now());
     let start = Instant::now();
-    let recent_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs ORDER BY create_time DESC LIMIT 300")
-        .fetch_all(pool).await?
-        .into_iter().map(|x| x.id).collect();
+    let recent_songs: Vec<_> = if after {
+        SongDao::list_by_create_time_after(pool, cursor, limit as i64).await?
+    } else {
+        SongDao::list_by_create_time_before(pool, cursor, limit as i64).await?
+    };
 
     let mut songs = Vec::new();
 
-    for x in recent_song_ids {
-        match song::get_public_detail_with_cache(redis.clone(), pool, x).await? {
+    // Such a waste...
+    for x in recent_songs {
+        match song::get_public_detail_with_cache(redis.clone(), pool, x.id).await? {
             Some(mut data) => {
                 // TODO: Lyrics is unnecessary for recomment result, temporarily set to empty to save network usage.
                 data.lyrics.clear();
@@ -96,7 +109,7 @@ async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool) -> anyhow::Res
             }
             None => {
                 // This might happen logically, but will it really happen?
-                bail!("get_recent_songs got none during getting song({x})")
+                bail!("get_recent_songs got none during getting song({})", x.id)
             }
         };
     }

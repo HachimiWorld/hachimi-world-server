@@ -77,7 +77,6 @@ impl ApiClient {
     pub async fn get_query<T: Serialize>(&self, path: &str, query: &T) -> Response {
         let client = reqwest::Client::new();
 
-        let query = serde_json::to_value(query).unwrap();
         let resp = client
             .get(format!("{}{path}", self.base_url))
             .headers(self.default_headers())
@@ -85,7 +84,7 @@ impl ApiClient {
             .send()
             .await
             .unwrap();
-        println!("[{}] GET to {}; Query: {}", resp.status(), path, query.to_string());
+        println!("[{}] GET to {}; Query: {}", resp.status(), path, serde_urlencoded::to_string(query).unwrap());
         resp
     }
 

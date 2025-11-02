@@ -15,7 +15,7 @@ use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use image::{ImageFormat, ImageReader};
 use rand::Rng;
 use redis::AsyncCommands;
@@ -654,6 +654,14 @@ async fn recent(
     })
 }
 
+/// Since 251102
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentReq {
+    pub cursor: Option<DateTime<Utc>>,
+    pub limit: Option<i32>,
+    pub after: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentResp {
     pub songs: Vec<DetailResp>
@@ -661,9 +669,20 @@ pub struct RecentResp {
 
 #[framed]
 async fn recent_v2(
-    state: State<AppState>
+    state: State<AppState>,
+    req: Query<RecentReq>,
 ) -> WebResult<RecentResp> {
-    let songs = recommend_v2::get_recent_songs(state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
+    let limit = req.limit.unwrap_or(50);
+    let after = req.after.unwrap_or(false);
+
+    let songs = recommend_v2::get_recent_songs(
+        state.red_lock.clone(),
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        req.cursor,
+        limit,
+        after
+    ).await?;
 
     ok!(RecentResp {songs})
 }

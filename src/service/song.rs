@@ -9,6 +9,7 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicSongDetail {
@@ -29,7 +30,11 @@ pub struct PublicSongDetail {
     pub uploader_name: String,
     pub play_count: i64,
     pub like_count: i64,
-    pub external_links: Vec<ExternalLink>
+    pub external_links: Vec<ExternalLink>,
+    /// @since 251102
+    pub create_time: DateTime<Utc>,
+    /// @since 251102
+    pub release_time: DateTime<Utc>,
 }
 
 pub async fn get_public_detail_with_cache_by_display_id(
@@ -197,6 +202,8 @@ async fn get_from_db(
         play_count: play_count,
         like_count: like_count,
         external_links: external_links,
+        create_time: song.create_time,
+        release_time: song.release_time,
     };
 
     Ok(Some(data))
