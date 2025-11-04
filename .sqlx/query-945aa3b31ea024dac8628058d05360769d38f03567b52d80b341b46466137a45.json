@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT r.song_id AS \"song_id!\", t.name AS \"name?\"\n            FROM song_tag_refs r\n                LEFT JOIN song_tags t ON t.id = r.tag_id\n            WHERE r.song_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "song_id!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "name?",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      true,
+      false
+    ]
+  },
+  "hash": "945aa3b31ea024dac8628058d05360769d38f03567b52d80b341b46466137a45"
+}

@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT song_id, u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c\n               LEFT JOIN users u ON u.id = c.uid\n               WHERE song_id = ANY($1)",
+  "query": "SELECT song_id AS \"song_id!\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c\n               LEFT JOIN users u ON u.id = c.uid\n               WHERE song_id = ANY($1)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "song_id",
+        "name": "song_id!",
         "type_info": "Int8"
       },
       {
@@ -42,5 +42,5 @@
       false
     ]
   },
-  "hash": "bb2a85e358acfcb7574040784da0ba71c27bd68ed06609ca71d6a23375929b0e"
+  "hash": "991644954002c890a35aaf8d292c3541c0a40bc678378b1515576b2610800433"
 }
