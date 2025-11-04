@@ -1,16 +1,16 @@
 use std::ops::Sub;
 use std::time::{Duration, Instant};
 use crate::service::song;
-use crate::service::song::PublicSongDetail;
+use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
 use anyhow::bail;
-use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
+use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
 use futures::{TryStreamExt};
 use metrics::histogram;
 use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
 use redis::{AsyncIter, AsyncTypedCommands};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Pool, Postgres};
 use tracing::warn;
 use crate::db::song::{ISongDao, SongDao};
 use crate::util;
@@ -26,7 +26,7 @@ pub async fn get_recent_songs(
     lock: RedLock,
     redis: ConnectionManager,
     pool: &PgPool,
-    cursor: Option<DateTime<Utc>>, limit: i32, after: bool
+    cursor: Option<DateTime<Utc>>, limit: i32, after: bool,
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     let cache = get_from_cache(redis.clone(), cursor, limit, after).await?;
 
@@ -244,5 +244,71 @@ async fn get_from_db_recommend(
         };
     }
     histogram!("recommend_random_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
+    Ok(songs)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HotWeeklyRedisCache {
+    pub songs: Vec<PublicSongDetail>,
+    pub create_time: DateTime<Utc>,
+}
+
+pub async fn get_hot_songs(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let cache = get_from_cache_hot(redis.clone(), day_delta, limit).await?;
+    if let Some(cache) = cache {
+        return Ok(cache);
+    }
+
+    let songs = get_from_db_hot_weekly(redis, pool, day_delta, limit).await?;
+    save_cache_hot(redis.clone(), &songs, day_delta, limit).await?;
+    Ok(songs)
+}
+
+async fn get_from_cache_hot(mut redis: ConnectionManager, day_delta: i64, limit: i64) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
+    let cache: Option<String> = redis.get(format!("songs:hot:{}:{}", day_delta, limit)).await?;
+    match cache {
+        Some(cache) => match serde_json::from_str::<HotWeeklyRedisCache>(&cache) {
+            Ok(x) => Ok(Some(x.songs)),
+            Err(e) => {
+                warn!("Got hot weekly songs data from cache but could not be parsed: {e:?}");
+                Ok(None)
+            }
+        },
+        None => Ok(None),
+    }
+}
+
+async fn save_cache_hot(mut redis: ConnectionManager, songs: &[PublicSongDetail], day_delta: i64, limit: i64) -> anyhow::Result<()> {
+    let cache = HotWeeklyRedisCache {
+        songs: songs.to_vec(),
+        create_time: Utc::now(),
+    };
+    let value = serde_json::to_string(&cache)?;
+
+    // Cache for 1 hour
+    let _: () = redis.set_ex(format!("songs:hot:{}:{}", day_delta, limit), value, 3600).await?;
+    Ok(())
+}
+
+async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let time_ago = Utc::now().sub(TimeDelta::days(day_delta));
+    let result = sqlx::query!("
+        SELECT s.title, sp.song_id, count(*) AS play_count
+        FROM song_plays sp
+                 JOIN songs s ON sp.song_id = s.id
+        WHERE sp.create_time > $1
+        GROUP BY sp.song_id, s.title
+        ORDER BY play_count DESC
+        LIMIT $2
+    ", time_ago, limit).fetch_all(pool).await?;
+
+    let mut songs = vec![];
+    for x in result {
+        if let Some(x) = get_public_detail_with_cache(redis.clone(), pool, x.song_id).await? {
+            songs.push(x);
+        } else {
+            warn!("get_weekly_hot_songs got none during getting song({})", x.song_id)
+        }
+    }
     Ok(songs)
 }

@@ -48,7 +48,7 @@ pub fn router() -> Router<AppState> {
         // Discovery
         .route("/search", get(search))
         .route("/recent_v2", get(recent_v2))
-        .route("/hot", get(hot))
+        .route("/hot/weekly", get(hot_weekly))
         .route("/recommend", get(recommend))
         .route("/recommend_anonymous", get(recommend_anonymous))
         // User interactions
@@ -586,7 +586,7 @@ async fn search(
     req: Query<SearchReq>,
 ) -> WebResult<SearchResp> {
     // Validate search
-    if req.q.is_blank() {
+    if req.q.is_blank() && req.filter.is_blank() {
         err!("invalid_query", "Query must not be blank")
     }
 
@@ -672,14 +672,19 @@ async fn recent_v2(
     state: State<AppState>,
     req: Query<RecentReq>,
 ) -> WebResult<RecentResp> {
+    // Validate input
     let limit = req.limit.unwrap_or(300);
-    if limit > 300 || limit < 50 {
+    if limit > 300 || limit < 0 {
         // TODO: Decrease the limit to 300 when most users are using the new API
-        err!("invalid_limit", "Limit must be between 50 and 300")
+        err!("invalid_limit", "Limit must be between 0 and 300")
+    }
+    if limit == 0 {
+        ok!(RecentResp {songs: vec![]});
     }
 
     let after = req.after.unwrap_or(false);
 
+    // ----
     let songs = recommend_v2::get_recent_songs(
         state.red_lock.clone(),
         state.redis_conn.clone(),
@@ -692,19 +697,17 @@ async fn recent_v2(
     ok!(RecentResp {songs})
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct HotResp {
+    pub songs: Vec<DetailResp>
+}
 
 #[framed]
-async fn hot(
+async fn hot_weekly(
     state: State<AppState>
-) -> WebResult<SongListResp> {
-    let songs = recommend::get_hot_songs(&state.redis_conn, &state.sql_pool).await?;
-    let ids: Vec<String> = songs.into_iter().map(|x| {
-        x.display_id
-    }).collect();
-
-    ok!(SongListResp {
-        song_ids: ids
-    })
+) -> WebResult<HotResp> {
+    let songs = recommend_v2::get_hot_songs(&state.redis_conn, &state.sql_pool, 7, 50).await?;
+    ok!(HotResp {songs})
 }
 
 #[derive(Serialize, Deserialize)]

@@ -56,6 +56,14 @@ async fn test_get_recommend_songs() {
 }
 
 #[tokio::test]
+async fn test_get_weekly_hot_songs() {
+    with_test_environment(|mut env| async move {
+        let resp: RecentResp = env.api.get("/song/hot/weekly").await.parse_resp().await.unwrap();
+        println!("recent: {:?}", resp.songs);
+    }).await;
+}
+
+#[tokio::test]
 async fn test_search() {
     with_test_environment(|mut env| async move {
         // TODO: Add test fixtures
