@@ -26,6 +26,15 @@ impl IsBlank for String {
     }
 }
 
+impl IsBlank for Option<String> {
+    fn is_blank(&self) -> bool {
+        match self {
+            None => true,
+            Some(x) => x.is_blank()
+        }
+    }
+}
+
 pub fn convert_ip_to_anonymous_uid(ip: &str) -> anyhow::Result<i64> {
     if let Ok(ipv4) = Ipv4Addr::from_str(ip) {
         Ok(ipv4.to_bits() as i64)
