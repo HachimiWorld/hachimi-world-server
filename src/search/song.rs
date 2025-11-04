@@ -210,16 +210,17 @@ async fn fully_index_songs(
             .map(|x| (x.id, x))
             .collect();
         let mut crews: HashMap<i64, _> = query!(
-            "SELECT song_id, u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
+            "SELECT song_id AS \"song_id!\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
                LEFT JOIN users u ON u.id = c.uid
                WHERE song_id = ANY($1)", &ids)
             .fetch_all(pool).await?
             .into_iter().into_group_map_by(|x| x.song_id);
 
         let mut origin_infos: HashMap<i64, _> = query!(
-            "SELECT song_id,
-                s.title  internal_title,
-                s.artist internal_artist,
+            // FIXME: The `AS song_id!` is a workaround for the bug of nullable inference in sqlx.
+            "SELECT o.song_id AS \"song_id!\",
+                s.title AS \"internal_title?\",
+                s.artist AS \"internal_artist?\",
                 o.origin_type,
                 o.origin_song_id,
                 o.origin_title,
@@ -232,7 +233,8 @@ async fn fully_index_songs(
             .into_iter().into_group_map_by(|x| x.song_id);
 
         let mut tags: HashMap<i64, _> = query!(
-            "SELECT song_id, t.name
+            // FIXME: Nullability inference bug workaround for sqlx
+            "SELECT r.song_id AS \"song_id!\", t.name AS \"name?\"
             FROM song_tag_refs r
                 LEFT JOIN song_tags t ON t.id = r.tag_id
             WHERE r.song_id = ANY($1)", &ids)
