@@ -1,12 +1,17 @@
-use std::collections::HashMap;
 use crate::audio::ParseError;
 use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
+use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
+use crate::service::song::PublicSongDetail;
+use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::service::{recommend, recommend_v2, song, song_like, song_play};
+use crate::util::{validate_platforms, IsBlank};
+use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
+use crate::web::routes::publish::InternalSongPublishReviewData;
 use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service, util};
 use anyhow::{anyhow, Context};
@@ -17,22 +22,17 @@ use axum::Json;
 use axum::Router;
 use chrono::{DateTime, Utc};
 use image::{ImageFormat, ImageReader};
+use itertools::Itertools;
 use rand::Rng;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{Cursor, Read};
 use std::sync::LazyLock;
 use std::time::Duration;
-use itertools::Itertools;
-use redis::aio::ConnectionManager;
 use tracing::log::warn;
 use url::Url;
-use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
-use crate::service::song::PublicSongDetail;
-use crate::service::upload::{scale_down_to_webp, ResizeType};
-use crate::util::{validate_platforms, IsBlank};
-use crate::web::extractors::XRealIP;
-use crate::web::routes::publish::InternalSongPublishReviewData;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -98,6 +98,8 @@ pub struct PublishReq {
     pub creation_info: CreationInfo,
     pub production_crew: Vec<ProductionItem>,
     pub external_links: Vec<ExternalLink>,
+    /// Since 251105
+    pub explicit: Option<bool>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +212,8 @@ async fn publish(
         release_time: now,
         create_time: now,
         update_time: now, // Do we really need three time data?
+        gain: song_temp_data.gain,
+        explicit: req.explicit,
     };
 
     let mut song_origin_infos = Vec::new();
@@ -328,6 +332,7 @@ pub struct UploadAudioFileResp {
 pub struct SongTempData {
     pub file_url: String,
     pub duration_secs: u64,
+    pub gain: Option<f32>
 }
 
 #[framed]
@@ -381,6 +386,7 @@ async fn upload_audio_file(
     let data = serde_json::to_string(&SongTempData {
         file_url: result.public_url.to_string(),
         duration_secs: metadata.duration_secs,
+        gain: None, // TODO[opt](song): calculate gain
     })?;
     let _: () = state
         .redis_conn
@@ -577,7 +583,8 @@ pub struct SearchSongItem {
     pub cover_art_url: String,
     pub audio_url: String,
     pub uploader_uid: i64,
-    pub uploader_name: String
+    pub uploader_name: String,
+    pub explicit: Option<bool>
 }
 
 #[framed]
@@ -619,6 +626,7 @@ async fn search(
                 audio_url: song.audio_url,
                 uploader_uid: song.uploader_uid,
                 uploader_name: song.uploader_name,
+                explicit: song.explicit,
             });
         }
     }

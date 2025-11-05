@@ -1,0 +1,4 @@
+ALTER TABLE songs
+    ADD explicit BOOLEAN DEFAULT NULL;
+ALTER TABLE songs
+    ADD gain REAL DEFAULT NULL;

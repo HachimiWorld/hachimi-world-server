@@ -29,6 +29,10 @@ pub struct Song {
     pub release_time: DateTime<Utc>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
+    // Since 251105
+    pub explicit: Option<bool>,
+    // Since 251105
+    pub gain: Option<f32>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -142,8 +146,10 @@ where
                 is_private = $14,
                 release_time = $15,
                 create_time = $16,
-                update_time = $17
-            WHERE id = $18",
+                update_time = $17,
+                explicit = $18,
+                gain = $19
+            WHERE id = $20",
             value.display_id,
             value.title,
             value.subtitle,
@@ -161,6 +167,8 @@ where
             value.release_time,
             value.create_time,
             value.update_time,
+            value.explicit,
+            value.gain,
             value.id
         )
             .execute(executor)
@@ -187,8 +195,10 @@ where
                 is_private,
                 release_time,
                 create_time,
-                update_time
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id",
+                update_time,
+                explicit,
+                gain
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id",
             value.display_id,
             value.title,
             value.subtitle,
@@ -205,7 +215,9 @@ where
             value.is_private,
             value.release_time,
             value.create_time,
-            value.update_time
+            value.update_time,
+            value.explicit,
+            value.gain
         ).fetch_one(executor).await.map(|x| x.id)
     }
 

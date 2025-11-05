@@ -198,7 +198,8 @@ pub struct PublishSongPublishReviewData {
     pub production_crew: Vec<SongProductionCrew>,
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
-    pub external_link: Vec<ExternalLink>
+    pub external_link: Vec<ExternalLink>,
+    pub explicit: Option<bool>
 }
 
 /// Get the review detail
@@ -273,7 +274,8 @@ async fn detail(
             external_link: data.song_external_links.into_iter().map(|x| ExternalLink {
                 platform: x.platform,
                 url: x.url,
-            }).collect()
+            }).collect(),
+            explicit: data.song_info.explicit,
         };
         ok!(result)
     } else {

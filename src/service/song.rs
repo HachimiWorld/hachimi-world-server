@@ -35,6 +35,10 @@ pub struct PublicSongDetail {
     pub create_time: DateTime<Utc>,
     /// @since 251102
     pub release_time: DateTime<Utc>,
+    /// @since 251105
+    pub gain: Option<f32>,
+    /// @since 251105
+    pub explicit: Option<bool>
 }
 
 pub async fn get_public_detail_with_cache_by_display_id(
@@ -204,6 +208,8 @@ async fn get_from_db(
         external_links: external_links,
         create_time: song.create_time,
         release_time: song.release_time,
+        gain: song.gain,
+        explicit: song.explicit,
     };
 
     Ok(Some(data))
