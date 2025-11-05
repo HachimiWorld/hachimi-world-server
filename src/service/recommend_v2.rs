@@ -124,7 +124,9 @@ pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow
     let keys: AsyncIter<String> = redis.scan_match("songs:recent_v2:latest:*").await?;
     let keys = keys.try_collect::<Vec<_>>().await?;
 
-    redis.del(&keys).await?;
+    if !keys.is_empty() {
+        redis.del(&keys).await?;
+    }
     Ok(())
 }
 
