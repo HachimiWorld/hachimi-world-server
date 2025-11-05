@@ -201,14 +201,21 @@ pub struct PublishSongPublishReviewData {
     pub external_link: Vec<ExternalLink>
 }
 
+/// Get the review detail
+///
+/// Permission: Only available for the uploader and contributors.
 async fn detail(
     claims: Claims,
     state: State<AppState>,
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    ensure_contributor(state.clone().0, claims.uid()).await?;
     let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?;
     if let Some(review) = review {
+        // Permission check
+        if review.user_id != claims.uid() {
+            ensure_contributor(state.clone().0, claims.uid()).await?;
+        }
+
         let data = serde_json::from_value::<InternalSongPublishReviewData>(review.data)
             .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
 
