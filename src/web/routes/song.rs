@@ -6,33 +6,29 @@ use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
 use crate::service::upload::{scale_down_to_webp, ResizeType};
-use crate::service::{recommend, recommend_v2, song, song_like, song_play};
+use crate::service::{recommend, recommend_v2, song, song_like};
 use crate::util::{validate_platforms, IsBlank};
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
-use crate::web::result::{CommonError, WebError, WebResult};
+use crate::web::result::{WebResult};
 use crate::web::routes::publish::InternalSongPublishReviewData;
 use crate::web::state::AppState;
-use crate::{audio, common, err, ok, search, service, util};
-use anyhow::{anyhow, Context};
+use crate::{audio, common, err, ok, search};
+use anyhow::{Context};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use chrono::{DateTime, Utc};
-use image::{ImageFormat, ImageReader};
 use itertools::Itertools;
 use rand::Rng;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::io::{Cursor, Read};
-use std::sync::LazyLock;
+use std::io::{Cursor};
 use std::time::Duration;
 use tracing::log::warn;
-use url::Url;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -371,6 +367,7 @@ async fn upload_audio_file(
                     tracing::error!("Error parsing audio: {:?}", err);
                     err!("parse_error", "Error parsing audio")
                 }
+                ParseError::CalculatingGainPeakError => err!("calculating_gain_peak_error", "Failed to calculate gain and peak"),
             },
         };
 
@@ -386,7 +383,7 @@ async fn upload_audio_file(
     let data = serde_json::to_string(&SongTempData {
         file_url: result.public_url.to_string(),
         duration_secs: metadata.duration_secs,
-        gain: None, // TODO[opt](song): calculate gain
+        gain: Some(metadata.gain_db),
     })?;
     let _: () = state
         .redis_conn
