@@ -92,6 +92,16 @@
         "ordinal": 17,
         "name": "update_time",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 18,
+        "name": "explicit",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 19,
+        "name": "gain",
+        "type_info": "Float4"
       }
     ],
     "parameters": {
@@ -118,7 +128,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true,
+      true
     ]
   },
   "hash": "6f4ad4e2fb705b1e3ab6201c016f0cf20e4fe6a09591cf0b9560152241782962"

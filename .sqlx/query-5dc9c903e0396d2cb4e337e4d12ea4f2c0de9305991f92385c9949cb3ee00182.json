@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE songs SET gain = $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Float4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5dc9c903e0396d2cb4e337e4d12ea4f2c0de9305991f92385c9949cb3ee00182"
+}
