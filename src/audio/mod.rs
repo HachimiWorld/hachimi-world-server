@@ -59,12 +59,12 @@ pub fn parse_and_validate(
     let media = MediaSourceStream::new(input, MediaSourceStreamOptions::default());
     let mut hint = Hint::default();
 
-    /*if let Some((_, ext)) = file_name.and_then(|name| name.rsplit_once(".")) {
+    if let Some((_, ext)) = file_name.and_then(|name| name.rsplit_once(".")) {
         debug!("File extension hint: {ext}");
         hint.with_extension(ext);
     } else {
         debug!("No hint");
-    }*/
+    }
 
     let mut probed = symphonia::default::get_probe()
         .format(&hint, media, &FormatOptions::default(), &MetadataOptions::default())
