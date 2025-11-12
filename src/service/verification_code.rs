@@ -45,7 +45,7 @@ pub async fn set_code(conn: &mut ConnectionManager, email: &str, code: &str) -> 
 
     // Reset retries
     let retires_key = get_verify_code_retries_key(email);
-    let _: () = conn.set(retires_key, 0).await?;
+    let _: () = conn.set_ex(retires_key, 0, 300).await?;
     Ok(())
 }
 
