@@ -17,6 +17,8 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
+use axum_extra::headers::UserAgent;
+use axum_extra::TypedHeader;
 use jsonwebtoken::errors::ErrorKind;
 use tracing::{error};
 use crate::search::user::{UserDocument};
@@ -63,6 +65,7 @@ pub struct EmailRegisterResp {
 async fn email_register(
     mut state: State<AppState>,
     XRealIP(ip): XRealIP,
+    TypedHeader(ua): TypedHeader<UserAgent>,
     req: Json<EmailRegisterReq>,
 ) -> WebResult<EmailRegisterResp> {
     let captcha = service::captcha::verify_captcha(&mut state.redis_conn, &req.captcha_key).await?;
@@ -117,7 +120,7 @@ async fn email_register(
 
         // 4. Generate tokens
         let token =
-            generate_token_pairs_and_save(ip, uid, req.device_info.clone(), &state.sql_pool)
+            generate_token_pairs_and_save(ip, uid, ua.to_string(), req.device_info.clone(), &state.sql_pool)
                 .await?;
 
         ok!(EmailRegisterResp {
@@ -150,6 +153,7 @@ pub struct LoginResp {
 #[debug_handler]
 async fn email_login(
     ip: XRealIP,
+    TypedHeader(ua): TypedHeader<UserAgent>,
     mut state: State<AppState>,
     req: Json<LoginReq>,
 ) -> WebResult<LoginResp> {
@@ -179,6 +183,7 @@ async fn email_login(
             let token = generate_token_pairs_and_save(
                 ip.0,
                 user.id,
+                ua.to_string(),
                 req.device_info.clone(),
                 &state.sql_pool,
             ).await?;
@@ -206,6 +211,7 @@ pub struct RefreshTokenReq {
 async fn refresh_token(
     state: State<AppState>,
     XRealIP(ip): XRealIP,
+    TypedHeader(ua): TypedHeader<UserAgent>,
     req: Json<RefreshTokenReq>,
 ) -> WebResult<TokenPair> {
     let claims = jwt::decode_and_validate_refresh_token(&req.refresh_token);
@@ -257,6 +263,7 @@ async fn refresh_token(
             last_used_time: Some(Utc::now()),
             device_info: Some(req.device_info.clone()),
             ip_address: Some(ip),
+            user_agent: Some(ua.to_string()),
             ..entry
         }
     } else {
@@ -265,6 +272,7 @@ async fn refresh_token(
             last_used_time: Some(Utc::now()),
             device_info: Some(req.device_info.clone()),
             ip_address: Some(ip),
+            user_agent: Some(ua.to_string()),
             ..entry
         }
     };
@@ -438,6 +446,7 @@ fn generate_username() -> String {
 async fn generate_token_pairs_and_save(
     ip: String,
     uid: i64,
+    ua: String,
     device_info: String,
     sql_pool: &PgPool,
 ) -> anyhow::Result<TokenPair> {
@@ -456,6 +465,7 @@ async fn generate_token_pairs_and_save(
         device_info: Some(device_info),
         ip_address: Some(ip),
         is_revoked: false,
+        user_agent: Some(ua),
     };
 
     RefreshTokenDao::insert(sql_pool, &entity).await?;

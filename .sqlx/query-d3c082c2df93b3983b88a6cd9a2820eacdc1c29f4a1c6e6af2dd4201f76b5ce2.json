@@ -52,6 +52,11 @@
         "ordinal": 9,
         "name": "is_revoked",
         "type_info": "Bool"
+      },
+      {
+        "ordinal": 10,
+        "name": "user_agent",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -69,7 +74,8 @@
       true,
       true,
       true,
-      false
+      false,
+      true
     ]
   },
   "hash": "d3c082c2df93b3983b88a6cd9a2820eacdc1c29f4a1c6e6af2dd4201f76b5ce2"

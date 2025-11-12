@@ -15,6 +15,7 @@ pub struct RefreshToken {
     pub device_info: Option<String>,
     pub ip_address: Option<String>,
     pub is_revoked: bool,
+    pub user_agent: Option<String>,
 }
 
 pub trait IRefreshTokenDao<'e, E>: CrudDao<'e, E> 
@@ -50,7 +51,7 @@ where E: PgExecutor<'e> {
 
     async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()> {
         sqlx::query!(
-            "UPDATE refresh_tokens SET user_id = $1, token_id = $2, token_value = $3, expires_time = $4, create_time = $5, last_used_time = $6, device_info = $7, ip_address = $8, is_revoked = $9 WHERE id = $10",
+            "UPDATE refresh_tokens SET user_id = $1, token_id = $2, token_value = $3, expires_time = $4, create_time = $5, last_used_time = $6, device_info = $7, ip_address = $8, is_revoked = $9, user_agent = $10 WHERE id = $11",
             value.user_id,
             value.token_id,
             value.token_value,
@@ -60,6 +61,7 @@ where E: PgExecutor<'e> {
             value.device_info,
             value.ip_address,
             value.is_revoked,
+            value.user_agent,
             value.id
         ).execute(executor).await?;
         Ok(())
@@ -67,8 +69,8 @@ where E: PgExecutor<'e> {
 
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         let r = sqlx::query!(
-            "INSERT INTO refresh_tokens(user_id, token_id, token_value, expires_time, create_time, last_used_time, device_info, ip_address, is_revoked)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+            "INSERT INTO refresh_tokens(user_id, token_id, token_value, expires_time, create_time, last_used_time, device_info, ip_address, is_revoked, user_agent)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
             value.user_id,
             value.token_id,
             value.token_value,
@@ -77,7 +79,8 @@ where E: PgExecutor<'e> {
             value.last_used_time,
             value.device_info,
             value.ip_address,
-            value.is_revoked
+            value.is_revoked,
+            value.user_agent,
         ).fetch_one(executor).await?;
         Ok(r.id)
     }
