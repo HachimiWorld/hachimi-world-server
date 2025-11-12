@@ -40,7 +40,7 @@ pub fn generate_refresh_token(uid: &str) -> (String, RefreshTokenClaims) {
         r#type: "refresh_token".to_string(),
         uid: uid.to_string(),
         iss: "hachimi-world".to_string(),
-        exp: (chrono::Utc::now() + chrono::Duration::days(7)).timestamp() as usize,
+        exp: (chrono::Utc::now() + chrono::Duration::days(60)).timestamp() as usize,
         jti: Uuid::new_v4().to_string(),
     };
     let encoded = encode(&Header::default(), &claims, &JWT_KEYS.get().unwrap().encoding).unwrap();
