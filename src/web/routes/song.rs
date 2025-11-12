@@ -1,45 +1,37 @@
-use crate::audio::ParseError;
-use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
-use crate::db::song_publishing_review::{SongPublishingReview, SongPublishingReviewDao};
+use crate::db::song::{ISongDao, SongDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
-use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
-use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::service::{recommend, recommend_v2, song, song_like};
-use crate::util::{validate_platforms, IsBlank};
+use crate::util::{IsBlank};
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
 use crate::web::result::{WebResult};
-use crate::web::routes::publish::InternalSongPublishReviewData;
 use crate::web::state::AppState;
-use crate::{audio, common, err, ok, search};
-use anyhow::{Context};
+use crate::{err, ok, search};
 use async_backtrace::framed;
-use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use chrono::{DateTime, Utc};
-use itertools::Itertools;
-use rand::Rng;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
-use std::io::{Cursor};
 use std::time::Duration;
 use tracing::log::warn;
+use crate::web::routes::publish;
 
 pub fn router() -> Router<AppState> {
     Router::new()
         // Core operations
-        .route("/upload_audio_file", post(upload_audio_file))
+        .route("/upload_audio_file", post(publish::upload_audio_file))
         .layer(DefaultBodyLimit::max(20 * 1024 * 1024)) // 20MB
-        .route("/upload_cover_image", post(upload_cover_image))
+        .route("/upload_cover_image", post(publish::upload_cover_image))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 20MB
+        .route("/delete", post(publish::delete))
+        .route("/publish", post(publish::publish))
         .route("/detail", get(detail))
-        .route("/publish", post(publish))
-        .route("/delete", post(delete))
         .route("/page_by_user", get(page_by_user))
         // Discovery
         .route("/search", get(search))
@@ -82,376 +74,6 @@ async fn detail(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublishReq {
-    pub song_temp_id: String,
-    pub cover_temp_id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub description: String,
-    pub lyrics: String,
-    pub tag_ids: Vec<i64>,
-    pub creation_info: CreationInfo,
-    pub production_crew: Vec<ProductionItem>,
-    pub external_links: Vec<ExternalLink>,
-    /// Since 251105
-    pub explicit: Option<bool>
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreationInfo {
-    /// 0: original, 1: derivative work, 2: tertiary work
-    pub creation_type: i32,
-    // TODO: A derivation song can be inspired by many origin songs
-    pub origin_info: Option<CreationTypeInfo>,
-    pub derivative_info: Option<CreationTypeInfo>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CreationTypeInfo {
-    // If `song_id` is Some, the rest fields could be None
-    pub song_display_id: Option<String>,
-    pub title: Option<String>,
-    pub artist: Option<String>,
-    pub url: Option<String>,
-    pub origin_type: i32,
-}
-
-impl CreationTypeInfo {
-    pub fn from_song_origin_info(x: SongOriginInfo, song_display_id: Option<String>) -> Self {
-        CreationTypeInfo {
-            song_display_id,
-            title: x.origin_title.clone(),
-            artist: x.origin_artist.clone(),
-            url: x.origin_url.clone(),
-            origin_type: x.origin_type,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProductionItem {
-    pub role: String,
-    pub uid: Option<i64>,
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalLink {
-    pub platform: String,
-    pub url: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublishResp {
-    pub review_id: i64,
-    pub song_display_id: String,
-}
-
-#[framed]
-async fn publish(
-    claims: Claims,
-    mut state: State<AppState>,
-    req: Json<PublishReq>,
-) -> WebResult<PublishResp> {
-    let uid = claims.uid();
-    let user = UserDao::get_by_id(&state.sql_pool, uid).await?.ok_or_else(|| common!("user_not_found", "User not found"))?;
-
-    // Validate input
-    // Validate creation_type
-    if req.creation_info.creation_type == 1 && req.creation_info.origin_info.is_none() {
-        err!("missing_origin_info", "Missing origin info for derivative song");
-    }
-    if req.creation_info.creation_type == 2 && req.creation_info.derivative_info.is_none() {
-        err!("missing_origin_info", "Missing derivative info for derivative song");
-    }
-
-    // Validate tags
-    let tags = SongTagDao::list_by_ids(&state.sql_pool, &req.tag_ids).await?;
-    if tags.len() != req.tag_ids.len() {
-        err!("tag_not_found", "Some tags not found");
-    }
-
-    // Processing data
-    let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(&req.song_temp_id)).await?;
-    let song_temp_data = song_temp_data.ok_or_else(|| common!("invalid_song_temp_id", "Invalid song temp id"))?;
-    let song_temp_data: SongTempData = serde_json::from_str(&song_temp_data)?;
-
-    let cover_url: Option<String> = state.redis_conn.get(build_image_temp_key(&req.cover_temp_id)).await?;
-    let cover_url = cover_url.ok_or_else(|| common!("invalid_cover_temp_id", "Invalid cover temp id"))?;
-
-    let display_id = loop {
-        let id = generate_song_display_id();
-        if SongDao::get_by_display_id(&state.sql_pool, &id).await?.is_some() {
-            continue;
-        }
-        break id;
-    };
-    let now = Utc::now();
-
-    let mut song = Song {
-        id: 0,
-        display_id: display_id.to_string(),
-        title: req.title.to_string(),
-        subtitle: req.subtitle.to_string(),
-        description: req.description.to_string(),
-        artist: user.username.to_string(),
-        file_url: song_temp_data.file_url.to_string(),
-        cover_art_url: cover_url.to_string(),
-        lyrics: req.lyrics.to_string(),
-        duration_seconds: song_temp_data.duration_secs as i32, // Fuck the num type
-        uploader_uid: user.id,
-        creation_type: req.creation_info.creation_type,
-        play_count: 0,
-        like_count: 0,
-        is_private: false,
-        release_time: now,
-        create_time: now,
-        update_time: now, // Do we really need three time data?
-        gain: song_temp_data.gain,
-        explicit: req.explicit,
-    };
-
-    let mut song_origin_infos = Vec::new();
-    for x in [
-        &req.creation_info.origin_info,
-        &req.creation_info.derivative_info,
-    ] {
-        if let Some(item) = x {
-            // Validate, must set one of the id or title
-            if item.song_display_id.is_none() && item.title.is_none() {
-                err!("title_missed", "Origin info title must not be empty")
-            }
-            // Parse internal song id
-            let song = if let Some(ref display_id) = item.song_display_id {
-                let song = SongDao::get_by_display_id(&state.sql_pool, &display_id)
-                    .await?
-                    .ok_or_else(|| common!("song_not_found", "The song (ID={}) specified in origin info was not found", display_id))?;
-                Some(song)
-            } else {
-                None
-            };
-            // Add to batch
-            song_origin_infos.push(SongOriginInfo {
-                id: 0,
-                song_id: 0,
-                origin_type: item.origin_type,
-                origin_song_id: song.map(|x| x.id),
-                origin_title: item.title.clone(),
-                origin_artist: item.artist.clone(),
-                origin_url: item.url.clone(),
-            });
-        }
-    }
-
-    let mut production_crew = Vec::new();
-    for member in &req.production_crew {
-        if member.uid.is_none() && member.name.is_none() {
-            err!("name_missed", "One of uid or name must be set")
-        }
-
-        if let Some(uid) = member.uid {
-            let user = UserDao::get_by_id(&state.sql_pool, uid).await?
-                .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
-            production_crew.push(SongProductionCrew {
-                id: 0,
-                song_id: 0,
-                role: member.role.clone(),
-                uid: Some(user.id),
-                person_name: Some(user.username),
-            });
-        }
-
-        if let Some(ref name) = member.name {
-            production_crew.push(SongProductionCrew {
-                id: 0,
-                song_id: 0,
-                role: member.role.clone(),
-                uid: None,
-                person_name: Some(name.clone()),
-            });
-        }
-    }
-
-    song.artist = production_crew.iter().map(|x| x.person_name.clone().unwrap_or_else(|| "Unknown".to_string())).join(", ");
-
-    let mut links = Vec::new();
-    for link in &req.external_links {
-        validate_platforms(&link.platform, &link.url)?;
-
-        let x = SongExternalLink {
-            id: 0,
-            song_id: 0,
-            platform: link.platform.clone(),
-            url: link.url.clone(),
-        };
-        links.push(x)
-    }
-
-    let data = InternalSongPublishReviewData {
-        song_info: song,
-        song_origin_infos: song_origin_infos,
-        song_production_crew: production_crew,
-        song_tags: tags,
-        song_external_links: links
-    };
-    let review = SongPublishingReview {
-        id: 0,
-        user_id: claims.uid(),
-        song_display_id: display_id.clone(),
-        data: serde_json::to_value(data)?,
-        submit_time: Utc::now(),
-        update_time: Utc::now(),
-        review_time: None,
-        review_comment: None,
-        status: 0,
-    };
-
-    let review_id = SongPublishingReviewDao::insert(&state.sql_pool, &review).await?;
-
-    ok!(PublishResp {
-        review_id: review_id,
-        song_display_id: display_id
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UploadAudioFileResp {
-    pub temp_id: String,
-    pub duration_secs: u64,
-    pub title: Option<String>,
-    pub bitrate: Option<String>,
-    pub artist: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SongTempData {
-    pub file_url: String,
-    pub duration_secs: u64,
-    pub gain: Option<f32>
-}
-
-#[framed]
-async fn upload_audio_file(
-    claims: Claims,
-    mut state: State<AppState>,
-    mut multipart: Multipart,
-) -> WebResult<UploadAudioFileResp> {
-    // 1. Receive streams
-    let data_field = multipart
-        .next_field()
-        .await?
-        .with_context(|| "No data field found")?;
-
-    let file_name = data_field.file_name().map(|x| x.to_string());
-
-    // TODO[opt](song): decode and receive in parallel
-    let bytes = data_field.bytes().await?;
-    let cursor = Cursor::new(bytes.clone());
-
-    // 2. Validate metadata
-    let metadata =
-        match audio::parse_and_validate(Box::new(cursor), file_name.as_ref().map(|x| x.as_str())) {
-            Ok(v) => v,
-            Err(err) => match err {
-                ParseError::FormatUnsupported => {
-                    err!("format_unsupported", "Audio format not supported")
-                }
-                ParseError::TrackNotFound => err!("track_not_found", "Audio track not found"),
-                ParseError::MetadataNotFound(key) => err!(
-                    "metadata_not_found",
-                    "Metadata {key} not found in audio"
-                ),
-                ParseError::ParsingDurationError => err!("parsing_duration_error", "Failed to parse duration"),
-                ParseError::Parse(err) => {
-                    tracing::error!("Error parsing audio: {:?}", err);
-                    err!("parse_error", "Error parsing audio")
-                }
-                ParseError::CalculatingGainPeakError => err!("calculating_gain_peak_error", "Failed to calculate gain and peak"),
-            },
-        };
-
-    // 3. Upload to s3
-    // Generate a random filename
-    let file_name = format!("{}.{}", uuid::Uuid::new_v4(), metadata.format);
-    let result = state
-        .file_host
-        .upload(bytes, &format!("songs/{}", file_name))
-        .await?;
-
-    let temp_id = uuid::Uuid::new_v4().to_string();
-    let data = serde_json::to_string(&SongTempData {
-        file_url: result.public_url.to_string(),
-        duration_secs: metadata.duration_secs,
-        gain: Some(metadata.gain_db),
-    })?;
-    let _: () = state
-        .redis_conn
-        .set_ex(build_temp_key(&temp_id), data, 3600)
-        .await?;
-
-    ok!(UploadAudioFileResp {
-        temp_id: temp_id,
-        title: metadata.title,
-        duration_secs: metadata.duration_secs,
-        bitrate: None,
-        artist: None,
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UploadImageResp {
-    pub temp_id: String,
-}
-
-#[framed]
-async fn upload_cover_image(
-    claims: Claims,
-    mut state: State<AppState>,
-    mut multipart: Multipart,
-) -> WebResult<UploadImageResp> {
-    let _ = if let Some(x) = UserDao::get_by_id(&state.sql_pool, claims.uid()).await? {
-        x
-    } else {
-        err!("not_found", "User not found")
-    };
-
-    let data_field = multipart
-        .next_field()
-        .await?
-        .with_context(|| "No data field found")?;
-    let bytes = data_field.bytes().await?;
-
-    let start = std::time::Instant::now();
-
-    // Validate image
-    if bytes.len() > 8 * 1024 * 1024 {
-        err!("image_too_large", "Image size must be less than 8MB");
-    }
-
-    let webp = scale_down_to_webp(1024, 1024, bytes.clone(), ResizeType::Fit, 90f32)
-        .map_err(|_| common!("invalid_image", "The image is not supported"))?;
-
-    // Upload image
-    let sha1 = openssl::sha::sha1(&webp);
-    let filename = format!("images/cover/{}.webp", hex::encode(sha1));
-    let result = state.file_host.upload(webp.into(), &filename).await?;
-    let temp_id = uuid::Uuid::new_v4().to_string();
-    let _: () = state.redis_conn
-        .set_ex(build_image_temp_key(&temp_id), result.public_url, 3600)
-        .await?;
-
-    ok!(UploadImageResp { temp_id })
-}
-
-fn build_temp_key(temp_id: &str) -> String {
-    let key = format!("song_upload:temp:{}", temp_id);
-    key
-}
-fn build_image_temp_key(temp_id: &str) -> String {
-    let key = format!("songs_upload:cover_temp:{}", temp_id);
-    key
-}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageByUserReq {
     pub user_id: i64,
@@ -542,10 +164,6 @@ async fn set_page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page
     let cache_key = format!("user_songs:{}:{}:{}", user_id, page, size);
     let _: () = redis.set_ex(&cache_key, serde_json::to_string(&resp)?, 300).await?;
     Ok(())
-}
-
-async fn delete() -> WebResult<()> {
-    err!("no_impl", "Not implemented yet");
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -850,22 +468,4 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
     ).await?;
 
     ok!(TagCreateResp { id })
-}
-
-/// Pattern: JM-AAAA-000
-fn generate_song_display_id() -> String {
-    let mut rng = rand::rng();
-
-    // 生成4个随机大写字母
-    let letters: String = (0..4)
-        .map(|_| rng.random_range(b'A'..=b'Z') as char)
-        .collect();
-
-    // 生成3个随机数字
-    let numbers: String = (0..3)
-        .map(|_| rng.random_range(b'0'..=b'9') as char)
-        .collect();
-
-    // 组合成目标格式
-    format!("JM-{}-{}", letters, numbers)
 }

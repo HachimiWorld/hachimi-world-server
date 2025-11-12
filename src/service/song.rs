@@ -1,15 +1,16 @@
-use crate::db::song::{ISongDao, Song, SongDao, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::{song_like};
-use crate::web::routes::song::{CreationTypeInfo, ExternalLink, TagItem};
+use crate::web::routes::song::{TagItem};
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use rand::Rng;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicSongDetail {
@@ -39,6 +40,34 @@ pub struct PublicSongDetail {
     pub gain: Option<f32>,
     /// @since 251105
     pub explicit: Option<bool>
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreationTypeInfo {
+    // If `song_id` is Some, the rest fields could be None
+    pub song_display_id: Option<String>,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub url: Option<String>,
+    pub origin_type: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalLink {
+    pub platform: String,
+    pub url: String,
+}
+
+impl CreationTypeInfo {
+    pub fn from_song_origin_info(x: SongOriginInfo, song_display_id: Option<String>) -> Self {
+        CreationTypeInfo {
+            song_display_id,
+            title: x.origin_title.clone(),
+            artist: x.origin_artist.clone(),
+            url: x.origin_url.clone(),
+            origin_type: x.origin_type,
+        }
+    }
 }
 
 pub async fn get_public_detail_with_cache_by_display_id(
@@ -213,4 +242,20 @@ async fn get_from_db(
     };
 
     Ok(Some(data))
+}
+
+
+/// Pattern: JM-AAAA-000
+pub fn generate_song_display_id() -> String {
+    let mut rng = rand::rng();
+
+    let letters: String = (0..4)
+        .map(|_| rng.random_range(b'A'..=b'Z') as char)
+        .collect();
+
+    let numbers: String = (0..3)
+        .map(|_| rng.random_range(b'0'..=b'9') as char)
+        .collect();
+
+    format!("JM-{}-{}", letters, numbers)
 }
