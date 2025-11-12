@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use axum::extract::Query;
 use jsonwebtoken::errors::ErrorKind;
-use tracing::{error, warn};
+use tracing::{error};
 use crate::search::user::{UserDocument};
 use crate::service::captcha::verify_captcha;
 
@@ -246,24 +246,35 @@ async fn refresh_token(
 
     let expires_in = Utc::now() + Duration::minutes(5);
     let access_token = jwt::generate_access_token(&uid.to_string(), expires_in.timestamp());
-    let (refresh_token, claims) = jwt::generate_refresh_token(&uid.to_string());
 
-    let entity = RefreshToken {
-        token_id: claims.jti,
-        token_value: refresh_token.clone(),
-        expires_time: DateTime::from_timestamp(claims.exp as i64, 0).unwrap(),
-        create_time: Utc::now(),
-        last_used_time: None,
-        device_info: Some(req.device_info.clone()),
-        ip_address: Some(ip),
-        ..entry
+    let token = if entry.expires_time - Utc::now() < Duration::days(7) {
+        // When the refresh token is about to expire, generate a new one.
+        let (refresh_token, claims) = jwt::generate_refresh_token(&uid.to_string());
+        RefreshToken {
+            token_id: claims.jti,
+            token_value: refresh_token,
+            expires_time: DateTime::from_timestamp(claims.exp as i64, 0).unwrap(),
+            last_used_time: Some(Utc::now()),
+            device_info: Some(req.device_info.clone()),
+            ip_address: Some(ip),
+            ..entry
+        }
+    } else {
+        // Just use the original token
+        RefreshToken {
+            last_used_time: Some(Utc::now()),
+            device_info: Some(req.device_info.clone()),
+            ip_address: Some(ip),
+            ..entry
+        }
     };
 
-    RefreshTokenDao::update_by_id(&state.sql_pool, &entity).await?;
+    // Update the token
+    RefreshTokenDao::update_by_id(&state.sql_pool, &token).await?;
 
     ok!(TokenPair {
         access_token,
-        refresh_token,
+        refresh_token: token.token_value.clone(),
         expires_in,
     });
 }
