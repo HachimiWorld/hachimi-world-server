@@ -1,12 +1,11 @@
 use std::net::SocketAddr;
 use crate::web::state::AppState;
-use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::http::{StatusCode};
 use axum::routing::get;
-use axum::{Router, ServiceExt};
+use axum::{Router};
 use serde::Deserialize;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
-use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 pub mod routes;

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use crate::service::song;
 use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
 use anyhow::bail;
-use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
+use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use futures::{TryStreamExt};
 use metrics::histogram;
 use rand::prelude::SliceRandom;
@@ -89,7 +89,7 @@ fn build_recent_redis_key(cursor: Option<DateTime<Utc>>, limit: i32, after: bool
     ).unwrap_or("latest".to_string()))
 }
 
-async fn get_from_db(mut redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
+async fn get_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
     let cursor = cursor.unwrap_or_else(|| Utc::now());
     let start = Instant::now();
     let recent_songs: Vec<_> = if after {

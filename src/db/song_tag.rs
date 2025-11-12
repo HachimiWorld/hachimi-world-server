@@ -1,7 +1,7 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgExecutor, PgPool};
+use sqlx::{FromRow, PgExecutor};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongTag {

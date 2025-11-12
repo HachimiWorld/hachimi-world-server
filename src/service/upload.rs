@@ -4,7 +4,7 @@ use bytes::Bytes;
 use image::{ImageFormat, ImageReader};
 use image::imageops::FilterType;
 use metrics::{histogram};
-use tracing::{debug, info};
+use tracing::{info};
 use crate::service::upload::ValidationError::{InvalidImage, UnsupportedFormat};
 
 #[derive(thiserror::Error, Debug)]
@@ -72,6 +72,17 @@ pub fn scale_down_to_webp(
     Ok(webp.to_vec())
 }
 
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use crate::service::upload::{scale_down_to_webp, ResizeType};
+
+    #[test]
+    fn test_scale_down() {
+        let bytes = fs::read(".local/test_res/test.png").unwrap();
+        let webp = scale_down_to_webp(1920, 1920, bytes.into(), ResizeType::Fit, 95f32).unwrap();
+    }
+}
 /*pub struct UploadedImageTempData {
     pub url: String,
     pub size: usize,

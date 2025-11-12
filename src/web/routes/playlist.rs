@@ -16,7 +16,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use crate::service::upload::{ResizeType, ValidationError};
+use crate::service::upload::{ResizeType};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -195,7 +195,7 @@ async fn create(
         name: req.name.clone(),
         description: req.description.clone(),
         user_id: uid,
-        cover_url: None, // TODO
+        cover_url: None, // TODO: Pick a song cover by default
         is_public: req.is_public,
         create_time: Utc::now(),
         update_time: Utc::now(),

@@ -5,7 +5,6 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use tracing::log::log;
 
 #[derive(Clone)]
 pub struct RedLock {

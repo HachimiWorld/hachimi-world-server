@@ -206,7 +206,7 @@ async fn fully_index_songs(
 
         let mut documents: Vec<SongDocument> = vec![];
         let ids: Vec<_> = chunk.iter().map(|x| x.id).collect();
-        let mut songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &ids).await?.into_iter()
+        let songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &ids).await?.into_iter()
             .map(|x| (x.id, x))
             .collect();
         let mut crews: HashMap<i64, _> = query!(

@@ -1,4 +1,3 @@
-use std::io::{Cursor};
 use anyhow::Context;
 use async_backtrace::framed;
 use crate::db::CrudDao;
@@ -11,8 +10,6 @@ use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
 use axum::extract::{Multipart, Query};
 use chrono::Utc;
-use image::imageops::FilterType;
-use image::{ImageReader};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use crate::search::user::UserDocument;

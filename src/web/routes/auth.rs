@@ -195,7 +195,7 @@ async fn email_login(
             };
             ok!(resp)
         }
-        Some(code) => {
+        Some(_) => {
             // TODO[security](auth): check 2fa code
             err!("invalid_code", "Invalid code")
         }
@@ -328,7 +328,7 @@ pub struct OAuthLoginResp {
     pub token: TokenPair,
 }
 
-async fn oauth_github() {
+// async fn oauth_github() {
     // https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps
     // scopes = read:user, user:email
     // 1. Build authorize url
@@ -337,7 +337,7 @@ async fn oauth_github() {
     // 4. Read user profile(username, email, avatar)
     // 5. Login/register
     // 6. Return tokens
-}
+// }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeviceListResp {
@@ -395,7 +395,7 @@ async fn device_logout(
     ok!(())
 }
 
-async fn protected(claims: Claims) -> WebResult<()> {
+async fn protected(_: Claims) -> WebResult<()> {
     ok!(())
 }
 

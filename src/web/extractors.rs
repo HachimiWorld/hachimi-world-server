@@ -11,7 +11,7 @@ where
 {
     type Rejection = WebError<()>;
 
-    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(parts: &mut Parts, _: &S) -> Result<Self, Self::Rejection> {
         let value = parts
             .headers
             .get("X-Real-IP")

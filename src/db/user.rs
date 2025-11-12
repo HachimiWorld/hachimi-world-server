@@ -1,7 +1,7 @@
+use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgExecutor, PgPool, Pool, Postgres, Result};
-use crate::db::CrudDao;
+use sqlx::{FromRow, PgExecutor, Result};
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct User {
