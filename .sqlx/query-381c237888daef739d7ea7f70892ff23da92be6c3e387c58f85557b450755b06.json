@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE refresh_tokens SET user_id = $1, token_id = $2, token_value = $3, expires_time = $4, create_time = $5, last_used_time = $6, device_info = $7, ip_address = $8, is_revoked = $9, user_agent = $10 WHERE id = $11",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Varchar",
+        "Varchar",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Varchar",
+        "Varchar",
+        "Bool",
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "381c237888daef739d7ea7f70892ff23da92be6c3e387c58f85557b450755b06"
+}
