@@ -20,7 +20,7 @@ pub struct SongDocument {
     pub description: String,
     pub cover_url: String,
     pub artist: String,
-    // pub lyrics: String,             -- No, lyrics should not be store because the hachimi lyrics are too much similar 
+    // pub lyrics: String, -- No, lyrics should not be store because the hachimi lyrics are too much similar
     pub duration_seconds: i32,
     pub uploader_uid: i64,
     pub creation_type: i32,
@@ -33,20 +33,15 @@ pub struct SongDocument {
     pub release_time: i64,
 }
 
-pub async fn add_song_document(
+pub async fn update_document(
     client: &Client,
-    song_id: i64,
-    song_info: &Song,
-    crew: &[SongProductionCrew],
-    origin_info: &[SongOriginInfo],
-    tags: &[SongTag],
+    pool: &PgPool,
+    song_ids: &[i64]
 ) -> Result<(), meilisearch_sdk::errors::Error> {
-    let document = convert_to_document(song_id, song_info, crew, origin_info, tags);
-
+    let documents = get_documents_batch(pool, song_ids).await.unwrap();
     client.index("songs")
-        .add_documents(&[document], Some("id"))
+        .add_documents(&documents, Some("id"))
         .await?;
-
     Ok(())
 }
 
@@ -204,97 +199,8 @@ async fn fully_index_songs(
     for (index, chunk) in chunks.iter().enumerate() {
         info!("indexing chunk {} of {}", index, chunks.len());
 
-        let mut documents: Vec<SongDocument> = vec![];
         let ids: Vec<_> = chunk.iter().map(|x| x.id).collect();
-        let songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &ids).await?.into_iter()
-            .map(|x| (x.id, x))
-            .collect();
-        let mut crews: HashMap<i64, _> = query!(
-            "SELECT song_id AS \"song_id!\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
-               LEFT JOIN users u ON u.id = c.uid
-               WHERE song_id = ANY($1)", &ids)
-            .fetch_all(pool).await?
-            .into_iter().into_group_map_by(|x| x.song_id);
-
-        let mut origin_infos: HashMap<i64, _> = query!(
-            // FIXME: The `AS song_id!` is a workaround for the bug of nullable inference in sqlx.
-            "SELECT o.song_id AS \"song_id!\",
-                s.title AS \"internal_title?\",
-                s.artist AS \"internal_artist?\",
-                o.origin_type,
-                o.origin_song_id,
-                o.origin_title,
-                o.origin_artist,
-                o.origin_url
-            FROM song_origin_info o
-                 LEFT JOIN songs s ON s.id = o.origin_song_id
-            WHERE o.song_id = ANY($1)", &ids)
-            .fetch_all(pool).await?
-            .into_iter().into_group_map_by(|x| x.song_id);
-
-        let mut tags: HashMap<i64, _> = query!(
-            // FIXME: Nullability inference bug workaround for sqlx
-            "SELECT r.song_id AS \"song_id!\", t.name AS \"name?\"
-            FROM song_tag_refs r
-                LEFT JOIN song_tags t ON t.id = r.tag_id
-            WHERE r.song_id = ANY($1)", &ids)
-            .fetch_all(pool).await?
-            .into_iter().into_group_map_by(|x| x.song_id);
-
-
-        for id in ids {
-            let song_info = if let Some(x) = songs.get(&id) {
-                x
-            } else {
-                warn!("Song not found for id: {}", id);
-                continue;
-            };
-
-            let origin_titles = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
-                .into_iter()
-                .map(|x| x.internal_title.take().or(x.origin_title.take()).unwrap_or("Unknown".to_string()))
-                .collect();
-
-            let origin_artists = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
-                .into_iter()
-                .map(|x| x.internal_artist.take().or(x.origin_artist.take()).unwrap_or("Unknown".to_string()))
-                .collect();
-
-            let crew_names = crews.get_mut(&id).unwrap_or(&mut vec![])
-                .into_iter()
-                .map(|x| x.internal_username.take()
-                    .or(x.external_username.take())
-                    .unwrap_or("Unknown".to_string())
-                    .to_string()
-                ).collect::<Vec<_>>();
-
-            let tag_names = tags.get_mut(&id).unwrap_or(&mut vec![])
-                .into_iter().map(|x| x.name.take().unwrap_or("Unknown".to_string()))
-                .collect();
-
-            let doc = SongDocument {
-                id: id,
-                display_id: song_info.display_id.clone(),
-                title: song_info.title.clone(),
-                subtitle: song_info.subtitle.clone(),
-                description: song_info.description.clone(),
-                cover_url: song_info.cover_art_url.clone(),
-                artist: song_info.artist.clone(),
-                // lyrics: song_info.lyrics.clone(),
-                duration_seconds: song_info.duration_seconds,
-                uploader_uid: song_info.uploader_uid,
-                creation_type: song_info.creation_type,
-                play_count: song_info.play_count,
-                like_count: song_info.like_count,
-                tags: tag_names,
-                origins: origin_titles, // Will be populated from origin_info if needed
-                origin_artists: origin_artists,
-                crew: crew_names,
-                release_time: song_info.release_time.timestamp(),
-            };
-            documents.push(doc)
-        }
-
+        let documents = get_documents_batch(pool, &ids).await?;
         info!("sync chunk {} to MeiliSearch: {:?}", index, documents.len());
         let _ = new_index.add_documents(&documents, Some("id")).await?
             .wait_for_completion(&client, None, None)
@@ -315,47 +221,97 @@ async fn fully_index_songs(
     Ok(())
 }
 
-pub fn convert_to_document(
-    song_id: i64,
-    song_info: &Song,
-    crew: &[SongProductionCrew],
-    origin_info: &[SongOriginInfo],
-    tags: &[SongTag],
-) -> SongDocument {
-    let crew_names: Vec<String> = crew.iter()
-        .map(|c| format!("{}: {}", c.role, c.person_name.as_deref().unwrap_or("Unknown")))
+pub async fn get_documents_batch(
+    pool: &PgPool,
+    song_ids: &[i64]
+) -> anyhow::Result<Vec<SongDocument>> {
+    let mut documents: Vec<SongDocument> = vec![];
+    let songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &song_ids).await?.into_iter()
+        .map(|x| (x.id, x))
         .collect();
+    let mut crews: HashMap<i64, _> = query!(
+            "SELECT song_id AS \"song_id!\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
+               LEFT JOIN users u ON u.id = c.uid
+               WHERE song_id = ANY($1)", &song_ids)
+        .fetch_all(pool).await?
+        .into_iter().into_group_map_by(|x| x.song_id);
 
-    let origin_titles: Vec<_> = origin_info.iter().filter_map(|x| x.origin_title.clone())
-        .collect();
+    let mut origin_infos: HashMap<i64, _> = query!(
+            // FIXME: The `AS song_id!` is a workaround for the bug of nullable inference in sqlx.
+            "SELECT o.song_id AS \"song_id!\",
+                s.title AS \"internal_title?\",
+                s.artist AS \"internal_artist?\",
+                o.origin_type,
+                o.origin_song_id,
+                o.origin_title,
+                o.origin_artist,
+                o.origin_url
+            FROM song_origin_info o
+                 LEFT JOIN songs s ON s.id = o.origin_song_id
+            WHERE o.song_id = ANY($1)", &song_ids)
+        .fetch_all(pool).await?
+        .into_iter().into_group_map_by(|x| x.song_id);
 
-    let origin_artists = origin_info.iter().filter_map(|x| x.origin_artist.clone())
-        .collect();
+    let mut tags: HashMap<i64, _> = query!(
+            // FIXME: Nullability inference bug workaround for sqlx
+            "SELECT r.song_id AS \"song_id!\", t.name AS \"name?\"
+            FROM song_tag_refs r
+                LEFT JOIN song_tags t ON t.id = r.tag_id
+            WHERE r.song_id = ANY($1)", &song_ids)
+        .fetch_all(pool).await?
+        .into_iter().into_group_map_by(|x| x.song_id);
 
-    // FIXME(search): If we update the tag name, we should find a way to update the corresponding document in MeiliSearch
+    for id in song_ids {
+        let song_info = if let Some(x) = songs.get(&id) {
+            x
+        } else {
+            warn!("Song not found for id: {}", id);
+            continue;
+        };
 
-    let tag_names: Vec<String> = tags.iter().map(|x| x.name.clone()).collect();
+        let origin_titles = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
+            .into_iter()
+            .map(|x| x.internal_title.take().or(x.origin_title.take()).unwrap_or("Unknown".to_string()))
+            .collect();
 
-    let document = SongDocument {
-        id: song_id,
-        display_id: song_info.display_id.clone(),
-        title: song_info.title.clone(),
-        subtitle: song_info.subtitle.clone(),
-        description: song_info.description.clone(),
-        cover_url: song_info.cover_art_url.clone(),
-        artist: song_info.artist.clone(),
-        // lyrics: song_info.lyrics.clone(),
-        duration_seconds: song_info.duration_seconds,
-        uploader_uid: song_info.uploader_uid,
-        creation_type: song_info.creation_type,
-        play_count: song_info.play_count,
-        like_count: song_info.like_count,
-        tags: tag_names,
-        origins: origin_titles, // Will be populated from origin_info if needed
-        origin_artists: origin_artists,
-        crew: crew_names,
-        release_time: song_info.release_time.timestamp(),
-    };
+        let origin_artists = origin_infos.get_mut(&id).unwrap_or(&mut vec![])
+            .into_iter()
+            .map(|x| x.internal_artist.take().or(x.origin_artist.take()).unwrap_or("Unknown".to_string()))
+            .collect();
 
-    document
+        let crew_names = crews.get_mut(&id).unwrap_or(&mut vec![])
+            .into_iter()
+            .map(|x| x.internal_username.take()
+                .or(x.external_username.take())
+                .unwrap_or("Unknown".to_string())
+                .to_string()
+            ).collect::<Vec<_>>();
+
+        let tag_names = tags.get_mut(&id).unwrap_or(&mut vec![])
+            .into_iter().map(|x| x.name.take().unwrap_or("Unknown".to_string()))
+            .collect();
+
+        let doc = SongDocument {
+            id: *id,
+            display_id: song_info.display_id.clone(),
+            title: song_info.title.clone(),
+            subtitle: song_info.subtitle.clone(),
+            description: song_info.description.clone(),
+            cover_url: song_info.cover_art_url.clone(),
+            artist: song_info.artist.clone(),
+            // lyrics: song_info.lyrics.clone(),
+            duration_seconds: song_info.duration_seconds,
+            uploader_uid: song_info.uploader_uid,
+            creation_type: song_info.creation_type,
+            play_count: song_info.play_count,
+            like_count: song_info.like_count,
+            tags: tag_names,
+            origins: origin_titles, // Will be populated from origin_info if needed
+            origin_artists: origin_artists,
+            crew: crew_names,
+            release_time: song_info.release_time.timestamp(),
+        };
+        documents.push(doc)
+    }
+    Ok(documents)
 }
