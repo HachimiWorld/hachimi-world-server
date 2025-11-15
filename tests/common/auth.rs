@@ -11,7 +11,7 @@ pub struct TestUser {
 }
 
 pub async fn with_new_random_test_user(env: &mut TestEnvironment) -> TestUser {
-    let random_email = format!("test_{}@mail.com", uuid::Uuid::new_v4());
+    let random_email = format!("test_{}@example.com", uuid::Uuid::new_v4());
     with_new_test_user(env, &random_email).await
 }
 
@@ -36,6 +36,7 @@ pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestU
 
     env.api.set_token(reg_resp.token.access_token.clone());
 
+    println!("Test user created: {}, {}", email, reg_resp.uid);
     TestUser {
         uid: reg_resp.uid,
         email: email.to_string(),

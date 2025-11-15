@@ -111,6 +111,7 @@ impl ApiClient {
     fn default_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("X-Real-IP", "127.0.0.1".parse().unwrap());
+        headers.insert("User-Agent", "test".parse().unwrap());
         if let Some(token) = &self.token {
             headers.insert(
                 "Authorization",
