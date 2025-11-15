@@ -7,8 +7,9 @@ pub mod song_tag;
 pub mod playlist;
 pub mod song_publishing_review;
 pub mod version;
+pub mod creator;
 
-pub trait CrudDao<'e, E> 
+pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {
     type Entity;
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>>;

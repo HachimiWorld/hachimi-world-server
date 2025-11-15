@@ -4,12 +4,11 @@ use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
 use metrics::counter;
-use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{ISongDao, SongDao};
 use serde::{Deserialize, Serialize};
 use sqlx::{query, PgPool};
 use tracing::{error, info, info_span, warn, Instrument};
 use crate::db::CrudDao;
-use crate::db::song_tag::{SongTag};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDocument {
@@ -33,14 +32,14 @@ pub struct SongDocument {
     pub release_time: i64,
 }
 
-pub async fn update_document(
+pub async fn add_or_replace_document(
     client: &Client,
     pool: &PgPool,
     song_ids: &[i64]
 ) -> Result<(), meilisearch_sdk::errors::Error> {
     let documents = get_documents_batch(pool, song_ids).await.unwrap();
     client.index("songs")
-        .add_documents(&documents, Some("id"))
+        .add_or_replace(&documents, Some("id"))
         .await?;
     Ok(())
 }

@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
-use anyhow::Context;
+use anyhow::{Context};
 use async_backtrace::framed;
 use crate::db::user::{IUserDao, UserDao};
-use crate::db::CrudDao;
+use crate::db::{song_publishing_review, CrudDao};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -15,15 +15,17 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use sqlx::PgPool;
+use tracing::{info, warn};
 use crate::audio::ParseError;
+use crate::db::creator::{Creator, CreatorDao};
 use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
+use crate::service::mailer::EmailConfig;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::util::{validate_platforms, IsBlank};
-use crate::web::routes::auth::EmailConfig;
 use crate::web::routes::song::TagItem;
 
 pub(crate) fn router() -> Router<AppState> {
@@ -34,6 +36,7 @@ pub(crate) fn router() -> Router<AppState> {
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 20MB
         .route("/publish", post(publish))
         .route("/delete", post(delete))
+        .route("/change_jmid", post(change_jmid))
         // .route("/modify", post(modify))
         .route("/review/page", get(page))
         .route("/review/page_contributor", get(page_contributor))
@@ -41,11 +44,13 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/review/approve", post(review_approve))
         .route("/review/reject", post(review_reject))
         // .route("/review/modify", post(review_modify))
-        // .route("/review/comment", post(review_comment))
-        // .route("/jmid/check_prefix")
-        // .route("/jmid/check")
-        // .route("/jmid/get_available")
-        // .route("/review/detail_author", get(detail_author))
+        // .route("/review/comment/create", post(review_comment))
+        // .route("/review/comment/list", post())
+        // .route("/review/comment/delete", post())
+        .route("/jmid/check_prefix", get(jmid_check_prefix))
+        .route("/jmid/check", get(jmid_check))
+        .route("/jmid/me", get(jmid_me))
+        .route("/jmid/get_next", get(jmid_get_next))
 }
 
 
@@ -61,8 +66,12 @@ pub struct PublishReq {
     pub creation_info: CreationInfo,
     pub production_crew: Vec<ProductionItem>,
     pub external_links: Vec<ExternalLink>,
-    /// Since 251105
-    pub explicit: Option<bool>
+    /// @since 251105, should be required in new client.
+    pub explicit: Option<bool>,
+    /// @since 251114, should be required in new client.
+    pub jmid: Option<String>,
+    /// @since 251114
+    pub comment: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -82,7 +91,6 @@ pub struct ProductionItem {
 }
 
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublishResp {
     pub review_id: i64,
@@ -93,8 +101,11 @@ pub struct PublishResp {
 pub async fn publish(
     claims: Claims,
     mut state: State<AppState>,
-    req: Json<PublishReq>,
+    mut req: Json<PublishReq>,
 ) -> WebResult<PublishResp> {
+    let guard = state.red_lock.try_lock(&format!("lock:song_publish:{}", claims.uid())).await?
+        .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
+
     let uid = claims.uid();
     let user = UserDao::get_by_id(&state.sql_pool, uid).await?.ok_or_else(|| common!("user_not_found", "User not found"))?;
 
@@ -121,18 +132,43 @@ pub async fn publish(
     let cover_url: Option<String> = state.redis_conn.get(build_image_temp_key(&req.cover_temp_id)).await?;
     let cover_url = cover_url.ok_or_else(|| common!("invalid_cover_temp_id", "Invalid cover temp id"))?;
 
-    let display_id = loop {
-        let id = crate::service::song::generate_song_display_id();
-        if SongDao::get_by_display_id(&state.sql_pool, &id).await?.is_some() {
-            continue;
+    // Check the jmid
+    let create_new_jmid: bool;
+    let jmid = match &req.jmid {
+        Some(x) => {
+            // The creator provided a jmid. We check whether the jmid is available
+            // Firstly, check the prefix
+            let (prefix, _) = parse_jmid(&x).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
+            create_new_jmid = check_jmid_prefix_for_publication(&state.sql_pool, claims.uid(), prefix).await?;
+
+            // Secondly, check the full jmid
+            let available = check_jmid_available(&state.sql_pool, &x).await?;
+            if !available {
+                err!("jmid_already_used", "The jmid ({}) is already used", x)
+            }
+
+            // Take the user provided jmid
+            x.clone()
         }
-        break id;
+        None => {
+            // For backward compatibility. If the creator doesn't provide a jmid, we use the random jm-id, and do not insert to creators table
+            create_new_jmid = false;
+            loop {
+                let id = service::song::generate_song_display_id();
+                if SongDao::get_by_display_id(&state.sql_pool, &id).await?.is_some() {
+                    continue;
+                }
+                break id;
+            }
+        }
     };
+
+
     let now = Utc::now();
 
     let mut song = Song {
         id: 0,
-        display_id: display_id.to_string(),
+        display_id: jmid.to_string(),
         title: req.title.to_string(),
         subtitle: req.subtitle.to_string(),
         description: req.description.to_string(),
@@ -234,27 +270,100 @@ pub async fn publish(
         song_origin_infos: song_origin_infos,
         song_production_crew: production_crew,
         song_tags: tags,
-        song_external_links: links
+        song_external_links: links,
     };
 
     let review = SongPublishingReview {
         id: 0,
         user_id: claims.uid(),
-        song_display_id: display_id.clone(),
+        song_display_id: jmid.clone(),
         data: serde_json::to_value(data)?,
-        submit_time: Utc::now(),
-        update_time: Utc::now(),
+        submit_time: now,
+        update_time: now,
         review_time: None,
         review_comment: None,
-        status: 0,
+        status: song_publishing_review::STATUS_PENDING,
+        r#type: song_publishing_review::TYPE_CREATE,
+        comment: req.comment.take(),
     };
 
-    let review_id = SongPublishingReviewDao::insert(&state.sql_pool, &review).await?;
+    let guard = state.red_lock.try_lock(&format!("lock:jmid_creation:{}", jmid)).await?
+        .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
+
+    let mut tx = state.sql_pool.begin().await?;
+    let review_id = SongPublishingReviewDao::insert(&mut *tx, &review).await?;
+
+    if create_new_jmid {
+        let (jmid_prefix, _) = parse_jmid(&jmid).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
+        // Lock the jmid by creating a creator record with `active=false`
+        CreatorDao::insert(&mut *tx, &Creator {
+            id: 0,
+            user_id: claims.uid(),
+            jmid_prefix: jmid_prefix.into(),
+            active: false,
+            create_time: now,
+            update_time: now,
+        }).await?;
+    }
+    tx.commit().await?;
 
     ok!(PublishResp {
         review_id: review_id,
-        song_display_id: display_id
+        song_display_id: jmid
     })
+}
+
+/// Check whether the `jmid_prefix` is available for publication. And returns whether the prefix is **new** if available. Error if the jmid is not available.
+///
+/// The `jmid_prefix` is unique for each creator. It could be locked by a user because we have an audition procedure.
+///
+/// Basically, we have these situations:
+/// - `never_used`: We can lock (create a creator record with `active == false`) it for the first time.
+/// - `owned`: We can just use it.
+/// - `not_match`: The prefix does not match the creator's own prefix.
+/// - `locked_by_self`: The first publishing request is in progress.
+/// - `used`: Locked or owned by another user.
+async fn check_jmid_prefix_for_publication(
+    sql_pool: &PgPool,
+    user_id: i64,
+    jmid_prefix: &str
+) -> Result<bool, WebError<CommonError>> {
+    let create_new_jmid: bool;
+    let creator = CreatorDao::get_by_user_id(sql_pool, user_id).await?;
+    match creator {
+        Some(x) => {
+            // owned or locked_by_self
+            if x.active {
+                if x.jmid_prefix == jmid_prefix {
+                    // owned
+                    create_new_jmid = false;
+                } else {
+                    // not_match
+                    err!("jmid_prefix_mismatch", "The jmid prefix ({}) does not match the your prefix ({})", jmid_prefix, x.jmid_prefix)
+                }
+            } else {
+                // locked_by_self
+                err!("pending", "Please wait for your first publishing to complete.")
+            }
+        }
+        None => {
+            // never_used or used
+            let r = CreatorDao::get_by_jmid_prefix(sql_pool, jmid_prefix).await?;
+            match r {
+                Some(creator) => {
+                    // used
+                    err!("jmid_prefix_already_used", "The jmid prefix ({}) is already used by another user {}", jmid_prefix, creator.user_id)
+                }
+                None => {
+                    info!("lock the new jmid {}", jmid_prefix);
+                    // never_used
+                    create_new_jmid = true;
+                }
+            }
+        }
+    }
+
+    Ok(create_new_jmid)
 }
 
 pub async fn delete() -> WebResult<()> {
@@ -274,7 +383,7 @@ pub struct UploadAudioFileResp {
 pub struct SongTempData {
     pub file_url: String,
     pub duration_secs: u64,
-    pub gain: Option<f32>
+    pub gain: Option<f32>,
 }
 
 #[framed]
@@ -569,7 +678,7 @@ pub struct PublishSongPublishReviewData {
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
     pub external_link: Vec<ExternalLink>,
-    pub explicit: Option<bool>
+    pub explicit: Option<bool>,
 }
 
 /// Get the review detail
@@ -675,7 +784,7 @@ async fn review_approve(
     if review.status != 0 {
         err!("invalid_status", "Invalid review status")
     }
-    
+
     let mut data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
         .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
     let uploader = UserDao::get_by_id(&state.sql_pool, review.user_id).await?
@@ -697,17 +806,30 @@ async fn review_approve(
     review.review_comment = req.comment.clone();
     review.review_time = Some(Utc::now());
     review.status = 1;
-    SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
+    SongPublishingReviewDao::update_by_id(&mut *tx, &review).await?;
+
+    // Activate the jmid prefix
+    let (prefix, _) = parse_jmid(&review.song_display_id)
+        .ok_or_else(|| common!("invalid_song_display_id", "Invalid song display id"))?; // This error should never happen
+
+    let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
+    if let Some(mut x) = creator
+        && x.jmid_prefix == prefix && x.active == false
+    {
+        // This is a first PR, and we should activate the jmid prefix
+        x.active = true;
+        x.update_time = Utc::now();
+        CreatorDao::update_by_id(&mut *tx, &x).await?;
+    } else {
+        // This pr might be the old data, do not create creator, just ignore
+    }
     tx.commit().await?;
 
     // Write behind, data consistence is not guaranteed.
-    search::song::add_song_document(
-        state.meilisearch.as_ref(),
-        song_id,
-        &data.song_info,
-        &data.song_production_crew,
-        &data.song_origin_infos,
-        &data.song_tags,
+    search::song::add_or_replace_document(
+        &state.meilisearch,
+        &state.sql_pool,
+        &[song_id],
     ).await?;
     service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
 
@@ -718,7 +840,7 @@ async fn review_approve(
         &data.song_info.display_id,
         &data.song_info.title,
         &uploader.username,
-        review.review_comment.as_deref()
+        review.review_comment.as_deref(),
     ).await?;
     ok!(())
 }
@@ -757,7 +879,22 @@ async fn review_reject(
     review.review_comment = Some(req.comment.clone());
     review.review_time = Some(Utc::now());
     review.status = 2;
-    SongPublishingReviewDao::update_by_id(&state.sql_pool, &review).await?;
+
+    let mut tx = state.sql_pool.begin().await?;
+    SongPublishingReviewDao::update_by_id(&mut *tx, &review).await?;
+    let (prefix, _) = parse_jmid(&review.song_display_id).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
+
+    let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
+    if let Some(x) = creator
+        && x.jmid_prefix == prefix && x.active == false
+    {
+        // This is a first PR.
+        // Delete the creator record to release the prefix lock
+        CreatorDao::delete_by_id(&mut *tx, x.id).await?;
+    } else {
+        // This pr might be the old data, do not create creator, just ignore
+    }
+    tx.commit().await?;
 
     let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
     service::mailer::send_review_rejected_notification(
@@ -766,8 +903,146 @@ async fn review_reject(
         &data.song_info.display_id,
         &data.song_info.title,
         &uploader.username,
-        req.comment.as_str()
+        &req.comment,
     ).await?;
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidCheckPReq {
+    pub jmid: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidCheckPResp {
+    pub result: bool,
+}
+
+/// Check if the jmid prefix part is not used by anyone
+async fn jmid_check_prefix(
+    _: Claims,
+    state: State<AppState>,
+    req: Query<JmidCheckPReq>,
+) -> WebResult<JmidCheckPResp> {
+    let r = CreatorDao::get_by_jmid_prefix(&state.sql_pool, &req.jmid).await?;
+    ok!(JmidCheckPResp {result: r.is_none()})
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidCheckReq {
+    pub jmid: String,
+}
+
+/// Check if the full jmid is available
+async fn jmid_check(
+    _: Claims,
+    state: State<AppState>,
+    req: Query<JmidCheckReq>,
+) -> WebResult<bool> {
+    let r = check_jmid_available(&state.sql_pool, &req.jmid).await?;
+    ok!(r)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidMeResp {
+    pub jmid: Option<String>,
+}
+
+async fn jmid_me(
+    claims: Claims,
+    state: State<AppState>,
+) -> WebResult<JmidMeResp> {
+    let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?;
+    let jmid = creator.map(|x| x.jmid_prefix);
+    ok!(JmidMeResp {jmid})
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidGetNextResp {
+    pub id: String,
+}
+
+/// Get the next available jmid for this creator.
+/// Only available for a creator who had already specified a jm-code
+async fn jmid_get_next(
+    claims: Claims,
+    State(state): State<AppState>,
+) -> WebResult<JmidGetNextResp> {
+    let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?
+        .ok_or_else(|| common!("jm_code_not_specified", "You have not specified a jm-code yet"))?;
+
+    // Count all songs of the creator and add the pending PRs
+    let published_songs = SongDao::count_by_user(&state.sql_pool, claims.uid()).await?;
+    let pending_prs = SongPublishingReviewDao::count_by_user_and_status(&state.sql_pool, claims.uid(), song_publishing_review::STATUS_PENDING).await?;
+
+    let next_no = published_songs + pending_prs + 1;
+    let id = format!("{}-{:03}", creator.jmid_prefix, next_no);
+
+    ok!(JmidGetNextResp {id})
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangeJmidReq {
+    pub song_id: i64,
+    pub old_jmid: String,
+    pub new_jmid: String,
+}
+
+/// Change jmid of an artwork. The new jmid should match to the creator's jmid, and do not conflict with other songs.
+///
+/// Only available for a creator who had already specified a jmid prefix
+///
+/// If a creator had never specified a jmid prefix, it's better to check and initialize the jmid prefix
+async fn change_jmid(
+    claims: Claims,
+    State(state): State<AppState>,
+    req: Json<ChangeJmidReq>,
+) -> WebResult<()> {
+    // 1. Check if the user is a creator
+    let guard = state.red_lock.try_lock(&format!("lock:change_jmid:{}", req.song_id)).await?;
+    if guard.is_none() {
+        err!("operation_in_progress", "Operation in progress")
+    }
+
+    let mut song = SongDao::get_by_id(&state.sql_pool, req.song_id).await?
+        .ok_or_else(|| common!("not_found", "Song not found"))?;
+    if song.uploader_uid != claims.uid() {
+        err!("permission_denied", "Permission denied")
+    }
+
+    let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?
+        .ok_or_else(|| common!("jmid_prefix_not_specified", "You have not specified a jmid prefix yet"))?;
+    if !creator.active {
+        err!("jmid_prefix_not_active", "Your jmid prefix is not active yet")
+    }
+    // 2. Validate the new_jmid format, JM-ABCD-123
+    let (prefix, _) = parse_jmid(&req.new_jmid)
+        .ok_or_else(|| common!("invalid_jmid", "Invalid jmid format"))?;
+    // 3. Check if the new jmid is match to creator's jmid prefix
+    if prefix != creator.jmid_prefix {
+        err!("jmid_prefix_mismatch", "The jmid prefix must match to yours.")
+    }
+    // 4. Check if the new jmid is already used
+    let available = check_jmid_available(&state.sql_pool, &req.new_jmid).await?;
+    if !available {
+        err!("jmid_already_in_use", "The jmid({}) is already in use", req.new_jmid)
+    };
+    // 5. Update the song's jmid, and the corresponding review id
+    let mut tx = state.sql_pool.begin().await?;
+
+    let old_jmid = song.display_id;
+    song.display_id = req.new_jmid.clone();
+
+    // Update song jmid
+    SongDao::update_by_id(&mut *tx, &song).await?;
+
+    // 6. Update the corresponding review's jmid field
+    SongPublishingReviewDao::swap_jmid(&mut *tx, &old_jmid, &req.new_jmid).await?;
+
+    tx.commit().await?;
+
+    // 7. Update search index
+    search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song.id]).await?;
+    service::recommend_v2::notify_update(song.id, state.redis_conn.clone()).await?;
     ok!(())
 }
 
@@ -808,5 +1083,51 @@ async fn ensure_contributor(
         } else {
             Err(common!("permission_denied", "You are not a contributor"))
         }
+    }
+}
+
+/// Check whether the `jmid` is available (not used nor locked by other pending SRs).
+pub async fn check_jmid_available(
+    sql: &PgPool,
+    jmid: &str,
+) -> anyhow::Result<bool> {
+    // Check the songs
+    let song = SongDao::get_by_display_id(sql, &jmid).await?;
+    if song.is_some() {
+        return Ok(false);
+    }
+
+    // Check the pending SRs
+    // guarantee: If a SR is approved or rejected, the song's display id will be changed to the latest one. So we do not need to check it.
+    let prs: Vec<_> = SongPublishingReviewDao::list_by_jmid(sql, jmid).await?;
+    let has_pending_prs = prs.iter().any(|x| {
+        x.song_display_id == jmid && x.status == 0
+    });
+    Ok(!has_pending_prs)
+}
+
+pub fn parse_jmid(input: &str) -> Option<(&str, &str)> {
+    let regex = regex::Regex::new(r"^JM-([A-Z]{3,4})-?(\d{3})$").ok()?;
+    let captures = regex.captures(input)?;
+    Some((
+        captures.get(1)?.as_str(),
+        captures.get(2)?.as_str()
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::web::routes::publish::parse_jmid;
+
+    #[test]
+    fn test_parse_jmid() {
+        assert_eq!(parse_jmid("JM-ABC-123"), Some(("ABC", "123")));
+        assert_eq!(parse_jmid("JM-ABCD-001"), Some(("ABCD", "001")));
+        assert_eq!(parse_jmid("JM-ABCD-1"), None);
+        assert_eq!(parse_jmid("JM-ABCD-ABC"), None);
+        assert_eq!(parse_jmid("JM-A-001"), None);
+        assert_eq!(parse_jmid("ABC-123"), None);
+        assert_eq!(parse_jmid("ABCD123"), None);
+        assert_eq!(parse_jmid("JM-abc-123"), None);
     }
 }

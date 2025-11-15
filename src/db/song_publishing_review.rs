@@ -14,8 +14,21 @@ pub struct SongPublishingReview {
     pub update_time: DateTime<Utc>,
     pub review_time: Option<DateTime<Utc>>,
     pub review_comment: Option<String>,
+    /// 0: pending, 1: approved, 2: rejected
     pub status: i32,
+    /// 0: create, 1: modify
+    /// @since 251114
+    pub r#type: i32,
+    /// @since 251114
+    pub comment: Option<String>,
 }
+
+pub const STATUS_PENDING: i32 = 0;
+pub const STATUS_APPROVED: i32 = 1;
+pub const STATUS_REJECTED: i32 = 2;
+
+pub const TYPE_CREATE: i32 = 0;
+pub const TYPE_MODIFY: i32 = 1;
 
 pub struct SongPublishingReviewDao;
 
@@ -26,6 +39,9 @@ where
     async fn count(executor: E) -> sqlx::Result<i64>;
     async fn page_by_user(executor: E, user_id: i64, page_size: i64, page_index: i64) -> sqlx::Result<Vec<Self::Entity>>;
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
+    async fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> sqlx::Result<i64>;
+    async fn list_by_jmid(executor: E, jmid: &str) -> sqlx::Result<Vec<Self::Entity>>;
+    async fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> sqlx::Result<u64>;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongPublishingReviewDao
@@ -59,8 +75,10 @@ where
                 update_time = $5,
                 review_time = $6,
                 review_comment = $7,
-                status = $8
-            WHERE id = $9",
+                status = $8,
+                type = $9,
+                comment = $10
+            WHERE id = $11",
             value.user_id,
             value.song_display_id,
             value.data,
@@ -69,16 +87,18 @@ where
             value.review_time,
             value.review_comment,
             value.status,
+            value.r#type,
+            value.comment,
             value.id,
         ).execute(executor).await?;
         Ok(())
     }
 
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
-        query!("INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        query!("INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status, type, comment)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id",
-            value.user_id, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status
+            value.user_id, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status, value.r#type, value.comment
         ).fetch_one(executor).await.map(|r| r.id)
     }
 
@@ -110,5 +130,24 @@ where
         sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1", user_id)
             .fetch_one(executor).await
             .map(|r| r.count.unwrap_or(0))
+    }
+
+    async fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1 AND status = $2", user_id, status)
+            .fetch_one(executor).await
+            .map(|r| r.count.unwrap_or(0))
+    }
+
+    async fn list_by_jmid(executor: E, jmid: &str) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(
+            Self::Entity,
+            "SELECT * FROM song_publishing_review WHERE song_display_id = $1",
+            jmid
+        ).fetch_all(executor).await
+    }
+
+    async fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> sqlx::Result<u64> {
+        let r= query!("UPDATE song_publishing_review SET song_display_id = $1 WHERE song_display_id = $2", new_jmid, old_jmid).execute(executor).await?;
+        Ok(r.rows_affected())
     }
 }
