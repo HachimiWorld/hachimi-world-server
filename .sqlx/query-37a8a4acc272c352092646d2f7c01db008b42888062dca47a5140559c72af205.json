@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE song_publishing_review SET song_display_id = $1 WHERE song_display_id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "37a8a4acc272c352092646d2f7c01db008b42888062dca47a5140559c72af205"
+}

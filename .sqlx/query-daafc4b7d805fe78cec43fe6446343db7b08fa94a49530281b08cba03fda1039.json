@@ -47,6 +47,16 @@
         "ordinal": 8,
         "name": "status",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 10,
+        "name": "comment",
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -63,7 +73,9 @@
       false,
       true,
       true,
-      false
+      false,
+      false,
+      true
     ]
   },
   "hash": "daafc4b7d805fe78cec43fe6446343db7b08fa94a49530281b08cba03fda1039"

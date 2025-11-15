@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT * FROM song_publishing_review",
+  "query": "SELECT * FROM song_publishing_review WHERE song_display_id = $1",
   "describe": {
     "columns": [
       {
@@ -60,7 +60,9 @@
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
       false,
@@ -76,5 +78,5 @@
       true
     ]
   },
-  "hash": "9935289d43e04ceed8f0cdee0b61a33071412ac77b4a3b9da6b92bca432988a5"
+  "hash": "7082d50918d7427c7237a974c8061551f530952270398bc57636258ce8b6e49b"
 }

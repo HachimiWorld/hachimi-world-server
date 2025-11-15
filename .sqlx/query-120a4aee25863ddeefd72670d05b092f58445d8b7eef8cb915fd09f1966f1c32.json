@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n                RETURNING id",
+  "query": "INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status, type, comment)\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n                RETURNING id",
   "describe": {
     "columns": [
       {
@@ -18,12 +18,14 @@
         "Timestamptz",
         "Timestamptz",
         "Text",
-        "Int4"
+        "Int4",
+        "Int4",
+        "Text"
       ]
     },
     "nullable": [
       false
     ]
   },
-  "hash": "518b70f847fa83859c3a665ccb1b2c85f487fdebbf82c8b754648eac7a6ca0fe"
+  "hash": "120a4aee25863ddeefd72670d05b092f58445d8b7eef8cb915fd09f1966f1c32"
 }
