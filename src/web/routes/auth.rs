@@ -23,6 +23,7 @@ use jsonwebtoken::errors::ErrorKind;
 use tracing::{error};
 use crate::search::user::{UserDocument};
 use crate::service::captcha::verify_captcha;
+use crate::service::mailer::EmailConfig;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -290,14 +291,6 @@ async fn refresh_token(
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendVerificationReq {
     pub email: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EmailConfig {
-    pub host: String,
-    pub username: String,
-    pub password: String,
-    pub no_reply_email: String,
 }
 
 #[async_backtrace::framed]

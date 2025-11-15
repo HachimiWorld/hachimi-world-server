@@ -2,7 +2,17 @@ use lettre::message::header::{ContentTransferEncoding, ContentType};
 use lettre::message::{Mailbox, MultiPart, SinglePart};
 use lettre::{SmtpTransport, Transport};
 use lettre::transport::smtp::authentication::Credentials;
-use crate::web::routes::auth::EmailConfig;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EmailConfig {
+    #[serde(default)]
+    pub disabled: bool,
+    pub host: String,
+    pub username: String,
+    pub password: String,
+    pub no_reply_email: String,
+}
 
 const EMAIL_TEMPLATE: &str = include_str!("templates/code_mail_template_zh.html");
 const EMAIL_PLAIN_TEMPLATE: &str = include_str!("templates/code_mail_template_zh.txt");
@@ -13,6 +23,8 @@ pub async fn send_verification_code(
     to: &str,
     code: &str,
 ) -> anyhow::Result<()> {
+    if cfg.disabled { return Ok(()) }
+
     let html_content = EMAIL_TEMPLATE.replace("{{VERIFICATION_CODE}}", code);
     let plain_content = EMAIL_PLAIN_TEMPLATE.replace("{{VERIFICATION_CODE}}", code);
 
@@ -47,6 +59,8 @@ pub async fn send_notification(
     subject: &str,
     content: &str,
 ) -> anyhow::Result<()> {
+    if cfg.disabled { return Ok(()) }
+
     let html_content = EMAIL_NOTIFICATION_TEMPLATE.replace("{{CONTENT}}", &askama_escape::escape(content, askama_escape::Html).to_string().replace("\n", "<br>"));
     let email_msg = lettre::Message::builder()
         .from(Mailbox::new(
@@ -105,8 +119,7 @@ pub async fn send_review_rejected_notification(
 #[cfg(test)]
 mod test {
     use std::fs;
-    use crate::service::mailer::{send_review_approved_notification, send_review_rejected_notification, send_verification_code};
-    use crate::web::routes::auth::EmailConfig;
+    use crate::service::mailer::{send_review_approved_notification, send_review_rejected_notification, send_verification_code, EmailConfig};
 
     #[tokio::test]
     async fn test() {
