@@ -7,7 +7,7 @@ use chrono::Utc;
 use hachimi_world_server::db::creator::{Creator, CreatorDao};
 use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
-use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMeResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagSearchReq, TagSearchResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
@@ -187,8 +187,8 @@ async fn test_check_jmid() {
         let user = with_new_random_test_user(&mut env).await;
 
         let resp = env.api.get("/publish/jmid/me")
-            .await.parse_resp::<JmidMeResp>().await.unwrap();
-        assert_eq!(resp.jmid, None);
+            .await.parse_resp::<JmidMineResp>().await.unwrap();
+        assert_eq!(resp.jmid_prefix, None);
 
         let resp = env.api.get("/publish/jmid/get_next")
             .await;
@@ -196,13 +196,13 @@ async fn test_check_jmid() {
 
         // This code is never used
         let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid: "ZJDB".to_string(),
+            jmid_prefix: "ZJDB".to_string(),
         }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
         assert_eq!(resp.result, true);
 
         // This code is in the song_publishing_review old data, should be available
         let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid: "YCGU".to_string(),
+            jmid_prefix: "YCGU".to_string(),
         }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
         assert_eq!(resp.result, true);
 
@@ -217,7 +217,7 @@ async fn test_check_jmid() {
         }).await.unwrap();
 
         let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid: "".to_string(),
+            jmid_prefix: "".to_string(),
         }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
         assert_eq!(resp.result, false);
     }).await

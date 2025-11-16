@@ -49,7 +49,7 @@ pub(crate) fn router() -> Router<AppState> {
         // .route("/review/comment/delete", post())
         .route("/jmid/check_prefix", get(jmid_check_prefix))
         .route("/jmid/check", get(jmid_check))
-        .route("/jmid/me", get(jmid_me))
+        .route("/jmid/mine", get(jmid_mine))
         .route("/jmid/get_next", get(jmid_get_next))
 }
 
@@ -910,7 +910,7 @@ async fn review_reject(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JmidCheckPReq {
-    pub jmid: String,
+    pub jmid_prefix: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -924,7 +924,7 @@ async fn jmid_check_prefix(
     state: State<AppState>,
     req: Query<JmidCheckPReq>,
 ) -> WebResult<JmidCheckPResp> {
-    let r = CreatorDao::get_by_jmid_prefix(&state.sql_pool, &req.jmid).await?;
+    let r = CreatorDao::get_by_jmid_prefix(&state.sql_pool, &req.jmid_prefix).await?;
     ok!(JmidCheckPResp {result: r.is_none()})
 }
 
@@ -933,51 +933,58 @@ pub struct JmidCheckReq {
     pub jmid: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JmidCheckResp {
+    pub result: bool,
+}
+
 /// Check if the full jmid is available
 async fn jmid_check(
     _: Claims,
     state: State<AppState>,
     req: Query<JmidCheckReq>,
-) -> WebResult<bool> {
+) -> WebResult<JmidCheckResp> {
     let r = check_jmid_available(&state.sql_pool, &req.jmid).await?;
-    ok!(r)
+    ok!(JmidCheckResp {result: r})
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct JmidMeResp {
-    pub jmid: Option<String>,
+pub struct JmidMineResp {
+    pub jmid_prefix: Option<String>,
 }
 
-async fn jmid_me(
+async fn jmid_mine(
     claims: Claims,
     state: State<AppState>,
-) -> WebResult<JmidMeResp> {
+) -> WebResult<JmidMineResp> {
     let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?;
-    let jmid = creator.map(|x| x.jmid_prefix);
-    ok!(JmidMeResp {jmid})
+    let jmid_prefix = creator.map(|x| x.jmid_prefix);
+    ok!(JmidMineResp {jmid_prefix})
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JmidGetNextResp {
-    pub id: String,
+    pub jmid: String,
 }
 
 /// Get the next available jmid for this creator.
 /// Only available for a creator who had already specified a jm-code
+/// # Errors
+/// - `jmid_prefix_not_specified`
 async fn jmid_get_next(
     claims: Claims,
     State(state): State<AppState>,
 ) -> WebResult<JmidGetNextResp> {
     let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?
-        .ok_or_else(|| common!("jm_code_not_specified", "You have not specified a jm-code yet"))?;
+        .ok_or_else(|| common!("jmid_prefix_not_specified", "You have not specified a jmid prefix yet"))?;
 
     // Count all songs of the creator and add the pending PRs
     let published_songs = SongDao::count_by_user(&state.sql_pool, claims.uid()).await?;
     let pending_prs = SongPublishingReviewDao::count_by_user_and_status(&state.sql_pool, claims.uid(), song_publishing_review::STATUS_PENDING).await?;
 
     let next_no = published_songs + pending_prs + 1;
-    let id = format!("{}-{:03}", creator.jmid_prefix, next_no);
+    let jmid = format!("{}-{:03}", creator.jmid_prefix, next_no);
 
-    ok!(JmidGetNextResp {id})
+    ok!(JmidGetNextResp {jmid})
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
