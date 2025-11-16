@@ -970,12 +970,17 @@ pub struct JmidGetNextResp {
 /// Only available for a creator who had already specified a jm-code
 /// # Errors
 /// - `jmid_prefix_not_specified`
+/// - `jmid_prefix_inactive`
 async fn jmid_get_next(
     claims: Claims,
     State(state): State<AppState>,
 ) -> WebResult<JmidGetNextResp> {
     let creator = CreatorDao::get_by_user_id(&state.sql_pool, claims.uid()).await?
         .ok_or_else(|| common!("jmid_prefix_not_specified", "You have not specified a jmid prefix yet"))?;
+
+    if !creator.active {
+        err!("jmid_prefix_inactive", "Your jmid prefix is not active yet, please wait for processing")
+    }
 
     // Count all songs of the creator and add the pending PRs
     let published_songs = SongDao::count_by_user(&state.sql_pool, claims.uid()).await?;
