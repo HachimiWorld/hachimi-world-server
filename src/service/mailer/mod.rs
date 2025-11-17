@@ -116,6 +116,34 @@ pub async fn send_review_rejected_notification(
     send_notification(cfg, to, "您提交的作品已被退回", &content).await
 }
 
+pub async fn send_review_modify_approved_notification(
+    cfg: &EmailConfig,
+    to: &str,
+    song_display_id: &str,
+    user_name: &str,
+    comment: Option<&str>
+) -> anyhow::Result<()> {
+    let content = format!(
+        "亲爱的 {user_name}：\n\n您的作品编辑请求 ({song_display_id}) 已通过。{}",
+        comment.map(|c| format!("\n\n审核留言：{c}")).unwrap_or_default()
+    );
+    send_notification(cfg, to, "您的作品编辑请求已通过", &content).await
+}
+
+pub async fn send_review_modify_rejected_notification(
+    cfg: &EmailConfig,
+    to: &str,
+    song_display_id: &str,
+    user_name: &str,
+    comment: &str
+) -> anyhow::Result<()> {
+    let content = format!(
+        "亲爱的 {user_name}：\n\n很抱歉，您的作品编辑请求 ({song_display_id}) 未通过。\n\n审核留言：{comment}"
+    );
+    send_notification(cfg, to, "您的作品编辑请求未通过", &content).await
+}
+
+
 #[cfg(test)]
 mod test {
     use std::fs;

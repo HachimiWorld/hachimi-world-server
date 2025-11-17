@@ -35,9 +35,9 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/upload_cover_image", post(upload_cover_image))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 20MB
         .route("/publish", post(publish))
+        .route("/modify", post(modify))
         .route("/delete", post(delete))
         .route("/change_jmid", post(change_jmid))
-        // .route("/modify", post(modify))
         .route("/review/page", get(page))
         .route("/review/page_contributor", get(page_contributor))
         .route("/review/detail", get(detail))
@@ -103,26 +103,11 @@ pub async fn publish(
     mut state: State<AppState>,
     mut req: Json<PublishReq>,
 ) -> WebResult<PublishResp> {
-    let guard = state.red_lock.try_lock(&format!("lock:song_publish:{}", claims.uid())).await?
+    let _guard = state.red_lock.try_lock(&format!("lock:song_publish:{}", claims.uid())).await?
         .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
 
     let uid = claims.uid();
     let user = UserDao::get_by_id(&state.sql_pool, uid).await?.ok_or_else(|| common!("user_not_found", "User not found"))?;
-
-    // Validate input
-    // Validate creation_type
-    if req.creation_info.creation_type == 1 && req.creation_info.origin_info.is_none() {
-        err!("missing_origin_info", "Missing origin info for derivative song");
-    }
-    if req.creation_info.creation_type == 2 && req.creation_info.derivative_info.is_none() {
-        err!("missing_origin_info", "Missing derivative info for derivative song");
-    }
-
-    // Validate tags
-    let tags = SongTagDao::list_by_ids(&state.sql_pool, &req.tag_ids).await?;
-    if tags.len() != req.tag_ids.len() {
-        err!("tag_not_found", "Some tags not found");
-    }
 
     // Processing data
     let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(&req.song_temp_id)).await?;
@@ -166,7 +151,7 @@ pub async fn publish(
 
     let now = Utc::now();
 
-    let mut song = Song {
+    let song = Song {
         id: 0,
         display_id: jmid.to_string(),
         title: req.title.to_string(),
@@ -189,10 +174,82 @@ pub async fn publish(
         explicit: req.explicit,
     };
 
+    let review_data = build_internal_review_data(
+        &state.sql_pool,
+        song,
+        &req.tag_ids,
+        &req.creation_info,
+        &req.production_crew,
+        &req.external_links,
+    ).await?;
+
+    let review = SongPublishingReview {
+        id: 0,
+        user_id: claims.uid(),
+        song_display_id: jmid.clone(),
+        data: serde_json::to_value(review_data)?,
+        submit_time: now,
+        update_time: now,
+        review_time: None,
+        review_comment: None,
+        status: song_publishing_review::STATUS_PENDING,
+        r#type: song_publishing_review::TYPE_CREATE,
+        comment: req.comment.take(),
+    };
+
+    let mut tx = state.sql_pool.begin().await?;
+    let review_id = SongPublishingReviewDao::insert(&mut *tx, &review).await?;
+
+    if create_new_jmid {
+        let (jmid_prefix, _) = parse_jmid(&jmid).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
+        let _guard = state.red_lock.try_lock(&format!("lock:jmid_creation:{}", jmid_prefix)).await?
+            .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
+
+        // Lock the jmid by creating a creator record with `active=false`
+        CreatorDao::insert(&mut *tx, &Creator {
+            id: 0,
+            user_id: claims.uid(),
+            jmid_prefix: jmid_prefix.into(),
+            active: false,
+            create_time: now,
+            update_time: now,
+        }).await?;
+    }
+    tx.commit().await?;
+
+    ok!(PublishResp {
+        review_id: review_id,
+        song_display_id: jmid
+    })
+}
+
+async fn build_internal_review_data(
+    sql_pool: &PgPool,
+    mut song: Song,
+    tag_ids: &[i64],
+    creation_info: &CreationInfo,
+    production_crew_req: &[ProductionItem],
+    external_links_req: &[ExternalLink],
+) -> Result<InternalSongPublishReviewData, WebError<CommonError>> {
+    // Validate creation_type
+    if creation_info.creation_type == 1 && creation_info.origin_info.is_none() {
+        err!("missing_origin_info", "Missing origin info for derivative song");
+    }
+    if creation_info.creation_type == 2 && creation_info.derivative_info.is_none() {
+        err!("missing_origin_info", "Missing derivative info for derivative song");
+    }
+
+    // Validate and load tags
+    let tags = SongTagDao::list_by_ids(sql_pool, tag_ids).await?;
+    if tags.len() != tag_ids.len() {
+        err!("tag_not_found", "Some tags not found");
+    }
+
+    // Origin infos
     let mut song_origin_infos = Vec::new();
     for x in [
-        &req.creation_info.origin_info,
-        &req.creation_info.derivative_info,
+        &creation_info.origin_info,
+        &creation_info.derivative_info,
     ] {
         if let Some(item) = x {
             // Validate, must set one of the id or title
@@ -200,10 +257,16 @@ pub async fn publish(
                 err!("title_missed", "Origin info title must not be empty")
             }
             // Parse internal song id
-            let song = if let Some(ref display_id) = item.song_display_id {
-                let song = SongDao::get_by_display_id(&state.sql_pool, &display_id)
+            let song_ref = if let Some(ref display_id) = item.song_display_id {
+                let song = SongDao::get_by_display_id(sql_pool, display_id)
                     .await?
-                    .ok_or_else(|| common!("song_not_found", "The song (ID={}) specified in origin info was not found", display_id))?;
+                    .ok_or_else(|| {
+                        common!(
+                                "song_not_found",
+                                "The song (ID={}) specified in origin info was not found",
+                                display_id
+                            )
+                    })?;
                 Some(song)
             } else {
                 None
@@ -213,7 +276,7 @@ pub async fn publish(
                 id: 0,
                 song_id: 0,
                 origin_type: item.origin_type,
-                origin_song_id: song.map(|x| x.id),
+                origin_song_id: song_ref.map(|x| x.id),
                 origin_title: item.title.clone(),
                 origin_artist: item.artist.clone(),
                 origin_url: item.url.clone(),
@@ -221,14 +284,15 @@ pub async fn publish(
         }
     }
 
+    // Production crew
     let mut production_crew = Vec::new();
-    for member in &req.production_crew {
+    for member in production_crew_req {
         if member.uid.is_none() && member.name.is_none() {
             err!("name_missed", "One of uid or name must be set")
         }
 
         if let Some(uid) = member.uid {
-            let user = UserDao::get_by_id(&state.sql_pool, uid).await?
+            let user = UserDao::get_by_id(sql_pool, uid).await?
                 .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
             production_crew.push(SongProductionCrew {
                 id: 0,
@@ -250,10 +314,19 @@ pub async fn publish(
         }
     }
 
-    song.artist = production_crew.iter().map(|x| x.person_name.clone().unwrap_or_else(|| "Unknown".to_string())).join(", ");
+    // Update artist based on production crew
+    song.artist = production_crew
+        .iter()
+        .map(|x| {
+            x.person_name
+                .clone()
+                .unwrap_or_else(|| "Unknown".to_string())
+        })
+        .join(", ");
 
+    // External links
     let mut links = Vec::new();
-    for link in &req.external_links {
+    for link in external_links_req {
         validate_platforms(&link.platform, &link.url)?;
 
         let x = SongExternalLink {
@@ -265,51 +338,12 @@ pub async fn publish(
         links.push(x)
     }
 
-    let data = InternalSongPublishReviewData {
+    Ok(InternalSongPublishReviewData {
         song_info: song,
-        song_origin_infos: song_origin_infos,
+        song_origin_infos,
         song_production_crew: production_crew,
         song_tags: tags,
         song_external_links: links,
-    };
-
-    let review = SongPublishingReview {
-        id: 0,
-        user_id: claims.uid(),
-        song_display_id: jmid.clone(),
-        data: serde_json::to_value(data)?,
-        submit_time: now,
-        update_time: now,
-        review_time: None,
-        review_comment: None,
-        status: song_publishing_review::STATUS_PENDING,
-        r#type: song_publishing_review::TYPE_CREATE,
-        comment: req.comment.take(),
-    };
-
-    let guard = state.red_lock.try_lock(&format!("lock:jmid_creation:{}", jmid)).await?
-        .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
-
-    let mut tx = state.sql_pool.begin().await?;
-    let review_id = SongPublishingReviewDao::insert(&mut *tx, &review).await?;
-
-    if create_new_jmid {
-        let (jmid_prefix, _) = parse_jmid(&jmid).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
-        // Lock the jmid by creating a creator record with `active=false`
-        CreatorDao::insert(&mut *tx, &Creator {
-            id: 0,
-            user_id: claims.uid(),
-            jmid_prefix: jmid_prefix.into(),
-            active: false,
-            create_time: now,
-            update_time: now,
-        }).await?;
-    }
-    tx.commit().await?;
-
-    ok!(PublishResp {
-        review_id: review_id,
-        song_display_id: jmid
     })
 }
 
@@ -364,6 +398,136 @@ async fn check_jmid_prefix_for_publication(
     }
 
     Ok(create_new_jmid)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModifyResp {
+    pub review_id: i64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModifyReq {
+    pub song_id: i64,
+    pub song_temp_id: Option<String>,
+    pub cover_temp_id: Option<String>,
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+    pub lyrics: String,
+    pub tag_ids: Vec<i64>,
+    pub creation_info: CreationInfo,
+    pub production_crew: Vec<ProductionItem>,
+    pub external_links: Vec<ExternalLink>,
+    pub explicit: bool, // It's required because this is a new api
+    pub comment: Option<String>,
+}
+
+pub async fn modify(
+    claims: Claims,
+    mut state: State<AppState>,
+    mut req: Json<ModifyReq>,
+) -> WebResult<ModifyResp> {
+    let _guard = state.red_lock.try_lock(&format!("lock:song_publish:{}", claims.uid())).await?
+        .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
+
+    // Check ownership and load original song
+    let orig_song = SongDao::get_by_id(&state.sql_pool, req.song_id)
+        .await?
+        .ok_or_else(|| common!("song_not_found", "Song was not found"))?;
+    if orig_song.uploader_uid != claims.uid() {
+        err!("permission_denied", "You are not allowed to modify this song");
+    }
+
+    let now = Utc::now();
+
+    // Resolve audio (use temp if provided, otherwise original)
+    let (file_url, duration_secs, gain) = if let Some(ref temp_id) = req.song_temp_id {
+        let song_temp_data: Option<String> =
+            state.redis_conn.get(build_temp_key(temp_id)).await?;
+        let song_temp_data = song_temp_data
+            .ok_or_else(|| common!("invalid_song_temp_id", "Invalid song temp id"))?;
+        let song_temp_data: SongTempData = serde_json::from_str(&song_temp_data)?;
+        (
+            song_temp_data.file_url,
+            song_temp_data.duration_secs,
+            song_temp_data.gain,
+        )
+    } else {
+        (
+            orig_song.file_url.clone(),
+            orig_song.duration_seconds as u64,
+            orig_song.gain,
+        )
+    };
+
+    // Resolve cover (use temp if provided, otherwise original)
+    let cover_art_url = if let Some(ref temp_id) = req.cover_temp_id {
+        let cover_url: Option<String> =
+            state.redis_conn.get(build_image_temp_key(temp_id)).await?;
+        cover_url
+            .ok_or_else(|| common!("invalid_cover_temp_id", "Invalid cover temp id"))?
+    } else {
+        orig_song.cover_art_url.clone()
+    };
+
+    // Build song snapshot for review (based on original, but with new metadata)
+    let song = Song {
+        id: orig_song.id,
+        display_id: orig_song.display_id.clone(),
+        title: req.title.to_string(),
+        subtitle: req.subtitle.to_string(),
+        description: req.description.to_string(),
+        // artist will be overwritten from production crew in helper
+        artist: orig_song.artist.clone(),
+        file_url,
+        cover_art_url,
+        lyrics: req.lyrics.to_string(),
+        duration_seconds: duration_secs as i32,
+        uploader_uid: orig_song.uploader_uid,
+        creation_type: req.creation_info.creation_type,
+        // keep stats and visibility from original
+        play_count: orig_song.play_count,
+        like_count: orig_song.like_count,
+        is_private: orig_song.is_private,
+        release_time: orig_song.release_time,
+        create_time: orig_song.create_time,
+        update_time: now,
+        gain,
+        // If explicit is provided, override; otherwise keep original
+        explicit: Some(req.explicit),
+    };
+
+    // Reuse the same validation and data-building logic as `publish`
+    let data = build_internal_review_data(
+        &state.sql_pool,
+        song,
+        &req.tag_ids,
+        &req.creation_info,
+        &req.production_crew,
+        &req.external_links,
+    )
+        .await?;
+
+    // Create the modify SR
+    let review = SongPublishingReview {
+        id: 0,
+        user_id: claims.uid(),
+        song_display_id: orig_song.display_id.clone(),
+        data: serde_json::to_value(data)?,
+        submit_time: now,
+        update_time: now,
+        review_time: None,
+        review_comment: None,
+        status: song_publishing_review::STATUS_PENDING,
+        // TYPE_MODIFY review
+        r#type: song_publishing_review::TYPE_MODIFY,
+        comment: req.comment.take(),
+    };
+
+    let review_id = SongPublishingReviewDao::insert(&state.sql_pool, &review).await?;
+
+    ok!(ModifyResp { review_id: review_id })
+
 }
 
 pub async fn delete() -> WebResult<()> {
@@ -534,6 +698,8 @@ pub struct SongPublishReviewBrief {
     pub review_time: Option<DateTime<Utc>>,
     pub review_comment: Option<String>,
     pub status: i32,
+    /// @since 251117
+    pub r#type: i32
 }
 
 impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
@@ -551,6 +717,7 @@ impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
                 review_time: value.review_time,
                 review_comment: value.review_comment,
                 status: value.status,
+                r#type: value.r#type,
             }
         )
     }
@@ -592,6 +759,7 @@ async fn page(
                     review_time: x.review_time,
                     review_comment: x.review_comment,
                     status: x.status,
+                    r#type: x.r#type,
                 }
             }
         }
@@ -635,6 +803,7 @@ async fn page_contributor(
                     review_time: x.review_time,
                     review_comment: x.review_comment,
                     status: x.status,
+                    r#type: x.r#type,
                 }
             }
         }
@@ -792,56 +961,113 @@ async fn review_approve(
 
     let mut tx = state.sql_pool.begin().await?;
 
-    // Formally insert data to the song table
-    data.song_info.create_time = Utc::now();
-    let song_id = SongDao::insert(&mut *tx, &data.song_info).await?;
-    SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
-    SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
-    SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
-
-    let tag_ids = data.song_tags.iter().map(|x| x.id).collect();
-    SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
-
     // Update review data
     review.review_comment = req.comment.clone();
     review.review_time = Some(Utc::now());
     review.status = 1;
     SongPublishingReviewDao::update_by_id(&mut *tx, &review).await?;
 
-    // Activate the jmid prefix
-    let (prefix, _) = parse_jmid(&review.song_display_id)
-        .ok_or_else(|| common!("invalid_song_display_id", "Invalid song display id"))?; // This error should never happen
+    if review.r#type == song_publishing_review::TYPE_CREATE {
+        // Create new song
 
-    let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
-    if let Some(mut x) = creator
-        && x.jmid_prefix == prefix && x.active == false
-    {
-        // This is a first PR, and we should activate the jmid prefix
-        x.active = true;
-        x.update_time = Utc::now();
-        CreatorDao::update_by_id(&mut *tx, &x).await?;
-    } else {
-        // This pr might be the old data, do not create creator, just ignore
+        // Formally insert data to the song table
+        data.song_info.create_time = Utc::now();
+        let song_id = SongDao::insert(&mut *tx, &data.song_info).await?;
+
+        // Update corresponding data
+        let tag_ids = data.song_tags.iter().map(|x| x.id).collect();
+        SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
+        SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
+        SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
+        SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
+
+        // Activate the jmid prefix
+        let (prefix, _number) = parse_jmid(&review.song_display_id)
+            .ok_or_else(|| common!("invalid_song_display_id", "Invalid song display id"))?; // This error should never happen
+
+        let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
+        if let Some(mut x) = creator
+            && x.jmid_prefix == prefix && x.active == false
+        {
+            // This is a first PR, and we should activate the jmid prefix
+            x.active = true;
+            x.update_time = Utc::now();
+            CreatorDao::update_by_id(&mut *tx, &x).await?;
+        } else {
+            // This pr might be the old data, do not create creator, just ignore
+        }
+        tx.commit().await?;
+
+        // Write behind, data consistence is not guaranteed.
+        search::song::add_or_replace_document(
+            &state.meilisearch,
+            &state.sql_pool,
+            &[song_id],
+        ).await?;
+        service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
+
+        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+        service::mailer::send_review_approved_notification(
+            &email_cfg,
+            &uploader.email,
+            &data.song_info.display_id,
+            &data.song_info.title,
+            &uploader.username,
+            review.review_comment.as_deref(),
+        ).await?;
+    } else if review.r#type == song_publishing_review::TYPE_MODIFY {
+        // Update existing song
+        let song_id = data.song_info.id;
+        let orig_song = SongDao::get_by_id(&mut *tx, song_id).await?
+            .ok_or_else(|| common!("not_found", "Song not found"))?;
+        let new_song = Song {
+            id: orig_song.id,
+            display_id: orig_song.display_id,
+            title: data.song_info.title,
+            subtitle: data.song_info.subtitle,
+            description: data.song_info.description,
+            artist: data.song_info.artist,
+            file_url: data.song_info.file_url,
+            cover_art_url: data.song_info.cover_art_url,
+            lyrics: data.song_info.lyrics,
+            duration_seconds: data.song_info.duration_seconds,
+            uploader_uid: data.song_info.uploader_uid,
+            creation_type: data.song_info.creation_type,
+            play_count: data.song_info.play_count,
+            like_count: data.song_info.like_count,
+            is_private: data.song_info.is_private,
+            release_time: data.song_info.release_time,
+            create_time: orig_song.create_time,
+            update_time: Utc::now(), // Current time
+            explicit: data.song_info.explicit,
+            gain: data.song_info.gain,
+        };
+        
+        SongDao::update_by_id(&mut *tx, &new_song).await?;
+        // Update corresponding data
+        let tag_ids = data.song_tags.iter().map(|x| x.id).collect();
+        SongDao::update_song_origin_info(&mut tx, song_id, &data.song_origin_infos).await?;
+        SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
+        SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
+        SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
+        tx.commit().await?;
+
+        search::song::add_or_replace_document(
+            &state.meilisearch,
+            &state.sql_pool,
+            &[song_id],
+        ).await?;
+        service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
+
+        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+        service::mailer::send_review_modify_approved_notification(
+            &email_cfg,
+            &uploader.email,
+            &data.song_info.display_id,
+            &uploader.username,
+            review.review_comment.as_deref(),
+        ).await?;
     }
-    tx.commit().await?;
-
-    // Write behind, data consistence is not guaranteed.
-    search::song::add_or_replace_document(
-        &state.meilisearch,
-        &state.sql_pool,
-        &[song_id],
-    ).await?;
-    service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
-
-    let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-    service::mailer::send_review_approved_notification(
-        &email_cfg,
-        &uploader.email,
-        &data.song_info.display_id,
-        &data.song_info.title,
-        &uploader.username,
-        review.review_comment.as_deref(),
-    ).await?;
     ok!(())
 }
 
@@ -871,10 +1097,9 @@ async fn review_reject(
     if review.status != 0 {
         err!("invalid_status", "Invalid review status")
     }
+
     let uploader = UserDao::get_by_id(&state.sql_pool, review.user_id).await?
         .with_context(|| format!("User {} not found", review.user_id))?;
-    let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
-        .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
 
     review.review_comment = Some(req.comment.clone());
     review.review_time = Some(Utc::now());
@@ -882,29 +1107,46 @@ async fn review_reject(
 
     let mut tx = state.sql_pool.begin().await?;
     SongPublishingReviewDao::update_by_id(&mut *tx, &review).await?;
-    let (prefix, _) = parse_jmid(&review.song_display_id).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
 
-    let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
-    if let Some(x) = creator
-        && x.jmid_prefix == prefix && x.active == false
-    {
-        // This is a first PR.
-        // Delete the creator record to release the prefix lock
-        CreatorDao::delete_by_id(&mut *tx, x.id).await?;
-    } else {
-        // This pr might be the old data, do not create creator, just ignore
+    if review.r#type == song_publishing_review::TYPE_CREATE {
+        let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+            .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+
+        let (prefix, _) = parse_jmid(&review.song_display_id).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
+
+        let creator = CreatorDao::get_by_user_id(&mut *tx, review.user_id).await?;
+        if let Some(x) = creator
+            && x.jmid_prefix == prefix && x.active == false
+        {
+            // This is a first PR.
+            // Delete the creator record to release the prefix lock
+            CreatorDao::delete_by_id(&mut *tx, x.id).await?;
+        } else {
+            // This pr might be the old data, do not create creator, just ignore
+        }
+        tx.commit().await?;
+
+        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+        service::mailer::send_review_rejected_notification(
+            &email_cfg,
+            &uploader.email,
+            &review.song_display_id,
+            &data.song_info.title,
+            &uploader.username,
+            &req.comment,
+        ).await?;
+    } else if review.r#type == song_publishing_review::TYPE_MODIFY {
+        tx.commit().await?;
+
+        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
+        service::mailer::send_review_modify_rejected_notification(
+            &email_cfg,
+            &uploader.email,
+            &review.song_display_id,
+            &uploader.username,
+            &req.comment,
+        ).await?;
     }
-    tx.commit().await?;
-
-    let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-    service::mailer::send_review_rejected_notification(
-        &email_cfg,
-        &uploader.email,
-        &data.song_info.display_id,
-        &data.song_info.title,
-        &uploader.username,
-        &req.comment,
-    ).await?;
     ok!(())
 }
 

@@ -127,6 +127,7 @@ pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow
     if !keys.is_empty() {
         redis.del(&keys).await?;
     }
+    redis.del(format!("song:detail:{}", song_id)).await?;
     Ok(())
 }
 
