@@ -32,6 +32,7 @@ pub fn router() -> Router<AppState> {
         .route("/delete", post(publish::delete))
         .route("/publish", post(publish::publish))
         .route("/detail", get(detail))
+        .route("/detail_by_id", get(detail_by_id))
         .route("/page_by_user", get(page_by_user))
         // Discovery
         .route("/search", get(search))
@@ -52,7 +53,7 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailReq {
-    /// Actually displayed id
+    /// Actually the JMID
     pub id: String,
 }
 
@@ -67,6 +68,26 @@ async fn detail(
         state.redis_conn.clone(),
         &state.sql_pool,
         &params.id
+    ).await?;
+    match data {
+        Some(x) => ok!(x),
+        None => err!("not_found", "Song not found")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DetailByIdReq {
+    pub id: i64,
+}
+
+async fn detail_by_id(
+    state: State<AppState>,
+    params: Query<DetailByIdReq>,
+) -> WebResult<DetailResp> {
+    let data = song::get_public_detail_with_cache(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        params.id
     ).await?;
     match data {
         Some(x) => ok!(x),
