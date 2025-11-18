@@ -8,6 +8,7 @@ use tracing::error;
 
 pub fn governor_layer<RespBody>() -> GovernorLayer<RealIPExtractor, NoOpMiddleware, RespBody> {
     let governor_conf = GovernorConfigBuilder::default()
+        .burst_size(16)
         .key_extractor(RealIPExtractor)
         .finish().unwrap();
     GovernorLayer::new(governor_conf)
