@@ -141,7 +141,8 @@ fn calculate_duration_secs(track: &Track) -> Result<Option<u64>, ParseError> {
 
 fn calculate_gain_peak(format: &mut Box<dyn FormatReader>) -> anyhow::Result<(f32, f32)> {
     let (spec, samples) = read_interleaved_samples(format)?;
-    let mut rg = ReplayGain::new(spec.rate as usize).unwrap();
+    let mut rg = ReplayGain::new(spec.rate as usize)
+        .ok_or_else(|| anyhow!("This sample rate is not supported: {}", spec.rate))?;
     rg.process_samples(&samples);
     let (gain, peak) = rg.finish();
     Ok((gain, peak))

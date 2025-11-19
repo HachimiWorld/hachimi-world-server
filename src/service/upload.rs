@@ -1,5 +1,6 @@
 use std::io::Cursor;
 use std::time::Instant;
+use anyhow::anyhow;
 use bytes::Bytes;
 use image::{ImageFormat, ImageReader};
 use image::imageops::FilterType;
@@ -64,7 +65,7 @@ pub fn scale_down_to_webp(
         image
     };
 
-    let webp_encoder = webp::Encoder::from_image(&resized).unwrap();
+    let webp_encoder = webp::Encoder::from_image(&resized).map_err(|_| anyhow!("Failed to encode image to webp"))?;
     let webp = webp_encoder.encode(quality);
 
     info!("Image scale down to webp took {:?}, size from {} to {}", start.elapsed(), len, webp.len());

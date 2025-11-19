@@ -92,8 +92,8 @@ pub async fn get_public_detail_with_cache_by_display_id(
         Some(data) => {
             // Set cache both for id and display_id
             let cache_key = format!("song:detail:{}", data.id);
-            let _: () = redis.set_ex(cache_key, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
-            let _: () = redis.set_ex(cache_key_display_id, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
+            let _: () = redis.set_ex(cache_key, serde_json::to_string(&data)?, 30 * 60).await?;
+            let _: () = redis.set_ex(cache_key_display_id, serde_json::to_string(&data)?, 30 * 60).await?;
             Ok(Some(data))
         }
         None => {
@@ -126,8 +126,8 @@ pub async fn get_public_detail_with_cache(
         Some(data) => {
             // Set cache both for id and display_id
             let cache_key_display_id = format!("song:detail:{}", data.display_id);
-            let _: () = redis.set_ex(cache_key, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
-            let _: () = redis.set_ex(cache_key_display_id, serde_json::to_string(&data).unwrap(), 30 * 60).await?;
+            let _: () = redis.set_ex(cache_key, serde_json::to_string(&data)?, 30 * 60).await?;
+            let _: () = redis.set_ex(cache_key_display_id, serde_json::to_string(&data)?, 30 * 60).await?;
             Ok(Some(data))
         }
         None => {

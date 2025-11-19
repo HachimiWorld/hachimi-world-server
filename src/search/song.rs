@@ -36,8 +36,8 @@ pub async fn add_or_replace_document(
     client: &Client,
     pool: &PgPool,
     song_ids: &[i64]
-) -> Result<(), meilisearch_sdk::errors::Error> {
-    let documents = get_documents_batch(pool, song_ids).await.unwrap();
+) -> anyhow::Result<()> {
+    let documents = get_documents_batch(pool, song_ids).await?;
     client.index("songs")
         .add_or_replace(&documents, Some("id"))
         .await?;
