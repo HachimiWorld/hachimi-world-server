@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::time::Instant;
 use anyhow::anyhow;
 use bytes::Bytes;
-use image::{ImageFormat, ImageReader};
+use image::{DynamicImage, ImageFormat, ImageReader};
 use image::imageops::FilterType;
 use metrics::{histogram};
 use tracing::{info};
@@ -13,7 +13,7 @@ pub enum ValidationError {
     #[error("invalid image")]
     InvalidImage,
     #[error("the image format is unsupported")]
-    UnsupportedFormat
+    UnsupportedFormat,
 }
 
 pub async fn validate_image_and_get_ext<'a>(bytes: Bytes) -> Result<&'a str, ValidationError> {
@@ -53,7 +53,15 @@ pub fn scale_down_to_webp(
     let image = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()?
         .decode()?;
-
+    // Convert to rgb8 if needed because the webp encoder only supports rgb8/rgba8
+    let image = match image {
+        x @ DynamicImage::ImageRgb8(_) => x,
+        x @ DynamicImage::ImageRgba8(_) => x,
+        x => {
+            info!("Converting image to rgb8");
+            DynamicImage::ImageRgb8(x.into_rgb8())
+        }
+    };
     // Resize image
     let resized = if image.width() > w || image.height() > h {
         match resize_type {
@@ -80,7 +88,7 @@ mod tests {
 
     #[test]
     fn test_scale_down() {
-        let bytes = fs::read(".local/test_res/test.png").unwrap();
+        let bytes = fs::read(".local/test_res/test_rgb48be.png").unwrap();
         let webp = scale_down_to_webp(1920, 1920, bytes.into(), ResizeType::Fit, 95f32).unwrap();
     }
 }
