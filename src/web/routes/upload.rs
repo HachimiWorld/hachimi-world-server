@@ -14,8 +14,7 @@ use crate::web::state::AppState;
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/upload_image", post(upload_image))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

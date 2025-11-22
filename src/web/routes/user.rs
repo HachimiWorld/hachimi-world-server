@@ -8,7 +8,7 @@ use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
 use axum::routing::post;
 use axum::{Json, Router, extract::State, routing::get};
-use axum::extract::{Multipart, Query};
+use axum::extract::{DefaultBodyLimit, Multipart, Query};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
@@ -20,7 +20,7 @@ pub fn router() -> Router<AppState> {
         .route("/greet", get(greet))
         .route("/profile", get(get_profile))
         .route("/update_profile", post(update_profile))
-        .route("/set_avatar", post(set_avatar))
+        .route("/set_avatar", post(set_avatar).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/search", get(search))
 }
 

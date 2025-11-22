@@ -30,10 +30,8 @@ use crate::web::routes::song::TagItem;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        .route("/upload_audio_file", post(upload_audio_file))
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024)) // 20MB
-        .route("/upload_cover_image", post(upload_cover_image))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 20MB
+        .route("/upload_audio_file", post(upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)) )
+        .route("/upload_cover_image", post(upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)) )
         .route("/publish", post(publish))
         .route("/modify", post(modify))
         .route("/delete", post(delete))

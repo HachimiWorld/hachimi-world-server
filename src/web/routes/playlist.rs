@@ -20,8 +20,7 @@ use crate::service::upload::{ResizeType};
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/set_cover", post(set_cover))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/detail_private", get(detail_private))
         .route("/list", get(list))
         .route("/create", post(create))

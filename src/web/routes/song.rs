@@ -25,10 +25,8 @@ use crate::web::routes::publish;
 pub fn router() -> Router<AppState> {
     Router::new()
         // Core operations
-        .route("/upload_audio_file", post(publish::upload_audio_file))
-        .layer(DefaultBodyLimit::max(20 * 1024 * 1024)) // 20MB
-        .route("/upload_cover_image", post(publish::upload_cover_image))
-        .layer(DefaultBodyLimit::max(10 * 1024 * 1024)) // 20MB
+        .route("/upload_audio_file", post(publish::upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)))
+        .route("/upload_cover_image", post(publish::upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)) )
         .route("/delete", post(publish::delete))
         .route("/publish", post(publish::publish))
         .route("/detail", get(detail))
