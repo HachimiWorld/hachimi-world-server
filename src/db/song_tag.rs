@@ -2,6 +2,8 @@ use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
+use std::collections::HashMap;
+use itertools::Itertools;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongTag {
@@ -18,11 +20,12 @@ pub struct SongTagDao;
 pub trait ISongTagDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<SongTag>>;
+    async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>>;
     async fn get_by_name(executor: E, name: &str) -> sqlx::Result<Option<SongTag>>;
     async fn search_by_prefix(executor: E, prefix: &str) -> sqlx::Result<Vec<SongTag>>;
 }
 
-impl <'e, E> CrudDao<'e, E> for SongTagDao 
+impl <'e, E> CrudDao<'e, E> for SongTagDao
 where E: PgExecutor<'e> {
     type Entity = SongTag;
 
@@ -91,16 +94,25 @@ where E: PgExecutor<'e> {
     }
 }
 
-impl <'e, E> ISongTagDao<'e, E> for SongTagDao 
+impl <'e, E> ISongTagDao<'e, E> for SongTagDao
 where E: PgExecutor<'e> {
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<SongTag>> {
+        if ids.is_empty() { return Ok(vec![]) }
         sqlx::query_as!(
             SongTag,
             "SELECT * FROM song_tags WHERE id = ANY($1)",
             ids
         ).fetch_all(executor).await
     }
-    
+
+    async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>> {
+        let rows = sqlx::query!("SELECT song_id, tag_id FROM song_tag_refs WHERE song_id = ANY($1)", song_ids)
+            .fetch_all(executor).await?;
+        let result: HashMap<i64, Vec<i64>> = rows.into_iter()
+            .map(|x| (x.song_id, x.tag_id)).into_group_map();
+        Ok(result)
+    }
+
     async fn get_by_name(executor: E, name: &str) -> sqlx::Result<Option<SongTag>> {
         sqlx::query_as!(SongTag, "SELECT * FROM song_tags WHERE name = $1", name)
             .fetch_optional(executor)

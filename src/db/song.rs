@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -88,8 +89,11 @@ where
     async fn get_by_display_id(executor: E, display_id: &str) -> sqlx::Result<Option<Song>>;
     async fn list_tags_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<i64>>;
     async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
+    async fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongOriginInfo>>;
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
+    async fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongProductionCrew>>;
     async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>>;
+    async fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongExternalLink>>;
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
     async fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
     async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
@@ -97,6 +101,7 @@ where
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
     async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
     async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64>;
+    async fn count_plays_batch(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>>;
     async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()>;
     async fn is_liked(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
     async fn delete_like(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<()>;
@@ -249,14 +254,27 @@ where
         let result = rows.into_iter().map(|x| x.tag_id).collect();
         Ok(result)
     }
-
+    
     async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
         sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
             .fetch_all(executor).await
     }
 
+    async fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongOriginInfo>> {
+        if song_ids.is_empty() { return Ok(vec![]) }
+        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = ANY($1)", song_ids)
+            .fetch_all(executor).await
+    }
+
+
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
         sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
+            .fetch_all(executor).await
+    }
+
+    async fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongProductionCrew>> {
+        if song_ids.is_empty() { return Ok(vec![]) }
+        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
 
@@ -265,7 +283,14 @@ where
             .fetch_all(executor).await
     }
 
+    async fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongExternalLink>> {
+        if song_ids.is_empty() { return Ok(vec![]) }
+        sqlx::query_as!(SongExternalLink, "SELECT * FROM song_external_links WHERE song_id = ANY($1)", song_ids)
+            .fetch_all(executor).await
+    }
+
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
+        if ids.is_empty() { return Ok(vec![]) }
         sqlx::query_as!(
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
             ids
@@ -309,6 +334,17 @@ where
         sqlx::query!("SELECT COUNT(1) FROM song_plays WHERE song_id = $1", song_id)
             .fetch_one(executor)
             .await.map(|x| x.count).map(|x| x.unwrap_or(0))
+    }
+
+    async fn count_plays_batch(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>> {
+        if song_ids.is_empty() { return Ok(HashMap::new()) }
+        let result = sqlx::query!("SELECT song_id, COUNT(*) FROM song_plays WHERE song_id = ANY($1) GROUP BY song_id", song_ids)
+            .fetch_all(executor)
+            .await?
+            .into_iter()
+            .map(|x| (x.song_id, x.count.unwrap_or(0)))
+            .collect::<HashMap<_, _>>();
+        Ok(result)
     }
 
     async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()> {

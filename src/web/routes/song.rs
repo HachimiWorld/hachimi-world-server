@@ -26,7 +26,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         // Core operations
         .route("/upload_audio_file", post(publish::upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)))
-        .route("/upload_cover_image", post(publish::upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)) )
+        .route("/upload_cover_image", post(publish::upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/delete", post(publish::delete))
         .route("/publish", post(publish::publish))
         .route("/detail", get(detail))
@@ -65,7 +65,7 @@ async fn detail(
     let data = song::get_public_detail_with_cache_by_display_id(
         state.redis_conn.clone(),
         &state.sql_pool,
-        &params.id
+        &params.id,
     ).await?;
     match data {
         Some(x) => ok!(x),
@@ -85,8 +85,8 @@ async fn detail_by_id(
     let data = song::get_public_detail_with_cache(
         state.redis_conn.clone(),
         &state.sql_pool,
-        params.id
-    ).await?;
+        &[params.id],
+    ).await?.into_iter().next().unwrap();
     match data {
         Some(x) => ok!(x),
         None => err!("not_found", "Song not found")
@@ -137,23 +137,14 @@ async fn page_by_user(
     let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, page, size).await?;
     let total = SongDao::count_by_user(&state.sql_pool, req.user_id).await?;
 
-    let mut details = Vec::new();
-    for song in songs {
-        if let Some(detail) = song::get_public_detail_with_cache(
-            state.redis_conn.clone(),
-            &state.sql_pool,
-            song.id,
-        ).await? {
-            details.push(detail);
-        }
-    }
+    let songs = song::get_public_detail_with_cache(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        &songs.iter().map(|x| x.id).collect::<Vec<_>>(),
+    ).await?;
+    let songs: Vec<PublicSongDetail> = songs.into_iter().flatten().collect();
 
-    let resp = PageByUserResp {
-        songs: details,
-        total,
-        page,
-        size,
-    };
+    let resp = PageByUserResp { songs, total, page, size };
 
     // Cache for 5 minutes
     let _: () = set_page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size, resp.clone()).await?;
@@ -218,7 +209,7 @@ pub struct SearchSongItem {
     pub audio_url: String,
     pub uploader_uid: i64,
     pub uploader_name: String,
-    pub explicit: Option<bool>
+    pub explicit: Option<bool>,
 }
 
 #[framed]
@@ -239,34 +230,35 @@ async fn search(
     };
 
     let result = search::song::search_songs(state.meilisearch.as_ref(), &search_query).await?;
+    let hit_ids: Vec<i64> = result.hits.into_iter().map(|x| x.id).collect();
 
-    let mut hits = Vec::new();
-
-    for hit in result.hits {
-        let song_detail = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, hit.id).await?;
-
-        if let Some(song) = song_detail {
-            hits.push(SearchSongItem {
-                id: song.id,
-                display_id: song.display_id,
-                title: song.title,
-                subtitle: song.subtitle,
-                description: song.description,
-                artist: song.uploader_name.clone(),
-                duration_seconds: song.duration_seconds,
-                play_count: song.play_count,
-                like_count: song.like_count,
-                cover_art_url: song.cover_url,
-                audio_url: song.audio_url,
-                uploader_uid: song.uploader_uid,
-                uploader_name: song.uploader_name,
-                explicit: song.explicit,
-            });
-        }
-    }
+    let details = song::get_public_detail_with_cache(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        &hit_ids,
+    ).await?
+        .into_iter()
+        .filter_map(|x| x)
+        .map(|song| SearchSongItem {
+            id: song.id,
+            display_id: song.display_id,
+            title: song.title,
+            subtitle: song.subtitle,
+            description: song.description,
+            artist: song.uploader_name.clone(),
+            duration_seconds: song.duration_seconds,
+            play_count: song.play_count,
+            like_count: song.like_count,
+            cover_art_url: song.cover_url,
+            audio_url: song.audio_url,
+            uploader_uid: song.uploader_uid,
+            uploader_name: song.uploader_name,
+            explicit: song.explicit,
+        })
+        .collect::<Vec<_>>();
 
     ok!(SearchResp {
-        hits,
+        hits: details,
         query: result.query,
         processing_time_ms: result.processing_time_ms,
         total_hits: result.hits_info.total_hits,
@@ -306,7 +298,7 @@ pub struct RecentReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentResp {
-    pub songs: Vec<DetailResp>
+    pub songs: Vec<DetailResp>,
 }
 
 #[framed]
@@ -315,10 +307,9 @@ async fn recent_v2(
     req: Query<RecentReq>,
 ) -> WebResult<RecentResp> {
     // Validate input
-    let limit = req.limit.unwrap_or(300);
-    if limit > 300 || limit < 0 {
-        // TODO: Decrease the limit to 300 when most users are using the new API
-        err!("invalid_limit", "Limit must be between 0 and 300")
+    let limit = req.limit.unwrap_or(50);
+    if limit > 50 || limit < 0 {
+        err!("invalid_limit", "Limit must be between 0 and 50")
     }
     if limit == 0 {
         ok!(RecentResp {songs: vec![]});
@@ -333,7 +324,7 @@ async fn recent_v2(
         &state.sql_pool,
         req.cursor,
         limit,
-        after
+        after,
     ).await?;
 
     ok!(RecentResp {songs})
@@ -341,7 +332,7 @@ async fn recent_v2(
 
 #[derive(Serialize, Deserialize)]
 pub struct HotResp {
-    pub songs: Vec<DetailResp>
+    pub songs: Vec<DetailResp>,
 }
 
 #[framed]
@@ -354,7 +345,7 @@ async fn hot_weekly(
 
 #[derive(Serialize, Deserialize)]
 pub struct RecommendResp {
-    pub songs: Vec<DetailResp>
+    pub songs: Vec<DetailResp>,
 }
 
 async fn recommend(
@@ -362,7 +353,7 @@ async fn recommend(
     state: State<AppState>,
 ) -> WebResult<RecommendResp> {
     let recommend = recommend_v2::get_recommend(claims.uid(), state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
-    let resp = RecommendResp {songs: recommend};
+    let resp = RecommendResp { songs: recommend };
     ok!(resp)
 }
 
@@ -371,7 +362,7 @@ async fn recommend_anonymous(
     state: State<AppState>,
 ) -> WebResult<RecommendResp> {
     let recommend = recommend_v2::get_recommend_anonymous(&ip.0, state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
-    let resp = RecommendResp {songs: recommend};
+    let resp = RecommendResp { songs: recommend };
     ok!(resp)
 }
 
@@ -483,7 +474,7 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
             is_active: true,
             create_time: Utc::now(),
             update_time: Utc::now(),
-        }
+        },
     ).await?;
 
     ok!(TagCreateResp { id })

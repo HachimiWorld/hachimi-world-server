@@ -45,7 +45,7 @@ pub async fn get_recent_songs(
             }
 
             // Or get it from the database
-            let songs = get_from_db(redis.clone(), pool, cursor, limit, after).await?;
+            let songs = get_recent_from_db(redis.clone(), pool, cursor, limit, after).await?;
             save_cache(redis, &songs, cursor, limit, after).await?;
             drop(guard);
             Ok(songs)
@@ -89,7 +89,7 @@ fn build_recent_redis_key(cursor: Option<DateTime<Utc>>, limit: i32, after: bool
     ).unwrap_or("latest".to_string()))
 }
 
-async fn get_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
+async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
     let cursor = cursor.unwrap_or_else(|| Utc::now());
     let start = Instant::now();
     let recent_songs: Vec<_> = if after {
@@ -97,23 +97,18 @@ async fn get_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Option<Dat
     } else {
         SongDao::list_by_create_time_before(pool, cursor, limit as i64).await?
     };
-
-    let mut songs = Vec::new();
-
-    // Such a waste...
-    for x in recent_songs {
-        match song::get_public_detail_with_cache(redis.clone(), pool, x.id).await? {
-            Some(mut data) => {
-                // TODO: Lyrics is unnecessary for recomment result, temporarily set to empty to save network usage.
-                data.lyrics.clear();
-                songs.push(data);
-            }
-            None => {
-                // This might happen logically, but will it really happen?
-                bail!("get_recent_songs got none during getting song({})", x.id)
-            }
-        };
-    }
+    
+    let songs_ids = recent_songs.iter().map(|x| x.id).collect::<Vec<_>>();
+    let songs = song::get_public_detail_with_cache(redis.clone(), pool, &songs_ids).await?
+        .into_iter().filter_map(|x| x)
+        .map(|mut data| {
+            data.description = data.description.chars().take(128).collect();
+            data.lyrics.clear();
+            data.audio_url.clear();
+            data
+        })
+        .collect();
+    
     histogram!("recommend_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
     Ok(songs)
 }
@@ -232,20 +227,16 @@ async fn get_from_db_recommend(
         .map(|x| x.id)
         .collect();
 
-    let mut songs = Vec::new();
-
-    for x in random_song_ids {
-        match song::get_public_detail_with_cache(redis.clone(), pool, x).await? {
-            Some(mut data) => {
-                data.description = data.description.chars().take(128).collect();
-                data.lyrics.clear();
-                songs.push(data);
-            }
-            None => {
-                bail!("get_recommend got none during getting song({x})")
-            }
-        };
-    }
+    
+    let songs = song::get_public_detail_with_cache(redis.clone(), pool, &random_song_ids).await?
+        .into_iter().filter_map(|x| x)
+        .map(|mut data| {
+            data.description = data.description.chars().take(128).collect();
+            data.lyrics.clear();
+            data.audio_url.clear();
+            data
+        })
+        .collect::<Vec<_>>();
     histogram!("recommend_random_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
     Ok(songs)
 }
@@ -304,14 +295,10 @@ async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>
         ORDER BY play_count DESC
         LIMIT $2
     ", time_ago, limit).fetch_all(pool).await?;
-
-    let mut songs = vec![];
-    for x in result {
-        if let Some(x) = get_public_detail_with_cache(redis.clone(), pool, x.song_id).await? {
-            songs.push(x);
-        } else {
-            warn!("get_weekly_hot_songs got none during getting song({})", x.song_id)
-        }
-    }
+    
+    let song_ids = &result.iter().map(|x| x.song_id).collect::<Vec<_>>();
+    let songs = song::get_public_detail_with_cache(redis.clone(), pool, song_ids).await?
+        .into_iter().filter_map(|x| x)
+        .collect();
     Ok(songs)
 }

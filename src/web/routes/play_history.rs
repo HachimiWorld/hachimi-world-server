@@ -1,5 +1,6 @@
+use std::collections::HashSet;
 use crate::db::song::{ISongDao, SongDao, SongPlay};
-use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
+use crate::service::song::{PublicSongDetail};
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
@@ -9,10 +10,12 @@ use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use metrics::gauge;
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
+use crate::service::song;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -49,20 +52,26 @@ async fn cursor(
         err!("size_exceeded", "Page size must be less than 64")
     }
     let history = SongDao::cursor_plays(&state.sql_pool, claims.uid(), req.cursor.unwrap_or_else(|| Utc::now()), req.size).await?;
-    let mut result = Vec::new();
-    for x in history {
-        if let Some(detail) = get_public_detail_with_cache(
-            state.redis_conn.clone(),
-            &state.sql_pool,
-            x.song_id
-        ).await? {
-            result.push(PlayHistoryItem {
-                id: x.id,
-                song_info: detail,
-                play_time: x.create_time,
+
+    let song_ids_distinct = history.iter().map(|x| x.song_id)
+        .collect::<HashSet<i64>>().into_iter().collect_vec();
+    let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, song_ids_distinct.as_slice()).await?
+        .into_iter()
+        .filter_map(|x| x)
+        .into_group_map_by(|x| x.id);
+
+    let result = history.into_iter()
+        .filter_map(|x| songs.get(&x.song_id)
+            .and_then(|songs| songs.into_iter().next()) // Take only first
+            .and_then(|song| {
+                Some(PlayHistoryItem {
+                    id: x.id,
+                    song_info: song.clone(),
+                    play_time: x.create_time,
+                })
             })
-        }
-    }
+        )
+        .collect_vec();
 
     ok!(CursorResp { list: result })
 }
