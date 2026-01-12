@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM song_origin_info WHERE song_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "origin_type",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "origin_song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "origin_title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "origin_artist",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 6,
+        "name": "origin_url",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "c8168fd2a62c6a14917c6557b515a5cdcc377c2061580e39a18943ba4e130a09"
+}
