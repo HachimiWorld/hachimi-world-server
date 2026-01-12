@@ -1,0 +1,98 @@
+kind: pipeline
+type: docker
+name: build-full
+
+steps:
+  - name: build
+    image: docker:28.4
+    commands:
+      - docker build -t hachimi-world-server:$DRONE_COMMIT_SHA .
+    volumes:
+      - name: docker-sock
+        path: /var/run/docker.sock
+  - name: push
+    image: docker:28.4
+    privileged: true
+    environment:
+      REGISTRY_SERVER:
+        from_secret: registry_server
+      REGISTRY_USERNAME:
+        from_secret: registry_username
+      REGISTRY_PASSWORD:
+        from_secret: registry_password
+    commands:
+      - docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD $REGISTRY_SERVER
+      - docker tag hachimi-world-server:$DRONE_COMMIT_SHA $REGISTRY_SERVER/hachimi-world-server:latest
+      - docker push $REGISTRY_SERVER/hachimi-world-server:latest
+    volumes:
+      - name: docker-sock
+        path: /var/run/docker.sock
+    when:
+      event: promote
+      target: production
+  - name: deploy-production
+    image: appleboy/drone-ssh
+    environment:
+      REGISTRY_SERVER:
+        from_secret: registry_server
+      REGISTRY_USERNAME:
+        from_secret: registry_username
+      REGISTRY_PASSWORD:
+        from_secret: registry_password
+      DEPLOY_DIR:
+        from_secret: deploy_dir
+    settings:
+      host:
+        from_secret: deploy_ssh_host
+      port:
+        from_secret: deploy_ssh_port
+      username:
+        from_secret: deploy_ssh_username
+      key:
+        from_secret: deploy_ssh_key
+      command_timeout: 2m
+      envs:
+        - registry_server
+        - registry_username
+        - registry_password
+        - deploy_dir
+      script_stop: true
+      script:
+        - docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD $REGISTRY_SERVER
+        - cd $DEPLOY_DIR
+        - docker compose pull app
+        - docker compose up -d
+    when:
+      event: promote
+      target: production
+
+trigger:
+  branch:
+    - master
+  event:
+    - push
+    - promote
+
+volumes:
+  - name: docker-sock
+    host:
+      path: /var/run/docker.sock
+---
+kind: pipeline
+type: docker
+name: build-check
+
+steps:
+  - name: build
+    image: rust:1.90.0
+    environment:
+      SQLX_OFFLINE: true
+    commands:
+      - cargo build
+
+trigger:
+  branch:
+    exclude:
+      - master
+  event:
+    - push
