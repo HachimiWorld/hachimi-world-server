@@ -1,13 +1,23 @@
-use std::collections::{HashMap, HashSet};
-use std::io::Cursor;
-use anyhow::{Context};
-use async_backtrace::framed;
+use crate::audio::ParseError;
+use crate::config::Config;
+use crate::db::creator::{Creator, CreatorDao};
+use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
+use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
+use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::{song_publishing_review, CrudDao};
+use crate::service::mailer;
+use crate::service::mailer::EmailConfig;
+use crate::service::song::{CreationTypeInfo, ExternalLink};
+use crate::service::upload::{scale_down_to_webp, ResizeType};
+use crate::util::{validate_platforms, IsBlank};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
+use crate::web::routes::song::TagItem;
 use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service};
+use anyhow::Context;
+use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -16,17 +26,9 @@ use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::collections::{HashMap, HashSet};
+use std::io::Cursor;
 use tracing::{info, warn};
-use crate::audio::ParseError;
-use crate::db::creator::{Creator, CreatorDao};
-use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
-use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
-use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
-use crate::service::mailer::EmailConfig;
-use crate::service::song::{CreationTypeInfo, ExternalLink};
-use crate::service::upload::{scale_down_to_webp, ResizeType};
-use crate::util::{validate_platforms, IsBlank};
-use crate::web::routes::song::TagItem;
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -215,10 +217,29 @@ pub async fn publish(
     }
     tx.commit().await?;
 
+    // TODO: Refactor with message queue
+    tokio::spawn(async move {
+        send_notification_to_maintainer(&state.config, &req.title, &user.username).await?;
+        Ok::<(), anyhow::Error>(())
+    });
+
     ok!(PublishResp {
         review_id: review_id,
         song_display_id: jmid
     })
+}
+
+async fn send_notification_to_maintainer(
+    config: &Config,
+    title: &str,
+    author: &str
+) -> anyhow::Result<()> {
+    let email_cfg: EmailConfig = config.get_and_parse("email")?;
+    let community_cfg: CommunityCfg = config.get_and_parse("community")?;
+    if let Some(email) = community_cfg.contributors.first() {
+        mailer::send_notification(&email_cfg, email, "有新的稿件待审核", &format!("{} - {}", title, author)).await?;
+    }
+    Ok(())
 }
 
 async fn build_internal_review_data(
