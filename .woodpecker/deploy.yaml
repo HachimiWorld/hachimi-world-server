@@ -15,6 +15,7 @@ steps:
         from_secret: registry_password
       dockerfile: Dockerfile
       auto_tag: false
+    privileged: true
   - name: deploy-production
     image: appleboy/drone-ssh
     environment:
