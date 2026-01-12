@@ -148,6 +148,7 @@ async fn fully_index_users(
 
     let _ = client.swap_indexes([&SwapIndexes {
         indexes: ("users".to_string(), new_index_name),
+        rename: None,
     }]).await?
         .wait_for_completion(&client, None, None);
     info!("swapping indexes successfully");

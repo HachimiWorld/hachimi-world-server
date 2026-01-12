@@ -209,7 +209,8 @@ async fn fully_index_songs(
 
     info!("sync all chunk successfully, swapping indexes");
     let _ = client.swap_indexes([&SwapIndexes {
-        indexes: ("songs".to_string(), new_index_name)
+        indexes: ("songs".to_string(), new_index_name),
+        rename: None,
     }]).await?
         .wait_for_completion(&client, None, None)
         .await?;
