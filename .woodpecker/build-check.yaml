@@ -1,0 +1,11 @@
+when:
+  branch:
+    exclude: master
+  event: push
+steps:
+  - name: build
+    image: rust:1.90.0
+    environment:
+      SQLX_OFFLINE: true
+    commands:
+      - cargo build
