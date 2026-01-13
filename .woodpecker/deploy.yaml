@@ -1,32 +1,29 @@
 when:
-  branch: master
-  event: push
+  branch:
+    - master
+  event:
+    - push
+    - manual
 steps:
   - name: build-and-push
     image: woodpeckerci/plugin-docker-buildx
     settings:
+      repo:
+        from_secret: registry_repo
+      tags:
+        - latest
+        - ${CI_COMMIT_SHA}
+      dockerfile: Dockerfile
       registry:
         from_secret: registry_server
-      repo: ${registry_server}/hachimi-world-server
-      tags: latest, ${CI_COMMIT_SHA}
       username:
         from_secret: registry_username
       password:
         from_secret: registry_password
-      dockerfile: Dockerfile
       auto_tag: false
     privileged: true
   - name: deploy-production
     image: appleboy/drone-ssh
-    environment:
-      REGISTRY_SERVER:
-        from_secret: registry_server
-      REGISTRY_USERNAME:
-        from_secret: registry_username
-      REGISTRY_PASSWORD:
-        from_secret: registry_password
-      DEPLOY_DIR:
-        from_secret: deploy_dir
     settings:
       host:
         from_secret: deploy_ssh_host
@@ -37,14 +34,6 @@ steps:
       key:
         from_secret: deploy_ssh_key
       command_timeout: 2m
-      envs:
-        - registry_server
-        - registry_username
-        - registry_password
-        - deploy_dir
       script_stop: true
       script:
-        - docker login -u $REGISTRY_USERNAME -p $REGISTRY_PASSWORD $REGISTRY_SERVER
-        - cd $DEPLOY_DIR
-        - docker compose pull app
-        - docker compose up -d
+        - ./deploy_hachimi_world_server.sh
