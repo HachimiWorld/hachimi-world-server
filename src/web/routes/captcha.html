@@ -3,70 +3,212 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Captcha</title>
+    <title>人机验证 - 基米天堂</title>
+    <link rel="icon" href="https://hachimi.world/favicon.ico">
+    <meta name="theme-color" content="#EBE9E7" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#2B2A25" media="(prefers-color-scheme: dark)">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+
+    <style>
+        :root {
+            --light-primary-color: #FF7022;
+            --dark-primary-color: #FF782F;
+            --light-bg: #EBE9E7;
+            --light-text: #333;
+            --light-card-bg: rgba(255, 255, 255, 0.6);
+            --dark-bg: #2B2A25;
+            --dark-text: #FFF;
+            --dark-card-bg: rgba(255, 255, 255, 0.07);
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .container {
+            max-width: 400px;
+            width: 90%;
+        }
+
+        @media (prefers-color-scheme: light) {
+            body {
+                background-color: var(--light-bg);
+                color: var(--light-text);
+            }
+
+            .song-card {
+                background-color: var(--light-card-bg);
+            }
+
+            button {
+                background-color: #f0f0f0;
+                color: #333;
+            }
+
+            button.primary {
+                background-color: var(--light-primary-color);
+                color: white;
+            }
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body {
+                background-color: var(--dark-bg);
+                color: var(--dark-text);
+            }
+
+            .song-card {
+                background-color: var(--dark-card-bg);
+            }
+
+            button {
+                background-color: #444;
+                color: white;
+            }
+
+            button.primary {
+                background-color: var(--dark-primary-color);
+                color: white;
+            }
+        }
+
+        .container {
+            max-width: 400px;
+            width: 90%;
+        }
+
+        .song-card {
+            width: 300px;
+            border-radius: 24px;
+            padding: 16px;
+            transition: all 0.3s ease;
+            text-align: start;
+            box-shadow: 0 2px 16px rgba(0, 0, 0, 6%);
+        }
+
+        .typo-title {
+            font-size: 16px;
+        }
+
+        .typo-caption {
+            font-size: 14px;
+        }
+
+        .typo-caption-small {
+            font-size: 12px;
+        }
+    </style>
 </head>
 <body>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" defer></script>
 
-<div style="text-align: center; margin-top: 20vh;">
-    <div>正在进行人机验证，请稍后</div>
-    <div id="my-widget" style="margin-top: 12px"></div>
-    <div id="status" style="margin-top: 12px"></div>
+<div style="text-align: center">
+    <div class="container">
+        <!--<a href="https://hachimi.world" target="_blank">
+            <picture>
+                <source srcset="/static/logo-light.svg" media="(prefers-color-scheme: light)">
+                <source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)">
+                <img src="/static/logo-dark.svg">
+            </picture>
+        </a>-->
+        <div id="content">
+            <div class="song-card">
+                <div class="typo-title">正在进行人机验证，请稍候</div>
+                <div id="my-widget" style="margin-top: 16px"></div>
+                <div class="typo-caption" id="status" style="margin-top: 16px"></div>
+                <div class="typo-caption-small" id="tip" style="margin-top: 8px; display: none">
+                    若多次失败请尝试更换网络或浏览器
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
     const API_BASE_URL = "{{API_BASE_URL}}";
     const SITE_KEY = "{{SITE_KEY}}";
 
-    window.onload = function() {
+    window.onload = function () {
+        const prefersDarkMQ = window.matchMedia('(prefers-color-scheme: dark)');
+        const turnstileTheme = prefersDarkMQ.matches ? 'dark' : 'light';
         const status = document.querySelector("#status")
-        // Get query from location
-        const query = window.location.search.substring(1);
-        // Parse query into object
-        const vars = query.split("&");
-        const queryObject = {};
-        for (let i = 0; i < vars.length; i++) {
-            const pair = vars[i].split("=");
-            queryObject[pair[0]] = decodeURIComponent(pair[1]);
-        }
-        let captcha_key = queryObject.captcha_key
 
         turnstile.render('#my-widget', {
             sitekey: SITE_KEY,
-            theme: 'light',
-            callback: function(token) {
-                status.textContent = "验证中，请稍后"
-                const url = API_BASE_URL + "/auth/captcha/submit"
-                const data = {
-                    captcha_key: captcha_key,
-                    token: token
-                }
-                // POST Json
-                fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(data)
-                }).then(response => {
-                    response.json()
-                        .then(data => {
-                            if (data.ok) {
-                                status.textContent = "验证通过，请直接关闭本窗口"
-                                window.close()
-                            } else {
-                                status.textContent = "验证失败: " + data.data.msg
-                            }
-                        })
-                        .catch(() => {
-                            status.textContent = "验证失败"
-                        })
-                }).catch(reason => {
-                    status.textContent = "验证失败"
-                })
+            theme: turnstileTheme,
+            callback: callback,
+            'error-callback': function(errorCode) {
+                status.textContent = 'Challenge Error: ' + errorCode
+                showTip()
+            },
+            'expired-callback': function() {
+                status.textContent = 'Token expired';
+                showTip()
+            },
+            'timeout-callback': function() {
+                status.textContent = 'Challenge timed out';
+                showTip()
             }
         });
-    };
+    }
+
+    async function callback(token) {
+        // Get query from location
+        const searchParams = new URLSearchParams(window.location.search)
+        const captchaKey = searchParams.get("captcha_key");
+        if (!captchaKey) {
+            document.querySelector("#status").textContent = "验证失败：缺少 captcha_key 参数";
+            return;
+        }
+
+        const status = document.querySelector("#status")
+        status.textContent = "验证中，请稍候"
+
+        try {
+            let resp = await submitCaptcha(captchaKey, token)
+            if (resp.ok) {
+                status.textContent = "验证通过，请直接关闭本窗口"
+                window.close()
+            } else {
+                status.textContent = "验证失败: " + resp.data.msg
+                showTip()
+            }
+        } catch (error) {
+            status.textContent = "验证失败：" + error.msg
+            showTip()
+        }
+    }
+
+    async function submitCaptcha(captchaKey, token) {
+        const url = API_BASE_URL + "/auth/captcha/submit"
+        const data = {
+            captcha_key: captchaKey,
+            token: token
+        }
+        let resp = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        let json = await resp.json()
+        return json
+    }
+
+    function showTip() {
+        document.querySelector("#tip").style.display = "block"
+    }
 </script>
 </body>
 </html>
