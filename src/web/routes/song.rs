@@ -182,6 +182,8 @@ pub struct SearchReq {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub filter: Option<String>,
+    /// Since 260114
+    pub sort_by: Option<String>
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,11 +224,23 @@ async fn search(
         err!("invalid_query", "Query must not be blank")
     }
 
+    let sort_method = match req.sort_by.as_deref() {
+        Some("relevance") | None => None,
+        Some("release_time_desc") => Some(search::song::SearchSortMethod::ReleaseTimeDesc),
+        Some("release_time_asc") => Some(search::song::SearchSortMethod::ReleaseTimeAsc),
+        Some("play_count_desc") => Some(search::song::SearchSortMethod::PlayCountDesc),
+        Some("play_count_asc") => Some(search::song::SearchSortMethod::PlayCountAsc),
+        Some(other) => {
+            err!("invalid_sort_method", "Invalid sort method: {}", other)
+        }
+    };
+
     let search_query = search::song::SearchQuery {
         q: req.q.clone(),
         limit: req.limit,
         offset: req.offset,
         filter: req.filter.clone(),
+        sort_method,
     };
 
     let result = search::song::search_songs(state.meilisearch.as_ref(), &search_query).await?;
