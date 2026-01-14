@@ -2,7 +2,7 @@ use crate::db::song::{ISongDao, SongDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
-use crate::service::{recommend, recommend_v2, song, song_like};
+use crate::service::{recommend_v2, song, song_like};
 use crate::util::IsBlank;
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
@@ -264,27 +264,6 @@ async fn search(
         total_hits: result.hits_info.total_hits,
         limit: result.hits_info.limit,
         offset: result.hits_info.offset,
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated(since = "250831", note = "use /recent_v2 instead")]
-pub struct SongListResp {
-    pub song_ids: Vec<String>,
-}
-
-#[framed]
-#[deprecated(since = "250831", note = "use /recent_v2 instead")]
-async fn recent(
-    state: State<AppState>
-) -> WebResult<SongListResp> {
-    let songs = recommend::get_recent_songs(&state.redis_conn, &state.sql_pool).await?;
-    let ids: Vec<String> = songs.into_iter().map(|x| {
-        x.display_id
-    }).collect();
-
-    ok!(SongListResp {
-        song_ids: ids
     })
 }
 
