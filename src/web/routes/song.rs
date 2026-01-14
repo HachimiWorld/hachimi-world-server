@@ -3,10 +3,11 @@ use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
 use crate::service::{recommend, recommend_v2, song, song_like};
-use crate::util::{IsBlank};
+use crate::util::IsBlank;
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
-use crate::web::result::{WebResult};
+use crate::web::result::WebResult;
+use crate::web::routes::publish;
 use crate::web::state::AppState;
 use crate::{err, ok, search};
 use async_backtrace::framed;
@@ -20,7 +21,6 @@ use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tracing::log::warn;
-use crate::web::routes::publish;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -423,12 +423,12 @@ pub struct TagItem {
 
 #[framed]
 async fn tag_search(
-    claims: Claims, // Consider removing auth
+    _claims: Claims, // Consider removing auth
     state: State<AppState>,
     req: Query<TagSearchReq>,
 ) -> WebResult<TagSearchResp> {
     // Validate
-    if req.query.is_blank() || (req.query.is_ascii() && req.query.chars().count() < 2) {
+    if req.query.is_blank() {
         ok!(TagSearchResp { result: vec![] })
     }
 
