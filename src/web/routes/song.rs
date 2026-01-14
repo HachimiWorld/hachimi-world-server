@@ -16,6 +16,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
@@ -208,10 +209,17 @@ pub struct SearchSongItem {
     pub play_count: i64,
     pub like_count: i64,
     pub cover_art_url: String,
+    /// Deprecated since 260114.
+    /// Use detail endpoint to get audio URL
     pub audio_url: String,
     pub uploader_uid: i64,
     pub uploader_name: String,
+    /// since 251105
     pub explicit: Option<bool>,
+    /// since 260114
+    pub original_artists: Vec<String>,
+    /// since 260114
+    pub original_titles: Vec<String>
 }
 
 #[framed]
@@ -268,6 +276,8 @@ async fn search(
             uploader_uid: song.uploader_uid,
             uploader_name: song.uploader_name,
             explicit: song.explicit,
+            original_artists: song.origin_infos.iter().filter_map(|x| x.artist.clone()).collect_vec(),
+            original_titles: song.origin_infos.iter().filter_map(|x| x.title.clone()).collect_vec(),
         })
         .collect::<Vec<_>>();
 
