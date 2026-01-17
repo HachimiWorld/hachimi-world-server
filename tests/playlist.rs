@@ -1,7 +1,7 @@
-use crate::common::{assert_is_ok, CommonParse};
-use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListResp};
 use crate::common::auth::with_new_random_test_user;
 use crate::common::with_test_environment;
+use crate::common::CommonParse;
+use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq, ListContainingResp, ListResp};
 
 mod common;
 
@@ -79,7 +79,26 @@ async fn test_playlist() {
         }).await.parse_resp::<DetailResp>().await.unwrap();
         let songs = detail.songs.iter().map(|x| x.song_id).collect::<Vec<_>>();
         assert_eq!(&vec![3, 2, 4, 5, 1], &songs);
-        
+
+
+        // Create a playlist without songs
+        env.api.post("/playlist/create", &CreatePlaylistReq {
+            name: "Test Playlist2".to_string(),
+            description: None,
+            is_public: false,
+        }).await.parse_resp::<CreatePlaylistResp>().await.unwrap();
+
+        // Test list containing
+        let resp = env.api.get_query("/playlist/list_containing", &ListContainingReq {
+            song_id: 3,
+        }).await.parse_resp::<ListContainingResp>().await.unwrap();
+        assert_eq!(1, resp.playlist_ids.len());
+        assert_eq!(playlist_id, resp.playlist_ids.first().unwrap().clone());
+
+        let resp = env.api.get_query("/playlist/list_containing", &ListContainingReq {
+            song_id: 0,
+        }).await.parse_resp::<ListContainingResp>().await.unwrap();
+        assert_eq!(0, resp.playlist_ids.len());
         ()
     }).await;
 }

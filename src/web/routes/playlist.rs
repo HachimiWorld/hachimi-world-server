@@ -2,27 +2,29 @@ use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::db::song::SongDao;
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
+use crate::service::upload::ResizeType;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok, service};
-use anyhow::{Context};
+use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use crate::service::upload::{ResizeType};
 
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/detail_private", get(detail_private))
         .route("/list", get(list))
+        .route("/list_containing", get(list_containing))
         .route("/create", post(create))
         .route("/update", post(update))
         .route("/delete", post(delete))
@@ -154,6 +156,31 @@ async fn list(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListContainingReq {
+    pub song_id: i64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListContainingResp {
+    pub playlist_ids: Vec<i64>
+}
+
+async fn list_containing(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<ListContainingReq>
+) -> WebResult<ListContainingResp> {
+    let playlists = PlaylistDao::list_containing(&state.sql_pool, req.song_id, claims.uid()).await?;
+
+    let mut result= playlists
+        .into_iter()
+        .map(|x| x.id)
+        .collect_vec();
+
+    ok!(ListContainingResp {playlist_ids: result})
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePlaylistReq {
     pub name: String,
     // pub use_song_cover: bool,
@@ -281,6 +308,9 @@ async fn add_song(
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
     let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
+    if songs.len() >= 1000 {
+        err!("playlist_full", "The playlist is full")
+    }
     let existed = songs.iter().any(|x| x.song_id == song.id);
     if existed {
         err!("song_existed", "Song {} already exists in the playlist {}", song.id, playlist.id);

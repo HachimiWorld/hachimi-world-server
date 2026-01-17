@@ -1,7 +1,7 @@
+use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
-use crate::db::CrudDao;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Playlist {
@@ -34,6 +34,7 @@ where
     async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>>;
     async fn count_songs(executor: E, playlist_id: i64) -> sqlx::Result<i64>;
     async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
+    async fn list_containing(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
 }
 
@@ -142,6 +143,15 @@ where E: PgExecutor<'e>,{
 
     async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
         sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE user_id = $1", user_id)
+            .fetch_all(executor)
+            .await
+    }
+
+    async fn list_containing(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
+        sqlx::query_as!(Playlist, "SELECT p.*
+FROM playlists p
+    JOIN playlist_songs ps ON ps.playlist_id = p.id
+WHERE ps.song_id = $1 AND p.user_id = $2;", song_id, user_id)
             .fetch_all(executor)
             .await
     }
