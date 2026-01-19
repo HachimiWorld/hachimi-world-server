@@ -1,14 +1,14 @@
-use std::collections::HashMap;
+use crate::db::song::{ISongDao, SongDao};
+use crate::db::CrudDao;
 use itertools::Itertools;
 use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
 use metrics::counter;
-use crate::db::song::{ISongDao, SongDao};
 use serde::{Deserialize, Serialize};
 use sqlx::{query, PgPool};
+use std::collections::HashMap;
 use tracing::{error, info, info_span, warn, Instrument};
-use crate::db::CrudDao;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDocument {
@@ -55,12 +55,32 @@ pub async fn delete_song_document(
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SearchQuery {
     pub q: String,
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub filter: Option<String>,
+    pub sort_method: Option<SearchSortMethod>
+}
+
+#[derive(Debug, Clone)]
+pub enum SearchSortMethod {
+    ReleaseTimeDesc,
+    ReleaseTimeAsc,
+    PlayCountDesc,
+    PlayCountAsc,
+}
+
+impl SearchSortMethod {
+    fn to_meilisearch_sort(&self) -> &'static str {
+        match self {
+            SearchSortMethod::ReleaseTimeDesc => "release_time:desc",
+            SearchSortMethod::ReleaseTimeAsc => "release_time:asc",
+            SearchSortMethod::PlayCountDesc => "play_count:desc",
+            SearchSortMethod::PlayCountAsc => "play_count:asc",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +108,13 @@ pub async fn search_songs(
         .with_query(&query.q)
         .with_limit(query.limit.unwrap_or(20))
         .with_offset(query.offset.unwrap_or(0));
+
+    let mut sort = vec![];
+    if let Some(ref s) = query.sort_method {
+        sort.push(s.to_meilisearch_sort())
+    }
+
+    search_request.with_sort(&sort);
 
     if let Some(ref filter) = query.filter {
         search_request.with_filter(filter);

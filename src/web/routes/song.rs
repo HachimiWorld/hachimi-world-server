@@ -2,11 +2,13 @@ use crate::db::song::{ISongDao, SongDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
-use crate::service::{recommend, recommend_v2, song, song_like};
-use crate::util::{IsBlank};
+use crate::service::tag_recommend;
+use crate::service::{recommend_v2, song, song_like};
+use crate::util::IsBlank;
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
-use crate::web::result::{WebResult};
+use crate::web::result::WebResult;
+use crate::web::routes::publish;
 use crate::web::state::AppState;
 use crate::{err, ok, search};
 use async_backtrace::framed;
@@ -14,13 +16,14 @@ use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
+use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use std::ops::Sub;
 use std::time::Duration;
 use tracing::log::warn;
-use crate::web::routes::publish;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -45,8 +48,8 @@ pub fn router() -> Router<AppState> {
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
-    // .route("/tag/report_merge", post(tag_report_merge))
-    // .route("/tag/commit_translation", post())
+        .route("/tag/recommend", get(tag_recommend))
+        .route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +185,8 @@ pub struct SearchReq {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub filter: Option<String>,
+    /// Since 260114
+    pub sort_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,10 +211,17 @@ pub struct SearchSongItem {
     pub play_count: i64,
     pub like_count: i64,
     pub cover_art_url: String,
+    /// Deprecated since 260114.
+    /// Use detail endpoint to get audio URL
     pub audio_url: String,
     pub uploader_uid: i64,
     pub uploader_name: String,
+    /// since 251105
     pub explicit: Option<bool>,
+    /// since 260114
+    pub original_artists: Vec<String>,
+    /// since 260114
+    pub original_titles: Vec<String>,
 }
 
 #[framed]
@@ -222,11 +234,23 @@ async fn search(
         err!("invalid_query", "Query must not be blank")
     }
 
+    let sort_method = match req.sort_by.as_deref() {
+        Some("relevance") | None => None,
+        Some("release_time_desc") => Some(search::song::SearchSortMethod::ReleaseTimeDesc),
+        Some("release_time_asc") => Some(search::song::SearchSortMethod::ReleaseTimeAsc),
+        Some("play_count_desc") => Some(search::song::SearchSortMethod::PlayCountDesc),
+        Some("play_count_asc") => Some(search::song::SearchSortMethod::PlayCountAsc),
+        Some(other) => {
+            err!("invalid_sort_method", "Invalid sort method: {}", other)
+        }
+    };
+
     let search_query = search::song::SearchQuery {
         q: req.q.clone(),
         limit: req.limit,
         offset: req.offset,
         filter: req.filter.clone(),
+        sort_method,
     };
 
     let result = search::song::search_songs(state.meilisearch.as_ref(), &search_query).await?;
@@ -254,6 +278,8 @@ async fn search(
             uploader_uid: song.uploader_uid,
             uploader_name: song.uploader_name,
             explicit: song.explicit,
+            original_artists: song.origin_infos.iter().filter_map(|x| x.artist.clone()).collect_vec(),
+            original_titles: song.origin_infos.iter().filter_map(|x| x.title.clone()).collect_vec(),
         })
         .collect::<Vec<_>>();
 
@@ -264,27 +290,6 @@ async fn search(
         total_hits: result.hits_info.total_hits,
         limit: result.hits_info.limit,
         offset: result.hits_info.offset,
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[deprecated(since = "250831", note = "use /recent_v2 instead")]
-pub struct SongListResp {
-    pub song_ids: Vec<String>,
-}
-
-#[framed]
-#[deprecated(since = "250831", note = "use /recent_v2 instead")]
-async fn recent(
-    state: State<AppState>
-) -> WebResult<SongListResp> {
-    let songs = recommend::get_recent_songs(&state.redis_conn, &state.sql_pool).await?;
-    let ids: Vec<String> = songs.into_iter().map(|x| {
-        x.display_id
-    }).collect();
-
-    ok!(SongListResp {
-        song_ids: ids
     })
 }
 
@@ -423,12 +428,12 @@ pub struct TagItem {
 
 #[framed]
 async fn tag_search(
-    claims: Claims, // Consider removing auth
+    _claims: Claims, // Consider removing auth
     state: State<AppState>,
     req: Query<TagSearchReq>,
 ) -> WebResult<TagSearchResp> {
     // Validate
-    if req.query.is_blank() || (req.query.is_ascii() && req.query.chars().count() < 2) {
+    if req.query.is_blank() {
         ok!(TagSearchResp { result: vec![] })
     }
 
@@ -478,4 +483,99 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
     ).await?;
 
     ok!(TagCreateResp { id })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendItem {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub score: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendResp {
+    pub result: Vec<TagRecommendItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendRedisCache {
+    pub result: Vec<TagRecommendItem>,
+    pub create_time: DateTime<Utc>,
+}
+
+#[framed]
+async fn tag_recommend(
+    claims: Claims,
+    mut state: State<AppState>
+) -> WebResult<TagRecommendResp> {
+    let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
+    let cache_key = format!("tags:recommend:{}:{}", claims.uid(), date);
+
+    if let Some(cached) = state.redis_conn.get::<_, Option<String>>(&cache_key).await? {
+        if let Ok(cache) = serde_json::from_str::<TagRecommendRedisCache>(&cached) {
+            ok!(TagRecommendResp { result: cache.result })
+        }
+    }
+
+    let since = Utc::now() - chrono::TimeDelta::days(30);
+    let scored = tag_recommend::recommend_tags(&state.sql_pool, claims.uid(), 50, since).await?;
+    let result = scored
+        .into_iter()
+        .map(|(t, score)| TagRecommendItem {
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            score,
+        })
+        .collect::<Vec<_>>();
+
+    let _: () = state.redis_conn.set_ex(
+        &cache_key,
+        serde_json::to_string(&TagRecommendRedisCache {
+            result: result.clone(),
+            create_time: Utc::now(),
+        })?,
+        86400,
+    ).await?;
+
+    ok!(TagRecommendResp { result })
+}
+
+/// This is global tag recommendation for all anonymous users, per day
+async fn tag_recommend_anonymous(
+    _ip: XRealIP,
+    mut state: State<AppState>
+) -> WebResult<TagRecommendResp> {
+    let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
+    let cache_key = format!("tags:recommend:anonymous:{}", date);
+
+    if let Some(cached) = state.redis_conn.get::<_, Option<String>>(&cache_key).await? {
+        if let Ok(cache) = serde_json::from_str::<TagRecommendRedisCache>(&cached) {
+            ok!(TagRecommendResp { result: cache.result })
+        }
+    }
+
+    // For anonymous users, we can only recommend hot tags
+    let tags = tag_recommend::get_hot_tags(&state.sql_pool, 10000, 20).await?;
+    let result = tags
+        .into_iter()
+        .map(|(t, score)| TagRecommendItem {
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            score,
+        })
+        .collect::<Vec<_>>();
+
+    let _: () = state.redis_conn.set_ex(
+        &cache_key,
+        serde_json::to_string(&TagRecommendRedisCache {
+            result: result.clone(),
+            create_time: Utc::now(),
+        })?,
+        86400,
+    ).await?;
+
+    ok!(TagRecommendResp { result })
 }

@@ -1,0 +1,14 @@
+when:
+  branch:
+    exclude:
+      - master
+  event:
+    - push
+    - manual
+steps:
+  - name: build
+    image: rust:1.90.0
+    environment:
+      SQLX_OFFLINE: true
+    commands:
+      - cargo build --bin hachimi-world-server

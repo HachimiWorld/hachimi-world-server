@@ -73,6 +73,7 @@ async fn test_search() {
             limit: None,
             offset: None,
             filter: None,
+            sort_by: None,
         }).await.parse_resp().await.unwrap();
         println!("{:#?}", search_result);
     }).await

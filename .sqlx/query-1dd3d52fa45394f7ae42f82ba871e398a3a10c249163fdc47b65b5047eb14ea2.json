@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT str.tag_id AS tag_id, COUNT(*)::bigint AS cnt\n        FROM song_plays sp\n        JOIN song_tag_refs str ON sp.song_id = str.song_id\n        WHERE sp.user_id = $1 AND sp.create_time >= $2\n        GROUP BY str.tag_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "cnt",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "1dd3d52fa45394f7ae42f82ba871e398a3a10c249163fdc47b65b5047eb14ea2"
+}
