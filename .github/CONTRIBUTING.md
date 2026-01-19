@@ -15,9 +15,36 @@ If you have any question, feel free to create issues/discussions, or join our di
 
 ## Build Guide
 
-1. Launch postgresql, redis and meilisearch. You can check the example in `docer/docker-compose-example.yaml`
-2. Create a config file in `./config.yaml`. You can check the example in `config/config-example.yaml`
-3. Build and run the server. The table schemas will be created automatically.
+### 1. Prerequisites
+
+Launch postgresql, redis and meilisearch. You can check the example in `docer/docker-compose-example.yaml`
+
+   
+### 2. Setup `sqlx-cli`
+
+More docs about [SQLx CLI](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md#sqlx-cli).
+
+```shell
+cargo instal sqlx-cli
+```
+
+Configure the database URL in the env var `DATABASE_URL`, or create `./.env` dot env file:
+
+```
+DATABASE_URL=postgres://username:password@host/database
+```
+
+Run SQLx migration to initialize the database schemas:
+
+```shell
+cargo sqlx mig run
+```
+
+### 3. Build and run
+
+Create a config file in `./config.yaml`. You can check the example in `config/config-example.yaml`
+
+Build and run the server:
 
 ```sh
 cargo run --bin hachimi-world-server
