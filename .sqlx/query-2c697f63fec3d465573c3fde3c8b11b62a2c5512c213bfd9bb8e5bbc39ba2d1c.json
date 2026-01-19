@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT str.tag_id AS tag_id, COUNT(*)::bigint AS cnt\n        FROM song_likes sl\n        JOIN song_tag_refs str ON sl.song_id = str.song_id\n        WHERE sl.user_id = $1\n        GROUP BY str.tag_id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tag_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "cnt",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "2c697f63fec3d465573c3fde3c8b11b62a2c5512c213bfd9bb8e5bbc39ba2d1c"
+}
