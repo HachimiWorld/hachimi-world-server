@@ -2,6 +2,7 @@ use crate::db::song::{ISongDao, SongDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::CrudDao;
 use crate::service::song::PublicSongDetail;
+use crate::service::tag_recommend;
 use crate::service::{recommend_v2, song, song_like};
 use crate::util::IsBlank;
 use crate::web::extractors::XRealIP;
@@ -15,11 +16,12 @@ use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
+use std::ops::Sub;
 use std::time::Duration;
 use tracing::log::warn;
 
@@ -46,8 +48,8 @@ pub fn router() -> Router<AppState> {
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
-    // .route("/tag/report_merge", post(tag_report_merge))
-    // .route("/tag/commit_translation", post())
+        .route("/tag/recommend", get(tag_recommend))
+        .route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -184,7 +186,7 @@ pub struct SearchReq {
     pub offset: Option<usize>,
     pub filter: Option<String>,
     /// Since 260114
-    pub sort_by: Option<String>
+    pub sort_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -219,7 +221,7 @@ pub struct SearchSongItem {
     /// since 260114
     pub original_artists: Vec<String>,
     /// since 260114
-    pub original_titles: Vec<String>
+    pub original_titles: Vec<String>,
 }
 
 #[framed]
@@ -481,4 +483,99 @@ async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateR
     ).await?;
 
     ok!(TagCreateResp { id })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendItem {
+    pub id: i64,
+    pub name: String,
+    pub description: Option<String>,
+    pub score: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendResp {
+    pub result: Vec<TagRecommendItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagRecommendRedisCache {
+    pub result: Vec<TagRecommendItem>,
+    pub create_time: DateTime<Utc>,
+}
+
+#[framed]
+async fn tag_recommend(
+    claims: Claims,
+    mut state: State<AppState>
+) -> WebResult<TagRecommendResp> {
+    let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
+    let cache_key = format!("tags:recommend:{}:{}", claims.uid(), date);
+
+    if let Some(cached) = state.redis_conn.get::<_, Option<String>>(&cache_key).await? {
+        if let Ok(cache) = serde_json::from_str::<TagRecommendRedisCache>(&cached) {
+            ok!(TagRecommendResp { result: cache.result })
+        }
+    }
+
+    let since = Utc::now() - chrono::TimeDelta::days(30);
+    let scored = tag_recommend::recommend_tags(&state.sql_pool, claims.uid(), 50, since).await?;
+    let result = scored
+        .into_iter()
+        .map(|(t, score)| TagRecommendItem {
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            score,
+        })
+        .collect::<Vec<_>>();
+
+    let _: () = state.redis_conn.set_ex(
+        &cache_key,
+        serde_json::to_string(&TagRecommendRedisCache {
+            result: result.clone(),
+            create_time: Utc::now(),
+        })?,
+        86400,
+    ).await?;
+
+    ok!(TagRecommendResp { result })
+}
+
+/// This is global tag recommendation for all anonymous users, per day
+async fn tag_recommend_anonymous(
+    _ip: XRealIP,
+    mut state: State<AppState>
+) -> WebResult<TagRecommendResp> {
+    let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
+    let cache_key = format!("tags:recommend:anonymous:{}", date);
+
+    if let Some(cached) = state.redis_conn.get::<_, Option<String>>(&cache_key).await? {
+        if let Ok(cache) = serde_json::from_str::<TagRecommendRedisCache>(&cached) {
+            ok!(TagRecommendResp { result: cache.result })
+        }
+    }
+
+    // For anonymous users, we can only recommend hot tags
+    let tags = tag_recommend::get_hot_tags(&state.sql_pool, 10000, 20).await?;
+    let result = tags
+        .into_iter()
+        .map(|(t, score)| TagRecommendItem {
+            id: t.id,
+            name: t.name,
+            description: t.description,
+            score,
+        })
+        .collect::<Vec<_>>();
+
+    let _: () = state.redis_conn.set_ex(
+        &cache_key,
+        serde_json::to_string(&TagRecommendRedisCache {
+            result: result.clone(),
+            create_time: Utc::now(),
+        })?,
+        86400,
+    ).await?;
+
+    ok!(TagRecommendResp { result })
 }
