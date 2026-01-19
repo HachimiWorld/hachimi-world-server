@@ -223,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_parse() {
-        let file = fs::File::open(".local/test.mp3").unwrap();
+        let file = fs::File::open(".local/test_res/test.mp3").unwrap();
         let result = parse_and_validate(Box::new(file), Some("test.mp3")).unwrap();
         println!("{:?}", result);
     }
