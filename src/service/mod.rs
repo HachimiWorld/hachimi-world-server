@@ -8,3 +8,5 @@ pub mod recommend_v2;
 pub mod song_play;
 pub mod errors;
 pub mod tag_recommend;
+pub mod user;
+pub mod playlist;

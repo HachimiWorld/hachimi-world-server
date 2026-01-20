@@ -22,10 +22,9 @@ pub struct UserDao;
 
 pub trait IUserDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>>;
+    async fn list_by_ids(executor: E, ids: &[i64]) -> Result<Vec<User>>;
     async fn get_by_email(executor: E, email: &str) -> Result<Option<User>>;
     async fn get_by_username(executor: E, username: &str) -> Result<Option<User>>;
-    async fn get_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>>;
 }
 
 impl <'e, E> CrudDao<'e, E> for UserDao
@@ -96,7 +95,7 @@ where E: PgExecutor<'e> {
 
 impl <'e, E> IUserDao<'e, E> for UserDao 
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>> {
+    async fn list_by_ids(executor: E, ids: &[i64]) -> Result<Vec<User>> {
         if ids.is_empty() { return Ok(vec![]) }
         sqlx::query_as!(User, "SELECT * FROM users WHERE id = ANY($1)", ids)
             .fetch_all(executor)
@@ -111,13 +110,6 @@ where E: PgExecutor<'e> {
     async fn get_by_username(executor: E, username: &str) -> Result<Option<User>> {
         sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
             .fetch_optional(executor)
-            .await
-    }
-
-    async fn get_by_ids(executor: E, ids: &Vec<i64>) -> Result<Vec<User>> {
-        if ids.is_empty() { return Ok(vec![]) }
-        sqlx::query_as!(User, "SELECT * FROM users WHERE id = ANY($1)", ids)
-            .fetch_all(executor)
             .await
     }
 }
