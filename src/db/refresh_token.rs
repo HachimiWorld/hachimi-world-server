@@ -20,9 +20,9 @@ pub struct RefreshToken {
 
 pub trait IRefreshTokenDao<'e, E>: CrudDao<'e, E> 
 where E: PgExecutor<'e>{
-    async fn get_by_token_id(executor: E, token_id: &str) -> sqlx::Result<Option<RefreshToken>>;
-    async fn list_by_uid(executor: E, uid: i64) -> sqlx::Result<Vec<RefreshToken>>;
-    async fn delete_all_by_uid(executor: E, uid: i64) -> sqlx::Result<u64>;
+    fn get_by_token_id(executor: E, token_id: &str) -> impl Future<Output = sqlx::Result<Option<RefreshToken>>> + Send;
+    fn list_by_uid(executor: E, uid: i64) -> impl Future<Output = sqlx::Result<Vec<RefreshToken>>> + Send;
+    fn delete_all_by_uid(executor: E, uid: i64) -> impl Future<Output = sqlx::Result<u64>> + Send;
 }
 
 pub struct RefreshTokenDao;

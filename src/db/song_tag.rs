@@ -19,10 +19,10 @@ pub struct SongTagDao;
 
 pub trait ISongTagDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<SongTag>>;
-    async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>>;
-    async fn get_by_name(executor: E, name: &str) -> sqlx::Result<Option<SongTag>>;
-    async fn search_by_prefix(executor: E, prefix: &str) -> sqlx::Result<Vec<SongTag>>;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
+    fn list_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, Vec<i64>>>> + Send;
+    fn get_by_name(executor: E, name: &str) -> impl Future<Output = sqlx::Result<Option<SongTag>>> + Send;
+    fn search_by_prefix(executor: E, prefix: &str) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
 }
 
 impl <'e, E> CrudDao<'e, E> for SongTagDao

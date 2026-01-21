@@ -12,13 +12,13 @@ pub mod creator;
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {
     type Entity;
-    async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>>;
+    fn list(executor: E) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
+    fn page(executor: E, page: i64, size: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
 
-    async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>>;
-    async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()>;
-    async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64>;
-    async fn delete_by_id(executor: E, id: i64) -> sqlx::Result<()>;
+    fn get_by_id(executor: E, id: i64) -> impl Future<Output = sqlx::Result<Option<Self::Entity>>> + Send;
+    fn update_by_id(executor: E, value: &Self::Entity) -> impl Future<Output = sqlx::Result<()>> + Send;
+    fn insert(executor: E, value: &Self::Entity) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn delete_by_id(executor: E, id: i64) -> impl Future<Output = sqlx::Result<()>> + Send;
 }
 
 #[cfg(test)]

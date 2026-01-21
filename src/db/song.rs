@@ -1,8 +1,8 @@
-use std::collections::HashMap;
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction, QueryBuilder};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Song {
@@ -86,28 +86,28 @@ pub trait ISongDao<'e, E>: CrudDao<'e, E>
 where
     E: PgExecutor<'e>,
 {
-    async fn get_by_display_id(executor: E, display_id: &str) -> sqlx::Result<Option<Song>>;
-    async fn list_tags_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<i64>>;
-    async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>>;
-    async fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongOriginInfo>>;
-    async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>>;
-    async fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongProductionCrew>>;
-    async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>>;
-    async fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongExternalLink>>;
-    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
-    async fn count_likes(executor: E, song_id: i64) -> sqlx::Result<i64>;
-    async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64>;
-    async fn count_plays_batch(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>>;
-    async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()>;
-    async fn is_liked(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<bool>;
-    async fn delete_like(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<()>;
-    async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()>;
-    async fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>>;
-    async fn delete_play(executor: E, id: i64, user_id: i64) -> sqlx::Result<()>;
+    fn get_by_display_id(executor: E, display_id: &str) -> impl Future<Output = sqlx::Result<Option<Song>>>;
+    fn list_tags_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<i64>>>;
+    fn list_origin_info_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongOriginInfo>>>;
+    fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongOriginInfo>>>;
+    fn list_production_crew_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongProductionCrew>>>;
+    fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongProductionCrew>>>;
+    fn list_external_link_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongExternalLink>>>;
+    fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongExternalLink>>>;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
+    fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
+    fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
+    fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
+    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
+    fn count_likes(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
+    fn count_plays(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
+    fn count_plays_batch(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, i64>>>;
+    fn insert_likes(executor: E, values: &[SongLike]) -> impl Future<Output = sqlx::Result<()>>;
+    fn is_liked(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<bool>>;
+    fn delete_like(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<()>>;
+    fn insert_plays(executor: E, values: &[SongPlay]) -> impl Future<Output = sqlx::Result<()>>;
+    fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output = sqlx::Result<Vec<SongPlay>>>;
+    fn delete_play(executor: E, id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<()>>;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongDao

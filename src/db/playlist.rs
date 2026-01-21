@@ -30,14 +30,14 @@ pub trait IPlaylistDao<'e, E>: CrudDao<'e, E>
 where
     E: PgExecutor<'e>,
 {
-    async fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> sqlx::Result<()>;
-    async fn add_song(executor: E, value: &PlaylistSong) -> sqlx::Result<()>;
-    async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>>;
-    async fn count_songs(executor: E, playlist_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>>;
-    async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
-    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Playlist>>;
-    async fn list_containing(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
-    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
+    fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> impl Future<Output = sqlx::Result<()>> + Send;
+    fn add_song(executor: E, value: &PlaylistSong) -> impl Future<Output = sqlx::Result<()>> + Send;
+    fn list_songs(executor: E, playlist_id: i64) -> impl Future<Output = sqlx::Result<Vec<PlaylistSong>>> + Send;
+    fn count_songs(executor: E, playlist_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, i64>>> + Send;
+    fn list_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
+    fn list_containing(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
+    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>> + Send;
 }
 
 impl<'e, E> CrudDao<'e, E> for PlaylistDao

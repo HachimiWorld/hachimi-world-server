@@ -22,9 +22,9 @@ pub struct UserDao;
 
 pub trait IUserDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &[i64]) -> Result<Vec<User>>;
-    async fn get_by_email(executor: E, email: &str) -> Result<Option<User>>;
-    async fn get_by_username(executor: E, username: &str) -> Result<Option<User>>;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = Result<Vec<User>>>;
+    fn get_by_email(executor: E, email: &str) -> impl Future<Output = Result<Option<User>>>;
+    fn get_by_username(executor: E, username: &str) -> impl Future<Output = Result<Option<User>>>;
 }
 
 impl <'e, E> CrudDao<'e, E> for UserDao
