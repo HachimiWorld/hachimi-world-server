@@ -571,7 +571,7 @@ pub struct SongTempData {
 
 #[framed]
 pub async fn upload_audio_file(
-    claims: Claims,
+    _claims: Claims,
     mut state: State<AppState>,
     mut multipart: Multipart,
 ) -> WebResult<UploadAudioFileResp> {
@@ -659,8 +659,6 @@ pub async fn upload_cover_image(
         .await?
         .with_context(|| "No data field found")?;
     let bytes = data_field.bytes().await?;
-
-    let start = std::time::Instant::now();
 
     // Validate image
     if bytes.len() > 8 * 1024 * 1024 {

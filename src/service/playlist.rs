@@ -41,7 +41,7 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
 
     let playlist_songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
     let song_ids = playlist_songs.iter().map(|song| song.song_id).collect_vec();
-    let mut playlist_songs_map: HashMap<i64, PlaylistSong> = playlist_songs.into_iter().map(|x| (x.song_id, x)).collect();
+    let playlist_songs_map: HashMap<i64, PlaylistSong> = playlist_songs.into_iter().map(|x| (x.song_id, x)).collect();
 
     let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, &song_ids).await?;
     let creator_user = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[playlist.user_id]).await?

@@ -12,7 +12,7 @@ pub struct Song {
     pub subtitle: String,
     pub description: String,
     /// Artist is deprecated because the artist might be a group of people
-    #[deprecated]
+    /// @deprecated
     pub artist: String,
     pub file_url: String,
     pub cover_art_url: String,
@@ -21,10 +21,10 @@ pub struct Song {
     pub uploader_uid: i64,
     pub creation_type: i32,
     /// Play count is deprecated because it should be got from play history
-    #[deprecated(since = "20250925")]
+    /// @deprecated since 20250925
     pub play_count: i64,
-    // Like count is deprecated because it should be got from like history
-    #[deprecated(since = "20250925")]
+    /// Like count is deprecated because it should be got from like history
+    /// @deprecated since 20250925
     pub like_count: i64,
     pub is_private: bool,
     pub release_time: DateTime<Utc>,
@@ -122,7 +122,7 @@ where
             .await
     }
 
-    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(_executor: E, _page: i64, _size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 

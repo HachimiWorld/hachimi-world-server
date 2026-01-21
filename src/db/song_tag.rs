@@ -35,7 +35,7 @@ where E: PgExecutor<'e> {
             .await
     }
 
-    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(_executor: E, _page: i64, _size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 

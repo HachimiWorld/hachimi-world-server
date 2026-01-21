@@ -3,7 +3,7 @@ use crate::db::song::SongDao;
 use crate::db::CrudDao;
 use crate::service::playlist::PlaylistMetadata;
 use crate::service::upload::ResizeType;
-use crate::service::{playlist, song, user};
+use crate::service::playlist;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
@@ -181,7 +181,7 @@ async fn list_containing(
 ) -> WebResult<ListContainingResp> {
     let playlists = PlaylistDao::list_containing(&state.sql_pool, req.song_id, claims.uid()).await?;
 
-    let mut result= playlists
+    let result= playlists
         .into_iter()
         .map(|x| x.id)
         .collect_vec();

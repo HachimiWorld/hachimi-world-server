@@ -2,8 +2,11 @@ use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCre
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
-use crate::service::{song_like};
-use crate::web::routes::song::{TagItem};
+use crate::service::song_like;
+use crate::web::routes::song::TagItem;
+use chrono::{DateTime, Utc};
+use itertools::Itertools;
+use rand::Rng;
 use redis::aio::ConnectionManager;
 use redis::{AsyncTypedCommands, MSetOptions, SetExpiry};
 use serde::{Deserialize, Serialize};
@@ -11,9 +14,6 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-use chrono::{DateTime, Utc};
-use itertools::Itertools;
-use rand::Rng;
 use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -147,7 +147,7 @@ pub async fn get_public_detail_with_cache(
     }
 
     // Not cached, fetch from database
-    let fetched = get_from_db_by_ids(&redis, sql_pool, &missed_ids).await?
+    let fetched = get_from_db_by_ids(sql_pool, &missed_ids).await?
         .into_iter().map(|x| (x.id, x))
         .collect::<HashMap<_, _>>();
 
@@ -272,17 +272,15 @@ async fn get_from_db_by_id(
 }
 
 async fn get_from_db_by_ids(
-    redis: &ConnectionManager,
     sql_pool: &PgPool,
     song_ids: &[i64],
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     let songs = SongDao::list_by_ids(sql_pool, song_ids).await?;
 
-    compose_from_db_batch(redis, sql_pool, &songs).await
+    compose_from_db_batch(sql_pool, &songs).await
 }
 
 async fn compose_from_db_batch(
-    redis: &ConnectionManager,
     sql_pool: &PgPool,
     songs: &[Song],
 ) -> anyhow::Result<Vec<PublicSongDetail>> {

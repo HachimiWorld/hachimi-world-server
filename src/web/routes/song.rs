@@ -459,7 +459,7 @@ pub struct TagCreateResp {
 }
 
 #[framed]
-async fn tag_create(claims: Claims, state: State<AppState>, req: Json<TagCreateReq>) -> WebResult<TagCreateResp> {
+async fn tag_create(_claims: Claims, state: State<AppState>, req: Json<TagCreateReq>) -> WebResult<TagCreateResp> {
     // TODO[feat](song-tag): Need audit procedure
     if req.name.is_empty() || req.name.chars().count() > 10 {
         err!("invalid_name", "Invalid name")

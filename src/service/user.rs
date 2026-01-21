@@ -6,7 +6,7 @@ use sqlx::PgPool;
 use std::collections::HashMap;
 
 pub async fn get_public_profile(
-    redis: ConnectionManager,
+    _redis: ConnectionManager,
     sql_pool: &PgPool,
     user_ids: &[i64]
 ) -> sqlx::Result<HashMap<i64, PublicUserProfile>> {

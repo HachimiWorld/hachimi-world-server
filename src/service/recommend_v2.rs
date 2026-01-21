@@ -1,20 +1,19 @@
-use std::ops::Sub;
-use std::time::{Duration, Instant};
+use crate::db::song::{ISongDao, SongDao};
 use crate::service::song;
-use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
-use anyhow::bail;
+use crate::service::song::PublicSongDetail;
+use crate::util;
+use crate::util::redlock::RedLock;
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use futures::{TryStreamExt};
+use futures::TryStreamExt;
 use metrics::histogram;
 use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
 use redis::{AsyncIter, AsyncTypedCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Pool, Postgres};
+use std::ops::Sub;
+use std::time::{Duration, Instant};
 use tracing::warn;
-use crate::db::song::{ISongDao, SongDao};
-use crate::util;
-use crate::util::redlock::RedLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentSongRedisCache {

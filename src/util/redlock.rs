@@ -1,10 +1,10 @@
-use tracing::{debug, error, info};
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions, Value};
 use std::sync::{mpsc, Arc};
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
+use tracing::{debug, error, info};
 
 #[derive(Clone)]
 pub struct RedLock {
@@ -14,7 +14,7 @@ pub struct RedLock {
 struct RedLockInner {
     unlock_tx: mpsc::Sender<LockInfo>,
     redis_conn: ConnectionManager,
-    listen_thread: JoinHandle<()>
+    _listen_thread: JoinHandle<()>
 }
 
 impl RedLock {
@@ -47,7 +47,7 @@ impl RedLock {
             inner: Arc::new(RedLockInner {
                 unlock_tx: tx,
                 redis_conn,
-                listen_thread: handle
+                _listen_thread: handle
             })
         })
     }
