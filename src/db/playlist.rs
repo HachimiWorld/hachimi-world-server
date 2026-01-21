@@ -2,6 +2,7 @@ use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Playlist {
@@ -32,8 +33,9 @@ where
     async fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> sqlx::Result<()>;
     async fn add_song(executor: E, value: &PlaylistSong) -> sqlx::Result<()>;
     async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>>;
-    async fn count_songs(executor: E, playlist_id: i64) -> sqlx::Result<i64>;
+    async fn count_songs(executor: E, playlist_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>>;
     async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
+    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Playlist>>;
     async fn list_containing(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<Vec<Playlist>>;
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
 }
@@ -134,15 +136,27 @@ where E: PgExecutor<'e>,{
             .await
     }
 
-    async fn count_songs(executor: E, playlist_id: i64) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(1) FROM playlist_songs WHERE playlist_id = $1", playlist_id)
-            .fetch_one(executor)
-            .await
-            .map(|x| x.count.unwrap_or(0))
+    async fn count_songs(executor: E, playlist_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>> {
+        if playlist_ids.is_empty() { return Ok(HashMap::new()) }
+
+        let result = sqlx::query!("SELECT playlist_id, COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id", playlist_ids)
+            .fetch_all(executor)
+            .await?
+            .into_iter()
+            .map(|x| (x.playlist_id, x.count.unwrap_or(0)))
+            .collect::<HashMap<_, _>>();
+        Ok(result)
     }
 
     async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
         sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE user_id = $1", user_id)
+            .fetch_all(executor)
+            .await
+    }
+
+    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Playlist>> {
+        if ids.is_empty() { return Ok(vec![]); }
+        sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE id = ANY($1)", ids)
             .fetch_all(executor)
             .await
     }

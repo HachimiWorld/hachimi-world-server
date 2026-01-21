@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT playlist_id, COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "playlist_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "count",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "1405bbd152a1bdd5fecacf00ef65393188d90bf78de4697b44259fbc6d91346f"
+}

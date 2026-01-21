@@ -1,9 +1,9 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 use std::collections::HashMap;
-use itertools::Itertools;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongTag {
@@ -106,6 +106,7 @@ where E: PgExecutor<'e> {
     }
 
     async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>> {
+        if song_ids.is_empty() { return Ok(HashMap::new()) }
         let rows = sqlx::query!("SELECT song_id, tag_id FROM song_tag_refs WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await?;
         let result: HashMap<i64, Vec<i64>> = rows.into_iter()

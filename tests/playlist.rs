@@ -1,7 +1,7 @@
 use crate::common::auth::with_new_random_test_user;
 use crate::common::with_test_environment;
 use crate::common::CommonParse;
-use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq, ListContainingResp, ListResp};
+use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq, ListContainingResp, ListResp, SearchReq, SearchResp};
 
 mod common;
 
@@ -126,4 +126,24 @@ async fn test_invalid_input() {
         assert!(resp.is_err(), "CreatePlaylist with long description should return an error");
         assert_eq!(resp.err().unwrap().code, "description_too_long");
     }).await
+}
+
+#[tokio::test]
+async fn test_search_playlist() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+        let mut resp =  env.api.get_query("/playlist/search", &SearchReq {
+            q: "哈".to_string(),
+            limit: None,
+            offset: None,
+            sort_by: None,
+            user_id: None,
+        }).await.parse_resp::<SearchResp>().await.unwrap();
+        let rand = rand::random_range(0..resp.hits.len());
+        let rand_playlist = resp.hits.remove(rand);
+        let detail = env.api.get_query("/playlist/detail", &DetailReq {
+            id: rand_playlist.id
+        }).await.parse_resp::<DetailResp>().await.unwrap();
+        assert_eq!(detail.songs.len(), rand_playlist.songs_count as usize);
+    }).await;
 }

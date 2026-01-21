@@ -1,13 +1,15 @@
 use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::db::song::SongDao;
-use crate::db::user::UserDao;
 use crate::db::CrudDao;
+use crate::service::playlist::PlaylistMetadata;
 use crate::service::upload::ResizeType;
+use crate::service::{playlist, song, user};
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
+use crate::web::routes::user::PublicUserProfile;
 use crate::web::state::AppState;
-use crate::{common, err, ok, service};
+use crate::{common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
@@ -22,8 +24,12 @@ use sqlx::PgPool;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        // @since 250121 @experimental
+        .route("/detail", get(detail))
         .route("/detail_private", get(detail_private))
         .route("/list", get(list))
+        // @since 250121 @experimental
+        .route("/list_public_by_user", get(list_public_by_user))
         .route("/list_containing", get(list_containing))
         .route("/create", post(create))
         .route("/update", post(update))
@@ -31,6 +37,8 @@ pub fn router() -> Router<AppState> {
         .route("/add_song", post(add_song))
         .route("/remove_song", post(remove_song))
         .route("/change_order", post(change_order))
+        // @since 250121 @experimental
+        .route("/search", get(search))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +50,8 @@ pub struct DetailReq {
 pub struct DetailResp {
     pub playlist_info: PlaylistItem,
     pub songs: Vec<SongItem>,
+    /// @since 260121
+    pub creator_profile: PublicUserProfile,
 }
 
 // Basic song information
@@ -59,58 +69,24 @@ pub struct SongItem {
     pub add_time: DateTime<Utc>,
 }
 
+/// @since 250121
+#[framed]
+async fn detail(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<DetailReq>,
+) -> WebResult<DetailResp> {
+    let resp = playlist::get_detail(&state, Some(claims.uid()), req.id).await?;
+    ok!(resp)
+}
+
 #[framed]
 async fn detail_private(
     claims: Claims,
     state: State<AppState>,
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let playlist = PlaylistDao::get_by_id(&state.sql_pool, req.id).await?
-        .ok_or_else(|| common!("not_found", "Playlist not found"))?;
-
-    // Check permission if it's private
-    if !playlist.is_public {
-        if playlist.user_id != claims.uid() {
-            err!("not_owner", "You are not the owner of this playlist")
-        }
-    }
-
-    let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
-    let mut result = Vec::<SongItem>::new();
-    for x in songs {
-        if let Some(song) = SongDao::get_by_id(&state.sql_pool, x.song_id).await? &&
-            let Some(uploader) = UserDao::get_by_id(&state.sql_pool, song.uploader_uid).await?
-        {
-            let item = SongItem {
-                song_id: x.song_id,
-                song_display_id: song.display_id.clone(),
-                title: song.title.clone(),
-                subtitle: song.subtitle.clone(),
-                cover_url: song.cover_art_url.clone(),
-                uploader_name: uploader.username.clone(),
-                uploader_uid: song.uploader_uid,
-                duration_seconds: song.duration_seconds,
-                order_index: x.order_index,
-                add_time: x.add_time,
-            };
-            result.push(item);
-        } else {
-            // How to deal with song deleted?
-        }
-    }
-
-    let resp = DetailResp {
-        playlist_info: PlaylistItem {
-            id: playlist.id,
-            name: playlist.name,
-            cover_url: playlist.cover_url,
-            description: playlist.description,
-            create_time: playlist.create_time,
-            is_public: playlist.is_public,
-            songs_count: result.len() as i64,
-        },
-        songs: result,
-    };
+    let resp = playlist::get_detail(&state, Some(claims.uid()), req.id).await?;
     ok!(resp)
 }
 
@@ -136,8 +112,10 @@ async fn list(
     state: State<AppState>,
 ) -> WebResult<ListResp> {
     let playlists = PlaylistDao::list_by_user(&state.sql_pool, claims.uid()).await?;
-
+    let playlist_ids = playlists.iter().map(|x| x.id).collect_vec();
+    let count = PlaylistDao::count_songs(&state.sql_pool, &playlist_ids).await?;
     let mut result = Vec::<PlaylistItem>::new();
+
     for x in playlists {
         let item = PlaylistItem {
             id: x.id,
@@ -146,13 +124,44 @@ async fn list(
             description: x.description,
             create_time: x.create_time,
             is_public: x.is_public,
-            songs_count: PlaylistDao::count_songs(&state.sql_pool, x.id).await?,
+            songs_count: count.get(&x.id).cloned().unwrap_or(0),
         };
         result.push(item);
     }
     ok!(ListResp {
         playlists: result
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPublicByUserReq {
+    pub user_id: i64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ListPublicByUserResp {
+    pub playlists: Vec<PlaylistMetadata>
+}
+
+#[framed]
+async fn list_public_by_user(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<ListPublicByUserReq>,
+) -> WebResult<ListPublicByUserResp> {
+    let playlists = PlaylistDao::list_by_user(&state.sql_pool, req.user_id).await?;
+    let public_playlists = playlists.into_iter()
+        .filter(|x| x.is_public || x.user_id == claims.uid())
+        .collect_vec();
+
+    let playlist_ids = public_playlists.iter().map(|x| x.id).collect_vec();
+    let playlists = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?;
+
+    let result = ListPublicByUserResp {
+        playlists: playlists.into_iter().map(|(_, v)| v).collect_vec()
+    };
+
+    ok!(result)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -229,7 +238,15 @@ async fn create(
     let id = PlaylistDao::insert(&state.sql_pool, &entity).await?;
 
     if req.is_public {
-        // TODO: Insert to meilisearch
+        // Write behind, data consistence is not guaranteed.
+        search::playlist::add_or_replace_document(
+            &state.meilisearch,
+            &state.sql_pool,
+            &[id],
+        ).await?;
+    } else {
+        // Ensure it won't be searchable.
+        let _ = search::playlist::delete_playlist_document(&state.meilisearch, &[id]).await;
     }
 
     ok!(CreatePlaylistResp { id })
@@ -266,13 +283,25 @@ async fn update(
         &Playlist {
             name: req.name.clone(),
             description: req.description.clone(),
+            is_public: req.is_public,
             update_time: Utc::now(),
             ..playlist
         },
     ).await?;
+
+    // Update search document if needed.
+    if req.is_public {
+        search::playlist::add_or_replace_document(
+            &state.meilisearch,
+            &state.sql_pool,
+            &[req.id],
+        ).await?;
+    } else {
+        let _ = search::playlist::delete_playlist_document(&state.meilisearch, &[req.id]).await;
+    }
+
     ok!(())
 }
-
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeletePlaylistReq {
@@ -287,6 +316,9 @@ async fn delete(
 ) -> WebResult<()> {
     let playlist = check_ownership(&claims, &state.sql_pool, req.id).await?;
     PlaylistDao::delete_by_id(&state.sql_pool, playlist.id).await?;
+
+    let _ = search::playlist::delete_playlist_document(&state.meilisearch, &[playlist.id]).await;
+
     ok!(())
 }
 
@@ -442,6 +474,83 @@ async fn set_cover(
     let result = state.file_host.upload(Bytes::from(webp), &filename).await?;
 
     playlist.cover_url = Some(result.public_url);
+    playlist.update_time = Utc::now();
     PlaylistDao::update_by_id(&state.sql_pool, &playlist).await?;
+
+    if playlist.is_public {
+        search::playlist::add_or_replace_document(
+            &state.meilisearch,
+            &state.sql_pool,
+            &[playlist.id],
+        ).await?;
+    }
+
     ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchReq {
+    pub q: String,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    pub sort_by: Option<String>,
+    pub user_id: Option<i64>,
+}
+
+type SearchPlaylistItem = PlaylistMetadata;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResp {
+    pub hits: Vec<SearchPlaylistItem>,
+    pub query: String,
+    pub processing_time_ms: u64,
+    pub total_hits: Option<usize>,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+#[framed]
+async fn search(
+    state: State<AppState>,
+    req: Query<SearchReq>,
+) -> WebResult<SearchResp> {
+    if req.q.is_blank() {
+        err!("invalid_query", "Query must not be blank")
+    }
+
+    let sort_method = match req.sort_by.as_deref() {
+        Some("relevance") | None => None,
+        Some("create_time_desc") => Some(search::playlist::SearchSortMethod::CreateTimeDesc),
+        Some("create_time_asc") => Some(search::playlist::SearchSortMethod::CreateTimeAsc),
+        Some("update_time_desc") => Some(search::playlist::SearchSortMethod::UpdateTimeDesc),
+        Some("update_time_asc") => Some(search::playlist::SearchSortMethod::UpdateTimeAsc),
+        Some(other) => err!("invalid_sort_method", "Invalid sort method: {}", other),
+    };
+
+    let filter = req.user_id.map(|uid| format!("user_id = {}", uid));
+
+    let search_query = search::playlist::SearchQuery {
+        q: req.q.clone(),
+        limit: req.limit.map(|x| x.clamp(1, 50)),
+        offset: req.offset,
+        filter,
+        sort_method,
+    };
+
+    let result = search::playlist::search_playlists(state.meilisearch.as_ref(), &search_query).await?;
+    let hit_ids: Vec<i64> = result.hits.into_iter().map(|x| x.id).collect();
+
+    let hits = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &hit_ids, false).await?
+        .into_iter()
+        .map(|(_, v)| v)
+        .collect_vec();
+
+    ok!(SearchResp {
+        hits,
+        query: result.query,
+        processing_time_ms: result.processing_time_ms,
+        total_hits: result.hits_info.total_hits,
+        limit: result.hits_info.limit,
+        offset: result.hits_info.offset,
+    })
 }

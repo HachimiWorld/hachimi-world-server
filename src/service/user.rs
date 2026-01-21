@@ -1,5 +1,6 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::web::routes::user::PublicUserProfile;
+use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -10,7 +11,8 @@ pub async fn get_public_profile(
     user_ids: &[i64]
 ) -> sqlx::Result<HashMap<i64, PublicUserProfile>> {
     // TODO: Cache user
-    let users = UserDao::list_by_ids(sql_pool, user_ids).await?;
+    let unique_uids = user_ids.iter().copied().unique().collect_vec();
+    let users = UserDao::list_by_ids(sql_pool, &unique_uids).await?;
 
     let profiles: HashMap<_, _> = users.into_iter()
         .map(|u| PublicUserProfile {
