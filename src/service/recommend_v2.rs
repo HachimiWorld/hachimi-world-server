@@ -34,7 +34,12 @@ pub async fn get_recent_songs(
             Ok(cache)
         }
         None => {
-            let guard = lock.lock_with_timeout("lock:songs:recent_v2", Duration::from_secs(10)).await?;
+            let lock_name = format!(
+                "songs:recent_v2:cursor={cursor}:limit={limit}:after={after}",
+                cursor = cursor.map(|x| x.date_naive().to_string()).unwrap_or("latest".to_string())
+            );
+
+            let guard = lock.lock_with_timeout(&lock_name, Duration::from_secs(10)).await?;
 
             // Double-check if the cache is available now
             // TODO: Rewrite this use redis based RwLock? Or we can just use memory RwLock for single instance because the service instances wont be too many.
