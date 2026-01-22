@@ -113,6 +113,8 @@ pub struct PlaylistItem {
     pub create_time: DateTime<Utc>,
     pub is_public: bool,
     pub songs_count: i64,
+    /// @since 260122
+    pub update_time: DateTime<Utc>,
 }
 
 #[framed]
@@ -132,6 +134,7 @@ async fn list(
             cover_url: x.cover_url,
             description: x.description,
             create_time: x.create_time,
+            update_time: x.update_time,
             is_public: x.is_public,
             songs_count: count.get(&x.id).cloned().unwrap_or(0),
         };
@@ -343,7 +346,7 @@ async fn add_song(
     state: State<AppState>,
     req: Json<AddSongReq>,
 ) -> WebResult<()> {
-    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
+    let mut playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
     let song = SongDao::get_by_id(&state.sql_pool, req.song_id).await?
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
@@ -357,8 +360,12 @@ async fn add_song(
         err!("song_existed", "Song {} already exists in the playlist {}", song.id, playlist.id);
     }
     let target_order = songs.len() as i32;
+    playlist.update_time = Utc::now();
+
+    let mut tx = state.sql_pool.begin().await?;
+
     PlaylistDao::add_song(
-        &state.sql_pool,
+        &mut *tx,
         &PlaylistSong {
             playlist_id: playlist.id,
             song_id: song.id,
@@ -366,7 +373,8 @@ async fn add_song(
             add_time: Utc::now(),
         },
     ).await?;
-
+    PlaylistDao::update_by_id(&mut *tx, &playlist).await?;
+    tx.commit().await?;
     ok!(())
 }
 

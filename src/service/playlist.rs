@@ -79,6 +79,7 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
             create_time: playlist.create_time,
             is_public: playlist.is_public,
             songs_count: result.len() as i64,
+            update_time: playlist.update_time,
         },
         creator_profile: creator_user,
         songs: result,
