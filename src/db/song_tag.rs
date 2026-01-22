@@ -1,9 +1,9 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 use std::collections::HashMap;
-use itertools::Itertools;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongTag {
@@ -19,10 +19,10 @@ pub struct SongTagDao;
 
 pub trait ISongTagDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<SongTag>>;
-    async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>>;
-    async fn get_by_name(executor: E, name: &str) -> sqlx::Result<Option<SongTag>>;
-    async fn search_by_prefix(executor: E, prefix: &str) -> sqlx::Result<Vec<SongTag>>;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
+    fn list_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, Vec<i64>>>> + Send;
+    fn get_by_name(executor: E, name: &str) -> impl Future<Output = sqlx::Result<Option<SongTag>>> + Send;
+    fn search_by_prefix(executor: E, prefix: &str) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
 }
 
 impl <'e, E> CrudDao<'e, E> for SongTagDao
@@ -35,7 +35,7 @@ where E: PgExecutor<'e> {
             .await
     }
 
-    async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page(_executor: E, _page: i64, _size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
     }
 
@@ -106,6 +106,7 @@ where E: PgExecutor<'e> {
     }
 
     async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>> {
+        if song_ids.is_empty() { return Ok(HashMap::new()) }
         let rows = sqlx::query!("SELECT song_id, tag_id FROM song_tag_refs WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await?;
         let result: HashMap<i64, Vec<i64>> = rows.into_iter()

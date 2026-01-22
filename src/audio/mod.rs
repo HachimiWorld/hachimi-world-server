@@ -155,7 +155,7 @@ fn read_interleaved_samples(format: &mut Box<dyn FormatReader>) -> anyhow::Resul
     let mut decoder = codec.make(&track.codec_params, &DecoderOptions::default())
         .with_context(|| "Can't create decoder")?;
 
-    let mut sample_count = 0;
+    let mut _sample_count = 0;
     let mut sample_buf = None;
     let mut spec = None;
 
@@ -164,7 +164,7 @@ fn read_interleaved_samples(format: &mut Box<dyn FormatReader>) -> anyhow::Resul
         // Get the next packet from the format reader.
         let packet = match format.next_packet() {
             Ok(x) => { x }
-            Err(err) => {
+            Err(_err) => {
                 break
             }
         };
@@ -204,7 +204,7 @@ fn read_interleaved_samples(format: &mut Box<dyn FormatReader>) -> anyhow::Resul
                     // Append buf.samples to `samples``
                     samples.extend(buf.samples());
                     // The samples may now be access via the `samples()` function.
-                    sample_count += buf.samples().len();
+                    _sample_count += buf.samples().len();
                 }
             }
             Err(SymphoniaError::DecodeError(_)) => (),

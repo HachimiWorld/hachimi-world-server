@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT COUNT(1) FROM playlist_songs WHERE playlist_id = $1",
+  "query": "SELECT COUNT(*) FROM favorite_playlists WHERE user_id = $1",
   "describe": {
     "columns": [
       {
@@ -18,5 +18,5 @@
       null
     ]
   },
-  "hash": "7c36707539c0990f785c0072dde4aae635b1ce755ca226b891e29893d12b8212"
+  "hash": "9dbbcb51dd41646dcdbb8111ad869b47ce46683a95b271f57716e197c3d9fa8d"
 }

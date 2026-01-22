@@ -30,7 +30,7 @@ pub struct ServerVersion {
 
 async fn server() -> WebResult<ServerVersion> {
     ok!(ServerVersion {
-        version: 251119,
+        version: 260121,
         min_version: 250905
     })
 }

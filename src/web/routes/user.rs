@@ -1,19 +1,20 @@
-use anyhow::Context;
-use async_backtrace::framed;
-use crate::db::CrudDao;
 use crate::db::user::{IUserDao, UserDao};
+use crate::db::CrudDao;
+use crate::search::user::UserDocument;
+use crate::service::upload::ResizeType;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
-use axum::routing::post;
-use axum::{Json, Router, extract::State, routing::get};
+use anyhow::Context;
+use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query};
+use axum::routing::post;
+use axum::{extract::State, routing::get, Json, Router};
 use chrono::Utc;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use crate::search::user::UserDocument;
-use crate::service::upload::ResizeType;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -213,21 +214,12 @@ async fn search(
     ).await?;
 
     let user_ids: Vec<i64> = result.hits.iter().map(|u| u.id).collect();
-    let db_users = UserDao::get_by_ids(&state.sql_pool, &user_ids).await?;
-
-    let profiles: Vec<PublicUserProfile> = db_users.into_iter()
-        .map(|u| PublicUserProfile {
-            uid: u.id,
-            username: u.username,
-            avatar_url: u.avatar_url,
-            bio: u.bio,
-            gender: u.gender,
-            is_banned: u.is_banned,
-        })
-        .collect();
+    let users = service::user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids).await?
+        .into_iter().map(|(_, v)| v)
+        .collect_vec();
 
     ok!(SearchResp {
-        hits: profiles,
+        hits: users,
         query: result.query,
         processing_time_ms: result.processing_time_ms,
         total_hits: result.hits_info.total_hits,

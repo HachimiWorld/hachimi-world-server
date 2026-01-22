@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO favorite_playlists (user_id, playlist_id, order_index, add_time) VALUES ($1, $2, $3, $4)\n             ON CONFLICT (user_id, playlist_id) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6442882fe9871f7a5efdca1a51d6d6fcfeecf37d769d437ccff3af41e012fa14"
+}

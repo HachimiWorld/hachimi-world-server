@@ -1,0 +1,42 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM favorite_playlists\n            WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "playlist_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "order_index",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "add_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3217725f4ec9a5533715e8ae971ce8f1bb376601ec39642e3b0fad7f219920b1"
+}

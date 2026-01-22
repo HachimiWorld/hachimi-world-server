@@ -1,22 +1,22 @@
 extern crate hachimi_world_server as app;
 
-use std::sync::Arc;
-use async_backtrace::framed;
-use serde::{Deserialize, Serialize};
-use app::util::gracefully_shutdown;
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-use tracing::{info, info_span, Instrument};
 use app::config::Config;
 use app::file_hosting::FileHost;
-use app::{search, web};
+use app::util::gracefully_shutdown;
+use app::util::redlock::RedLock;
 use app::web::state::AppState;
+use app::web::ServerCfg;
+use app::{search, web};
+use async_backtrace::framed;
 use aws_sdk_s3 as s3;
 use aws_sdk_s3::config::Region;
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::sync::Arc;
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
 use tokio::join;
-use app::util::redlock::RedLock;
-use app::web::ServerCfg;
+use tracing::{info, info_span, Instrument};
 
 #[cfg(not(target_env = "msvc"))]
 #[global_allocator]
@@ -184,11 +184,12 @@ async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result
     let span = info_span!("search");
     async {
         info!("Setting up search index");
-        let (a, b) = join!(
+        let (a, b, c) = join!(
             search::song::setup_search_index(&client, pool),
-            search::user::setup_search_index(&client, pool)
+            search::user::setup_search_index(&client, pool),
+            search::playlist::setup_search_index(&client, pool)
         );
-        a.or(b)
+        a.or(b).or(c)
     }.instrument(span).await?;
     Ok(client)
 }

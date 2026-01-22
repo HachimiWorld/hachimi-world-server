@@ -1,8 +1,8 @@
+use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, query_as, FromRow, PgExecutor};
-use crate::db::CrudDao;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongPublishingReview {
@@ -36,12 +36,12 @@ pub trait ISongPublishingReviewDao<'e, E>: CrudDao<'e, E>
 where
     E: PgExecutor<'e>,
 {
-    async fn count(executor: E) -> sqlx::Result<i64>;
-    async fn page_by_user(executor: E, user_id: i64, page_size: i64, page_index: i64) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64>;
-    async fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> sqlx::Result<i64>;
-    async fn list_by_jmid(executor: E, jmid: &str) -> sqlx::Result<Vec<Self::Entity>>;
-    async fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> sqlx::Result<u64>;
+    fn count(executor: E) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn page_by_user(executor: E, user_id: i64, page_size: i64, page_index: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
+    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn list_by_jmid(executor: E, jmid: &str) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
+    fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> impl Future<Output = sqlx::Result<u64>> + Send;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongPublishingReviewDao

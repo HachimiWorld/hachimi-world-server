@@ -1,20 +1,19 @@
-use std::ops::Sub;
-use std::time::{Duration, Instant};
+use crate::db::song::{ISongDao, SongDao};
 use crate::service::song;
-use crate::service::song::{get_public_detail_with_cache, PublicSongDetail};
-use anyhow::bail;
+use crate::service::song::PublicSongDetail;
+use crate::util;
+use crate::util::redlock::RedLock;
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
-use futures::{TryStreamExt};
+use futures::TryStreamExt;
 use metrics::histogram;
 use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
 use redis::{AsyncIter, AsyncTypedCommands};
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Pool, Postgres};
+use std::ops::Sub;
+use std::time::{Duration, Instant};
 use tracing::warn;
-use crate::db::song::{ISongDao, SongDao};
-use crate::util;
-use crate::util::redlock::RedLock;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentSongRedisCache {
@@ -35,7 +34,12 @@ pub async fn get_recent_songs(
             Ok(cache)
         }
         None => {
-            let guard = lock.lock_with_timeout("lock:songs:recent_v2", Duration::from_secs(10)).await?;
+            let lock_name = format!(
+                "songs:recent_v2:cursor={cursor}:limit={limit}:after={after}",
+                cursor = cursor.map(|x| x.date_naive().to_string()).unwrap_or("latest".to_string())
+            );
+
+            let guard = lock.lock_with_timeout(&lock_name, Duration::from_secs(10)).await?;
 
             // Double-check if the cache is available now
             // TODO: Rewrite this use redis based RwLock? Or we can just use memory RwLock for single instance because the service instances wont be too many.

@@ -17,12 +17,14 @@ If you have any question, feel free to create issues/discussions, or join our di
 
 ### 1. Prerequisites
 
-Launch postgresql, redis and meilisearch. You can check the example in `docer/docker-compose-example.yaml`
-
+1. Launch postgresql, redis and meilisearch. You can check the example in `docker/docker-compose-example.yaml`
+2. Install Rust toolchain. You can check the official doc [here](https://www.rust-lang.org/tools/install).
    
 ### 2. Setup `sqlx-cli`
 
 More docs about [SQLx CLI](https://github.com/launchbadge/sqlx/blob/main/sqlx-cli/README.md#sqlx-cli).
+
+Install `sqlx-cli`:
 
 ```shell
 cargo instal sqlx-cli
