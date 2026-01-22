@@ -1,7 +1,7 @@
 use crate::common::auth::with_new_random_test_user;
 use crate::common::with_test_environment;
 use crate::common::CommonParse;
-use hachimi_world_server::web::routes::playlist::{AddSongReq, ChangeOrderReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq, ListContainingResp, ListResp, SearchReq, SearchResp};
+use hachimi_world_server::web::routes::playlist::{AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp, CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq, ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, SearchReq, SearchResp};
 
 mod common;
 
@@ -132,7 +132,7 @@ async fn test_invalid_input() {
 async fn test_search_playlist() {
     with_test_environment(|mut env| async move {
         let _user = with_new_random_test_user(&mut env).await;
-        let mut resp =  env.api.get_query("/playlist/search", &SearchReq {
+        let mut resp = env.api.get_query("/playlist/search", &SearchReq {
             q: "哈".to_string(),
             limit: None,
             offset: None,
@@ -145,5 +145,53 @@ async fn test_search_playlist() {
             id: rand_playlist.id
         }).await.parse_resp::<DetailResp>().await.unwrap();
         assert_eq!(detail.songs.len(), rand_playlist.songs_count as usize);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_favorites() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+        let resp = env.api.get_query("/playlist/favorite/page", &PageFavoritesReq { page_index: 0, page_size: 100 }).await.parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert_eq!(0, resp.total);
+        assert_eq!(0, resp.data.len());
+        assert_eq!(50, resp.page_size);
+        assert_eq!(0, resp.page_index);
+
+        env.api.post("/playlist/favorite/add", &AddFavoriteReq { playlist_id: 1 }).await.parse_resp::<()>().await.unwrap();
+        env.api.post("/playlist/favorite/add", &AddFavoriteReq { playlist_id: 2 }).await.parse_resp::<()>().await.unwrap();
+
+        let favs = env.api.get_query(
+            "/playlist/favorite/page",
+            &PageFavoritesReq { page_index: 0, page_size: 50 }
+        ).await.parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert_eq!(0, favs.page_index);
+        assert_eq!(50, favs.page_size);
+        assert_eq!(2, favs.total);
+        assert_eq!(2, favs.data.len());
+
+        assert!(favs.data.iter().any(|x| x.metadata.id == 1 && x.order_index == 0));
+        assert!(favs.data.iter().any(|x| x.metadata.id == 2 && x.order_index == 1));
+
+        let resp = env.api.get_query(
+            "/playlist/favorite/check",
+            &CheckFavoriteReq { playlist_id: 0, }
+        ).await.parse_resp::<CheckFavoriteResp>().await.unwrap();
+        assert_eq!(false, resp.is_favorite);
+        let resp2 = env.api.get_query(
+            "/playlist/favorite/check",
+            &CheckFavoriteReq { playlist_id: 1, }
+        ).await.parse_resp::<CheckFavoriteResp>().await.unwrap();
+        assert_eq!(true, resp2.is_favorite);
+
+        env.api.post("/playlist/favorite/remove", &CheckFavoriteReq { playlist_id: 1 }).await.parse_resp::<()>().await.unwrap();
+        let resp3 = env.api.get_query(
+            "/playlist/favorite/check",
+            &CheckFavoriteReq { playlist_id: 1, }
+        ).await.parse_resp::<CheckFavoriteResp>().await.unwrap();
+        assert_eq!(false, resp3.is_favorite);
+
+        let resp = env.api.get_query("/playlist/favorite/page", &PageFavoritesReq { page_index: 0, page_size: 50 }).await.parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert_eq!(1, resp.total);
     }).await;
 }

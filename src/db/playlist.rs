@@ -24,20 +24,33 @@ pub struct PlaylistSong {
     pub add_time: DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct FavoritePlaylist {
+    pub user_id: i64,
+    pub playlist_id: i64,
+    pub order_index: i32,
+    pub add_time: DateTime<Utc>,
+}
+
 pub struct PlaylistDao;
 
 pub trait IPlaylistDao<'e, E>: CrudDao<'e, E>
 where
     E: PgExecutor<'e>,
 {
-    fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> impl Future<Output = sqlx::Result<()>> + Send;
-    fn add_song(executor: E, value: &PlaylistSong) -> impl Future<Output = sqlx::Result<()>> + Send;
-    fn list_songs(executor: E, playlist_id: i64) -> impl Future<Output = sqlx::Result<Vec<PlaylistSong>>> + Send;
-    fn count_songs(executor: E, playlist_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, i64>>> + Send;
-    fn list_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
-    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
-    fn list_containing(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<Playlist>>> + Send;
-    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> impl Future<Output=sqlx::Result<()>> + Send;
+    fn add_song(executor: E, value: &PlaylistSong) -> impl Future<Output=sqlx::Result<()>> + Send;
+    fn list_songs(executor: E, playlist_id: i64) -> impl Future<Output=sqlx::Result<Vec<PlaylistSong>>> + Send;
+    fn count_songs(executor: E, playlist_ids: &[i64]) -> impl Future<Output=sqlx::Result<HashMap<i64, i64>>> + Send;
+    fn list_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<Vec<Playlist>>> + Send;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<Playlist>>> + Send;
+    fn list_containing(executor: E, song_id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<Vec<Playlist>>> + Send;
+    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>> + Send;
+    fn page_favorites(executor: E, user_id: i64, page_index: i64, page_size: i64) -> impl Future<Output=sqlx::Result<Vec<FavoritePlaylist>>> + Send;
+    fn count_favorites(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>> + Send;
+    fn add_favorite(executor: E, value: &FavoritePlaylist) -> impl Future<Output=sqlx::Result<()>> + Send;
+    fn get_favorite(executor: E, user_id: i64, playlist_id: i64) -> impl Future<Output=sqlx::Result<Option<FavoritePlaylist>>> + Send;
+    fn remove_favorite(executor: E, user_id: i64, playlist_id: i64) -> impl Future<Output=sqlx::Result<()>> + Send;
 }
 
 impl<'e, E> CrudDao<'e, E> for PlaylistDao
@@ -110,8 +123,10 @@ where
     }
 }
 
-impl <'e, E> IPlaylistDao<'e, E> for PlaylistDao
-where E: PgExecutor<'e>,{
+impl<'e, E> IPlaylistDao<'e, E> for PlaylistDao
+where
+    E: PgExecutor<'e>,
+{
     async fn remove_song(executor: E, playlist_id: i64, song_id: i64) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2", playlist_id, song_id)
             .execute(executor)
@@ -137,7 +152,7 @@ where E: PgExecutor<'e>,{
     }
 
     async fn count_songs(executor: E, playlist_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>> {
-        if playlist_ids.is_empty() { return Ok(HashMap::new()) }
+        if playlist_ids.is_empty() { return Ok(HashMap::new()); }
 
         let result = sqlx::query!("SELECT playlist_id, COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id", playlist_ids)
             .fetch_all(executor)
@@ -176,9 +191,59 @@ WHERE ps.song_id = $1 AND p.user_id = $2;", song_id, user_id)
             .await
             .map(|x| x.count.unwrap_or(0))
     }
+
+    async fn page_favorites(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<FavoritePlaylist>> {
+        let offset = page_index * page_size;
+        sqlx::query_as!(
+            FavoritePlaylist,
+            "SELECT * FROM favorite_playlists
+            WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
+            user_id, page_size, offset
+        ).fetch_all(executor).await
+    }
+
+    async fn count_favorites(executor: E, user_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(*) FROM favorite_playlists WHERE user_id = $1", user_id)
+            .fetch_one(executor)
+            .await
+            .map(|x| x.count.unwrap_or(0))
+    }
+
+    async fn add_favorite(executor: E, value: &FavoritePlaylist) -> sqlx::Result<()> {
+        // insert and ignore duplicate favorites
+        sqlx::query!(
+            "INSERT INTO favorite_playlists (user_id, playlist_id, order_index, add_time) VALUES ($1, $2, $3, $4)
+             ON CONFLICT (user_id, playlist_id) DO NOTHING",
+            value.user_id,
+            value.playlist_id,
+            value.order_index,
+            value.add_time
+        ).execute(executor).await?;
+        Ok(())
+    }
+
+    async fn remove_favorite(executor: E, user_id: i64, playlist_id: i64) -> sqlx::Result<()> {
+        sqlx::query!(
+            "DELETE FROM favorite_playlists WHERE user_id = $1 AND playlist_id = $2",
+            user_id,
+            playlist_id
+        ).execute(executor).await?;
+        Ok(())
+    }
+
+    async fn get_favorite(executor: E, user_id: i64, playlist_id: i64) -> sqlx::Result<Option<FavoritePlaylist>> {
+        sqlx::query_as!(
+            FavoritePlaylist,
+            "SELECT * FROM favorite_playlists WHERE user_id = $1 AND playlist_id = $2",
+            user_id,
+            playlist_id
+        )
+        .fetch_optional(executor)
+        .await
+    }
 }
 
-impl <'e> PlaylistDao {
+impl<'e> PlaylistDao {
     pub async fn update_songs_orders(tx: &mut PgTransaction<'e>, values: &[PlaylistSong]) -> sqlx::Result<()> {
         for value in values {
             sqlx::query!(

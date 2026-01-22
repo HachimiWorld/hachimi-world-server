@@ -1,9 +1,9 @@
-use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
+use crate::db::playlist::{FavoritePlaylist, IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::db::song::SongDao;
 use crate::db::CrudDao;
+use crate::service::playlist;
 use crate::service::playlist::PlaylistMetadata;
 use crate::service::upload::ResizeType;
-use crate::service::playlist;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
@@ -20,6 +20,7 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
+use std::collections::HashMap;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -39,6 +40,14 @@ pub fn router() -> Router<AppState> {
         .route("/change_order", post(change_order))
         // @since 250121 @experimental
         .route("/search", get(search))
+        // @since 250122 @experimental
+        .route("/favorite/page", get(page_favorites))
+        // @since 250122 @experimental
+        .route("/favorite/add", post(add_favorite))
+        // @since 250122 @experimental
+        .route("/favorite/remove", post(remove_favorite))
+        // @since 250122 @experimental
+        .route("/favorite/check", get(check_favorite))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -135,12 +144,12 @@ async fn list(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListPublicByUserReq {
-    pub user_id: i64
+    pub user_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListPublicByUserResp {
-    pub playlists: Vec<PlaylistMetadata>
+    pub playlists: Vec<PlaylistMetadata>,
 }
 
 #[framed]
@@ -166,22 +175,22 @@ async fn list_public_by_user(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListContainingReq {
-    pub song_id: i64
+    pub song_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListContainingResp {
-    pub playlist_ids: Vec<i64>
+    pub playlist_ids: Vec<i64>,
 }
 
 async fn list_containing(
     claims: Claims,
     state: State<AppState>,
-    req: Query<ListContainingReq>
+    req: Query<ListContainingReq>,
 ) -> WebResult<ListContainingResp> {
     let playlists = PlaylistDao::list_containing(&state.sql_pool, req.song_id, claims.uid()).await?;
 
-    let result= playlists
+    let result = playlists
         .into_iter()
         .map(|x| x.id)
         .collect_vec();
@@ -552,5 +561,125 @@ async fn search(
         total_hits: result.hits_info.total_hits,
         limit: result.hits_info.limit,
         offset: result.hits_info.offset,
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageFavoritesReq {
+    pub page_index: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PageFavoritesResp {
+    pub data: Vec<FavoritePlaylistItem>,
+    pub page_index: i64,
+    pub page_size: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FavoritePlaylistItem {
+    pub metadata: PlaylistMetadata,
+    pub order_index: i32,
+    pub add_time: DateTime<Utc>,
+}
+
+async fn page_favorites(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<PageFavoritesReq>,
+) -> WebResult<PageFavoritesResp> {
+    let page_index = req.page_index.max(0);
+    let page_size = req.page_size.clamp(1, 50);
+    let count = PlaylistDao::count_favorites(&state.sql_pool, claims.uid()).await?;
+    if count == 0 {
+        ok!(PageFavoritesResp {data: vec![], page_index, page_size, total: 0})
+    }
+    let items: HashMap<i64, _> = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?
+        .into_iter()
+        .map(|x| (x.playlist_id, x))
+        .collect();
+    let playlist_ids: Vec<i64> = items.keys().copied().collect();
+    let playlists =
+        playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?;
+    let result = playlists.into_iter().map(|(_, v)| FavoritePlaylistItem {
+        add_time: items.get(&v.id).unwrap().add_time,
+        order_index: items.get(&v.id).unwrap().order_index,
+        metadata: v,
+    }).collect_vec();
+    ok!(PageFavoritesResp{data: result, page_index, page_size, total: count})
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddFavoriteReq {
+    pub playlist_id: i64,
+}
+
+async fn add_favorite(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<AddFavoriteReq>,
+) -> WebResult<()> {
+    let playlist = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), 0, i64::MAX).await?;
+    if playlist.len() > 1000 {
+        err!("too_many_favorites", "You have too many favorite playlists")
+    }
+    if playlist.iter().any(|x| x.playlist_id == req.playlist_id) {
+        err!("already_favorited", "Playlist is already in your favorites")
+    }
+
+    let value = FavoritePlaylist {
+        user_id: claims.uid(),
+        playlist_id: req.playlist_id,
+        order_index: playlist.len() as i32,
+        add_time: Utc::now(),
+    };
+
+    PlaylistDao::add_favorite(&state.sql_pool, &value).await?;
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddFavoriteResp {
+    pub playlist_id: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoveFavoriteReq {
+    pub playlist_id: i64,
+}
+
+async fn remove_favorite(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<RemoveFavoriteReq>,
+) -> WebResult<()> {
+    PlaylistDao::remove_favorite(&state.sql_pool, claims.uid(), req.playlist_id).await?;
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckFavoriteReq {
+    pub playlist_id: i64
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckFavoriteResp {
+    pub playlist_id: i64,
+    pub is_favorite: bool,
+    pub add_time: Option<DateTime<Utc>>
+}
+
+async fn check_favorite(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<CheckFavoriteReq>
+) -> WebResult<CheckFavoriteResp> {
+    let result = PlaylistDao::get_favorite(&state.sql_pool, claims.uid(), req.playlist_id).await?;
+    ok!(CheckFavoriteResp {
+        playlist_id: req.playlist_id,
+        is_favorite: result.is_some(),
+        add_time: result.map(|x| x.add_time),
     })
 }
