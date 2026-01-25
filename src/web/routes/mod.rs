@@ -18,4 +18,6 @@ pub fn router() -> Router<AppState> {
         .nest("/playlist", playlist::router())
         .nest("/version", version::router())
         .nest("/publish", publish::router())
+        .nest("/post", post::router())
+        .nest("/contributor", contributor::router())
 }

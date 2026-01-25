@@ -6,6 +6,7 @@ use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishing
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::{song_publishing_review, CrudDao};
+use crate::service::contributor::ensure_contributor;
 use crate::service::mailer;
 use crate::service::mailer::EmailConfig;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
@@ -799,7 +800,7 @@ async fn page_contributor(
     if req.page_size > 50 {
         err!("page_size_exceeded", "Page size too large");
     }
-    ensure_contributor(state.clone().0, claims.uid()).await?;
+    ensure_contributor(&state, claims.uid()).await?;
 
     let result = SongPublishingReviewDao::page(&state.sql_pool, req.page_index, req.page_size).await?;
     let brief: Vec<_> = result.into_iter().map(|x| {
@@ -879,7 +880,7 @@ async fn detail(
     if let Some(review) = review {
         // Permission check
         if review.user_id != claims.uid() {
-            ensure_contributor(state.clone().0, claims.uid()).await?;
+            ensure_contributor(&state, claims.uid()).await?;
         }
 
         let data = serde_json::from_value::<InternalSongPublishReviewData>(review.data)
@@ -959,7 +960,7 @@ async fn review_approve(
     state: State<AppState>,
     req: Json<ApproveReviewReq>,
 ) -> WebResult<()> {
-    ensure_contributor(state.clone().0, claims.uid()).await?;
+    ensure_contributor(&state, claims.uid()).await?;
 
     if let Some(ref x) = req.comment && x.chars().count() > 1000 {
         err!("comment_too_long", "Comment is too long")
@@ -1099,7 +1100,7 @@ async fn review_reject(
     state: State<AppState>,
     req: Json<RejectReviewReq>,
 ) -> WebResult<()> {
-    ensure_contributor(state.0.clone(), claims.uid()).await?;
+    ensure_contributor(&state, claims.uid()).await?;
 
     if req.comment.is_blank() {
         err!("comment_required", "Comment is required")
@@ -1320,41 +1321,6 @@ async fn change_jmid(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommunityCfg {
     pub contributors: Vec<String>,
-}
-
-async fn ensure_contributor(
-    mut state: AppState,
-    uid: i64,
-) -> Result<(), WebError<CommonError>> {
-    let config = state.config;
-    let pool = &state.sql_pool;
-    let redis = &mut state.redis_conn;
-    let contributors = redis.get("contributors").await?;
-    if let Some(contributors) = contributors {
-        let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
-        if contributor_uids.contains(&uid) {
-            Ok(())
-        } else {
-            Err(common!("permission_denied", "You are not a contributor"))
-        }
-    } else {
-        // TODO: Get from github repository
-        let cfg: CommunityCfg = config.get_and_parse("community")?;
-        let mut contributor_uids = HashSet::new();
-        for email in cfg.contributors {
-            if let Some(user) = UserDao::get_by_email(pool, &email).await? {
-                contributor_uids.insert(user.id);
-            } else {
-                warn!("Contributor {} was configured but not found in database", email);
-            }
-        }
-        redis.set("contributors", serde_json::to_string(&contributor_uids)?).await?;
-        if contributor_uids.contains(&uid) {
-            Ok(())
-        } else {
-            Err(common!("permission_denied", "You are not a contributor"))
-        }
-    }
 }
 
 /// Check whether the `jmid` is available (not used nor locked by other pending SRs).
