@@ -1,5 +1,4 @@
 use crate::db::post::{Post, PostDao};
-use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::service::upload::{upload_cover_image_as_temp_id, ImageProcessOptions, ResizeType};
 use crate::service::{contributor, upload, user};
@@ -14,7 +13,6 @@ use axum::routing::{get, post};
 use axum::Router;
 use chrono::Utc;
 use itertools::Itertools;
-use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
 pub(crate) fn router() -> Router<AppState> {

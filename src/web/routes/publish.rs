@@ -4,7 +4,7 @@ use crate::db::creator::{Creator, CreatorDao};
 use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, CrudDao};
 use crate::service::contributor::ensure_contributor;
 use crate::service::mailer;
@@ -27,7 +27,7 @@ use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::Cursor;
 use tracing::{info, warn};
 
