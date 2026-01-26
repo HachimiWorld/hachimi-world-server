@@ -5,9 +5,11 @@ pub mod playlist;
 pub mod version;
 pub mod play_history;
 pub mod publish;
+pub mod post;
+pub mod contributor;
 
-use axum::Router;
 use crate::web::state::AppState;
+use axum::Router;
 
 pub fn router() -> Router<AppState> {
     Router::new()

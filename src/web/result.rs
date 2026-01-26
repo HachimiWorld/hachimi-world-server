@@ -1,9 +1,10 @@
-use std::any::Any;
 use axum::http::StatusCode;
-use axum::Json;
 use axum::response::IntoResponse;
+use axum::Json;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 
+/// Build a `WebError::common` error, just like `anyhow!()`
 #[macro_export]
 macro_rules! common {
     ($code:expr, $($arg:tt)*) => {
@@ -11,6 +12,7 @@ macro_rules! common {
     };
 }
 
+/// Build and return a `WebError::common` error, just like `bail!()`
 #[macro_export]
 macro_rules! err {
     ($code:expr, $($arg:tt)*) => {
@@ -18,6 +20,7 @@ macro_rules! err {
     };
 }
 
+/// Build and return a `WebResponse::ok` result as `axum::Json`
 #[macro_export]
 macro_rules! ok {
     ($data:expr) => {
