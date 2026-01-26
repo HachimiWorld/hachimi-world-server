@@ -98,7 +98,6 @@ pub struct PostIdReq {
 
 #[framed]
 pub async fn detail(
-    _claims: Claims,
     state: State<AppState>,
     req: Query<PostIdReq>,
 ) -> WebResult<PostItem> {
