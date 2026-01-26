@@ -8,6 +8,7 @@ pub mod playlist;
 pub mod song_publishing_review;
 pub mod version;
 pub mod creator;
+pub mod post;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {
