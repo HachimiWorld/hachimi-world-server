@@ -56,7 +56,6 @@ pub struct PostItem {
 
 #[framed]
 pub async fn page(
-    _claims: Claims,
     state: State<AppState>,
     req: Query<PageReq>,
 ) -> WebResult<PageResp> {
