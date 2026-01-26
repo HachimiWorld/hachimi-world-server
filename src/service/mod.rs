@@ -10,3 +10,4 @@ pub mod errors;
 pub mod tag_recommend;
 pub mod user;
 pub mod playlist;
+pub mod contributor;
