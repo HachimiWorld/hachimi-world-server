@@ -1,9 +1,9 @@
-use std::net::SocketAddr;
 use crate::web::state::AppState;
-use axum::http::{StatusCode};
+use axum::http::StatusCode;
 use axum::routing::get;
-use axum::{Router};
+use axum::Router;
 use serde::Deserialize;
+use std::net::SocketAddr;
 use tokio::net::ToSocketAddrs;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -60,10 +60,10 @@ async fn start_main_server(
         .nest("/api", routes::router())
         .route("/health", get(health))
         .with_state(app_state)
-        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics))
-        .layer(cors::cors_layer(allow_origins))
+        .layer(governor::governor_layer())
         .layer(request_id::request_id_layer())
-        .layer(governor::governor_layer());
+        .layer(cors::cors_layer(allow_origins))
+        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {
