@@ -30,7 +30,7 @@ image = "0.25.6"
 hex = "0.4.3"
 dotenv = "0.15.0"
 tracing = "0.1.41"
-tracing-subscriber = "0.3.19"
+tracing-subscriber = { version = "0.3.19", features = ["json"] }
 metrics = "0.24.2"
 metrics-exporter-prometheus = "0.18.1"
 lettre = "0.11.18"
@@ -51,6 +51,7 @@ askama_escape = "0.15.1"
 replaygain = "1.0.1"
 chrono-tz = "0.10.4"
 serde_urlencoded = "0.7.1"
+sitemap-rs = "0.4.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"

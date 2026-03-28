@@ -26,7 +26,7 @@ static GLOBAL: Jemalloc = Jemalloc;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::fmt().json().init();
 
     let (cancel_token, cancel_handle) = gracefully_shutdown::gen_cancel_token();
     let config = Config::parse(&std::env::var("CONFIG_PATH").unwrap_or_else(|_| String::from("config.yaml")))?;
