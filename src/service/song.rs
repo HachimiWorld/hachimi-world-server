@@ -112,8 +112,8 @@ pub async fn get_public_detail_with_cache(
     mut redis: ConnectionManager,
     sql_pool: &PgPool,
     song_id_list: &[i64],
-) -> Result<Vec<Option<PublicSongDetail>>, anyhow::Error> {
-    if song_id_list.is_empty() { return Ok(Vec::new()) }
+) -> Result<HashMap<i64, PublicSongDetail>, anyhow::Error> {
+    if song_id_list.is_empty() { return Ok(HashMap::new()) }
     let start = Instant::now();
     let cache_keys = song_id_list.iter().map(|id| format!("song:detail:{}", id))
         .collect::<Vec<_>>();
@@ -177,13 +177,14 @@ pub async fn get_public_detail_with_cache(
         redis.mset_ex(&cache_to_save_items, MSetOptions::default().with_expiration(SetExpiry::EX(rand::random_range(30 * 60..40 * 60)))).await?;
     }
 
-    let result = song_id_list.iter()
+    cached.extend(fetched);
+    /*let result = song_id_list.iter()
         // .map(|x| cached.remove(x).or_else(|| fetched.remove(x)))
         .map(|x| cached.get(x).cloned().or_else(|| fetched.get(x).cloned()))
         .collect_vec();
-
+    */
     debug!("Get public detail with cache spent {} ms", start.elapsed().as_millis());
-    Ok(result)
+    Ok(cached)
 }
 
 pub async fn get_public_detail_with_cache_legacy(

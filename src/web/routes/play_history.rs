@@ -1,6 +1,6 @@
-use std::collections::HashSet;
 use crate::db::song::{ISongDao, SongDao, SongPlay};
-use crate::service::song::{PublicSongDetail};
+use crate::service::song;
+use crate::service::song::PublicSongDetail;
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
@@ -12,10 +12,10 @@ use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use metrics::gauge;
-use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use redis::aio::ConnectionManager;
+use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
-use crate::service::song;
+use std::collections::HashSet;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -55,14 +55,10 @@ async fn cursor(
 
     let song_ids_distinct = history.iter().map(|x| x.song_id)
         .collect::<HashSet<i64>>().into_iter().collect_vec();
-    let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, song_ids_distinct.as_slice()).await?
-        .into_iter()
-        .filter_map(|x| x)
-        .into_group_map_by(|x| x.id);
+    let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, song_ids_distinct.as_slice()).await?;
 
     let result = history.into_iter()
         .filter_map(|x| songs.get(&x.song_id)
-            .and_then(|songs| songs.into_iter().next()) // Take only first
             .and_then(|song| {
                 Some(PlayHistoryItem {
                     id: x.id,

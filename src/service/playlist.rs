@@ -50,23 +50,21 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
 
     let mut result = Vec::<SongItem>::new();
 
-    for x in songs {
-        if let Some(song) = x {
-            if let Some(ps) = playlist_songs_map.get(&song.id) {
-                let item = SongItem {
-                    song_id: song.id,
-                    song_display_id: song.display_id,
-                    title: song.title,
-                    subtitle: song.subtitle,
-                    cover_url: song.cover_url,
-                    uploader_name: song.uploader_name,
-                    uploader_uid: song.uploader_uid,
-                    duration_seconds: song.duration_seconds,
-                    order_index: ps.order_index,
-                    add_time: ps.add_time,
-                };
-                result.push(item);
-            }
+    for (_, song) in songs {
+        if let Some(ps) = playlist_songs_map.get(&song.id) {
+            let item = SongItem {
+                song_id: song.id,
+                song_display_id: song.display_id,
+                title: song.title,
+                subtitle: song.subtitle,
+                cover_url: song.cover_url,
+                uploader_name: song.uploader_name,
+                uploader_uid: song.uploader_uid,
+                duration_seconds: song.duration_seconds,
+                order_index: ps.order_index,
+                add_time: ps.add_time,
+            };
+            result.push(item);
         }
     }
 

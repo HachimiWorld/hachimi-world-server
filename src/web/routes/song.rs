@@ -85,11 +85,12 @@ async fn detail_by_id(
     state: State<AppState>,
     params: Query<DetailByIdReq>,
 ) -> WebResult<DetailResp> {
-    let data = song::get_public_detail_with_cache(
+    let mut data = song::get_public_detail_with_cache(
         state.redis_conn.clone(),
         &state.sql_pool,
         &[params.id],
-    ).await?.into_iter().next().unwrap();
+    ).await?;
+    let data = data.remove(&params.id);
     match data {
         Some(x) => ok!(x),
         None => err!("not_found", "Song not found")
@@ -145,7 +146,7 @@ async fn page_by_user(
         &state.sql_pool,
         &songs.iter().map(|x| x.id).collect::<Vec<_>>(),
     ).await?;
-    let songs: Vec<PublicSongDetail> = songs.into_iter().flatten().collect();
+    let songs: Vec<PublicSongDetail> = songs.into_iter().map(|(_, v)| v).collect_vec();
 
     let resp = PageByUserResp { songs, total, page, size };
 
@@ -262,8 +263,7 @@ async fn search(
         &hit_ids,
     ).await?
         .into_iter()
-        .filter_map(|x| x)
-        .map(|song| SearchSongItem {
+        .map(|(_, song)| SearchSongItem {
             id: song.id,
             display_id: song.display_id,
             title: song.title,

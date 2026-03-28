@@ -104,8 +104,8 @@ async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Opt
     
     let songs_ids = recent_songs.iter().map(|x| x.id).collect::<Vec<_>>();
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, &songs_ids).await?
-        .into_iter().filter_map(|x| x)
-        .map(|mut data| {
+        .into_iter()
+        .map(|(_, mut data)| {
             data.description = data.description.chars().take(128).collect();
             data.lyrics.clear();
             data.audio_url.clear();
@@ -233,8 +233,8 @@ async fn get_from_db_recommend(
 
     
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, &random_song_ids).await?
-        .into_iter().filter_map(|x| x)
-        .map(|mut data| {
+        .into_iter()
+        .map(|(_, mut data)| {
             data.description = data.description.chars().take(128).collect();
             data.lyrics.clear();
             data.audio_url.clear();
@@ -302,7 +302,7 @@ async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>
     
     let song_ids = &result.iter().map(|x| x.song_id).collect::<Vec<_>>();
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, song_ids).await?
-        .into_iter().filter_map(|x| x)
+        .into_iter().map(|(_, v)| v)
         .collect();
     Ok(songs)
 }
