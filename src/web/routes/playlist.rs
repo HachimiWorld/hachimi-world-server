@@ -2,7 +2,7 @@ use crate::db::playlist::{FavoritePlaylist, IPlaylistDao, Playlist, PlaylistDao,
 use crate::db::song::SongDao;
 use crate::db::CrudDao;
 use crate::service::playlist;
-use crate::service::playlist::PlaylistMetadata;
+use crate::service::playlist::{GetDetailError, PlaylistMetadata};
 use crate::service::upload::ResizeType;
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
@@ -85,8 +85,14 @@ async fn detail(
     state: State<AppState>,
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let resp = playlist::get_detail(&state, Some(claims.uid()), req.id).await?;
-    ok!(resp)
+    match playlist::get_detail(&state, Some(claims.uid()), req.id).await {
+        Ok(x) => ok!(x),
+        Err(e) => match e {
+            GetDetailError::NotFound { .. } => err!("not_found", "Playlist not found"),
+            GetDetailError::NotOwner { .. } => err!("not_owner", "You are not the owner of this playlist"),
+            e => Err(e)?
+        }
+    }
 }
 
 #[framed]
@@ -95,8 +101,14 @@ async fn detail_private(
     state: State<AppState>,
     req: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let resp = playlist::get_detail(&state, Some(claims.uid()), req.id).await?;
-    ok!(resp)
+    match playlist::get_detail(&state, Some(claims.uid()), req.id).await {
+        Ok(x) => ok!(x),
+        Err(e) => match e {
+            GetDetailError::NotFound { .. } => err!("not_found", "Playlist not found"),
+            GetDetailError::NotOwner { .. } => err!("not_owner", "You are not the owner of this playlist"),
+            e => Err(e)?
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -669,20 +681,20 @@ async fn remove_favorite(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckFavoriteReq {
-    pub playlist_id: i64
+    pub playlist_id: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckFavoriteResp {
     pub playlist_id: i64,
     pub is_favorite: bool,
-    pub add_time: Option<DateTime<Utc>>
+    pub add_time: Option<DateTime<Utc>>,
 }
 
 async fn check_favorite(
     claims: Claims,
     state: State<AppState>,
-    req: Query<CheckFavoriteReq>
+    req: Query<CheckFavoriteReq>,
 ) -> WebResult<CheckFavoriteResp> {
     let result = PlaylistDao::get_favorite(&state.sql_pool, claims.uid(), req.playlist_id).await?;
     ok!(CheckFavoriteResp {
