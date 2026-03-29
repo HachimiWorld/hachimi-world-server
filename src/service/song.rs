@@ -351,9 +351,9 @@ async fn compose_from_db_batch(
         }
     });
 
-    // let like_count = song_like::get_song_likes(&redis, sql_pool, song.id).await?;
+    let like_counts_map_fut = SongDao::count_likes_batch(sql_pool, &song_ids);
 
-    let (a, b, c, d, e, f) = tokio::join!(a, b, c, d, play_counts_map_fut, f);
+    let (a, b, c, d, e, f, g) = tokio::join!(a, b, c, d, play_counts_map_fut, f, like_counts_map_fut);
     let (
         (mut tag_id_map, _tag_ids, tags_ref),
         uploader_users_map,
@@ -361,7 +361,8 @@ async fn compose_from_db_batch(
         mut external_links_map,
         mut play_counts_map,
         mut production_crew,
-    ) = (a??, b??, c??, d??, e?, f??);
+        mut like_counts_map
+    ) = (a??, b??, c??, d??, e?, f??, g?);
 
 
     let result = songs.into_iter().map(|song| {
@@ -382,7 +383,7 @@ async fn compose_from_db_batch(
             CreationTypeInfo::from_song_origin_info(info, display_id)
         }).collect_vec();
         let play_count = play_counts_map.remove(&song.id).unwrap_or(0);
-        let like_count = 0;
+        let like_count = like_counts_map.remove(&song.id).unwrap_or(0);
         let external_links = external_links_map.remove(&song.id).unwrap_or_else(|| vec![])
             .into_iter().map(|x| ExternalLink { platform: x.platform, url: x.url })
             .collect_vec();

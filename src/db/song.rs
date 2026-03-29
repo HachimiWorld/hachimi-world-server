@@ -1,7 +1,8 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use itertools::MultiUnzip;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgExecutor, PgTransaction, QueryBuilder};
+use sqlx::{FromRow, PgExecutor, PgTransaction};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -60,6 +61,7 @@ pub struct SongProductionCrew {
 pub struct SongLike {
     pub song_id: i64,
     pub user_id: i64,
+    pub playback_position_secs: Option<i32>,
     pub create_time: DateTime<Utc>,
 }
 
@@ -86,28 +88,31 @@ pub trait ISongDao<'e, E>: CrudDao<'e, E>
 where
     E: PgExecutor<'e>,
 {
-    fn get_by_display_id(executor: E, display_id: &str) -> impl Future<Output = sqlx::Result<Option<Song>>>;
-    fn list_tags_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<i64>>>;
-    fn list_origin_info_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongOriginInfo>>>;
-    fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongOriginInfo>>>;
-    fn list_production_crew_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongProductionCrew>>>;
-    fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongProductionCrew>>>;
-    fn list_external_link_by_song_id(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<Vec<SongExternalLink>>>;
-    fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongExternalLink>>>;
-    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
-    fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
-    fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
-    fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>>;
-    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
-    fn count_likes(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
-    fn count_plays(executor: E, song_id: i64) -> impl Future<Output = sqlx::Result<i64>>;
-    fn count_plays_batch(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, i64>>>;
-    fn insert_likes(executor: E, values: &[SongLike]) -> impl Future<Output = sqlx::Result<()>>;
-    fn is_liked(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<bool>>;
-    fn delete_like(executor: E, song_id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<()>>;
-    fn insert_plays(executor: E, values: &[SongPlay]) -> impl Future<Output = sqlx::Result<()>>;
-    fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output = sqlx::Result<Vec<SongPlay>>>;
-    fn delete_play(executor: E, id: i64, user_id: i64) -> impl Future<Output = sqlx::Result<()>>;
+    fn get_by_display_id(executor: E, display_id: &str) -> impl Future<Output=sqlx::Result<Option<Song>>>;
+    fn list_tags_by_song_id(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<Vec<i64>>>;
+    fn list_origin_info_by_song_id(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<Vec<SongOriginInfo>>>;
+    fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<SongOriginInfo>>>;
+    fn list_production_crew_by_song_id(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<Vec<SongProductionCrew>>>;
+    fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<SongProductionCrew>>>;
+    fn list_external_link_by_song_id(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<Vec<SongExternalLink>>>;
+    fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<SongExternalLink>>>;
+    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
+    fn count_likes(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
+    fn count_likes_batch(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<HashMap<i64, i64>>>;
+    fn count_likes_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
+    fn count_plays(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
+    fn count_plays_batch(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<HashMap<i64, i64>>>;
+    fn insert_likes(executor: E, values: &[SongLike]) -> impl Future<Output=sqlx::Result<()>>;
+    fn is_liked(executor: E, song_id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<bool>>;
+    fn delete_like(executor: E, song_id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<()>>;
+    fn page_likes_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> impl Future<Output=sqlx::Result<Vec<SongLike>>>;
+    fn insert_plays(executor: E, values: &[SongPlay]) -> impl Future<Output=sqlx::Result<()>>;
+    fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output=sqlx::Result<Vec<SongPlay>>>;
+    fn delete_play(executor: E, id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<()>>;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongDao
@@ -254,14 +259,14 @@ where
         let result = rows.into_iter().map(|x| x.tag_id).collect();
         Ok(result)
     }
-    
+
     async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
         sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
             .fetch_all(executor).await
     }
 
     async fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongOriginInfo>> {
-        if song_ids.is_empty() { return Ok(vec![]) }
+        if song_ids.is_empty() { return Ok(vec![]); }
         sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
@@ -273,7 +278,7 @@ where
     }
 
     async fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongProductionCrew>> {
-        if song_ids.is_empty() { return Ok(vec![]) }
+        if song_ids.is_empty() { return Ok(vec![]); }
         sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
@@ -284,13 +289,13 @@ where
     }
 
     async fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongExternalLink>> {
-        if song_ids.is_empty() { return Ok(vec![]) }
+        if song_ids.is_empty() { return Ok(vec![]); }
         sqlx::query_as!(SongExternalLink, "SELECT * FROM song_external_links WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
 
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
-        if ids.is_empty() { return Ok(vec![]) }
+        if ids.is_empty() { return Ok(vec![]); }
         sqlx::query_as!(
             Song, "SELECT * FROM songs WHERE id = ANY($1)",
             ids
@@ -330,6 +335,25 @@ where
             .await.map(|x| x.count).map(|x| x.unwrap_or(0))
     }
 
+    async fn count_likes_batch(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>> {
+        if song_ids.is_empty() { return Ok(HashMap::new()); }
+        let result = sqlx::query!("SELECT song_id, COUNT(*) FROM song_likes WHERE song_id = ANY($1) GROUP BY song_id", song_ids)
+            .fetch_all(executor)
+            .await?
+            .into_iter()
+            .map(|x| (x.song_id, x.count.unwrap_or(0)))
+            .collect::<HashMap<_, _>>();
+        Ok(result)
+    }
+
+    async fn count_likes_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(1) FROM song_likes WHERE user_id = $1", user_id)
+            .fetch_one(executor)
+            .await
+            .map(|x| x.count)
+            .map(|x| x.unwrap_or(0))
+    }
+
     async fn count_plays(executor: E, song_id: i64) -> sqlx::Result<i64> {
         sqlx::query!("SELECT COUNT(1) FROM song_plays WHERE song_id = $1", song_id)
             .fetch_one(executor)
@@ -337,7 +361,7 @@ where
     }
 
     async fn count_plays_batch(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, i64>> {
-        if song_ids.is_empty() { return Ok(HashMap::new()) }
+        if song_ids.is_empty() { return Ok(HashMap::new()); }
         let result = sqlx::query!("SELECT song_id, COUNT(*) FROM song_plays WHERE song_id = ANY($1) GROUP BY song_id", song_ids)
             .fetch_all(executor)
             .await?
@@ -348,12 +372,15 @@ where
     }
 
     async fn insert_likes(executor: E, values: &[SongLike]) -> sqlx::Result<()> {
-        let mut builder = QueryBuilder::new("INSERT INTO song_likes (song_id, user_id, create_time)");
-        builder.push_values(values, |mut b, x| {
-            b.push_bind(x.song_id);
-            b.push_bind(x.user_id);
-            b.push_bind(x.create_time);
-        }).build().execute(executor).await?;
+        let (ids, user_ids, playback_position_secs, create_times):
+            (Vec<_>, Vec<_>, Vec<_>, Vec<_>) =
+            values.into_iter().map(|x| (x.song_id, x.user_id, x.playback_position_secs, x.create_time))
+                .multiunzip();
+        sqlx::query!(
+            "INSERT INTO song_likes (song_id, user_id, playback_position_secs, create_time)
+            SELECT * FROM UNNEST($1::bigint[], $2::bigint[], $3::integer[], $4::timestamptz[])",
+            &ids[..], &user_ids[..], &playback_position_secs[..] as &[Option<i32>], &create_times[..]
+        ).execute(executor).await?;
         Ok(())
     }
 
@@ -368,6 +395,16 @@ where
             .execute(executor)
             .await?;
         Ok(())
+    }
+
+    async fn page_likes_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<SongLike>> {
+        sqlx::query_as!(
+            SongLike,
+            "SELECT * FROM song_likes WHERE user_id = $1 ORDER BY create_time DESC LIMIT $2 OFFSET $3",
+            user_id,
+            page_size,
+            page_index * page_size
+        ).fetch_all(executor).await
     }
 
     async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()> {

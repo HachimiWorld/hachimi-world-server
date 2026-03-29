@@ -1,11 +1,26 @@
 mod common;
 
 use crate::common::auth::with_new_random_test_user;
-use crate::common::{assert_is_ok, CommonParse};
+use crate::common::{assert_is_err, assert_is_ok, CommonParse};
 use crate::common::{with_test_environment, TestEnvironment};
 use futures::future::join_all;
 use hachimi_world_server::service::song_like;
-use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, PageByUserReq, RecentReq, RecentResp, SearchReq, SearchResp, TagCreateReq, TagSearchReq, TagSearchResp};
+use hachimi_world_server::web::routes::song::{
+    DetailReq,
+    DetailResp,
+    LikeReq,
+    LikeStatusResp,
+    MyLikesReq,
+    MyLikesResp,
+    PageByUserReq,
+    RecentReq,
+    RecentResp,
+    SearchReq,
+    SearchResp,
+    TagCreateReq,
+    TagSearchReq,
+    TagSearchResp,
+};
 use std::time::SystemTime;
 
 #[tokio::test]
@@ -125,7 +140,7 @@ async fn click_farming_likes(env: &TestEnvironment, song_id: i64, number: i64) {
             let conn = env.redis.clone();
             let pool = env.pool.clone();
             async move {
-                song_like::like(&conn, &pool, song_id, rand::random()).await.unwrap();
+                song_like::like(&conn, &pool, song_id, rand::random(), None).await.unwrap();
             }
         });
         handles.push(handle);
@@ -164,10 +179,97 @@ async fn test_page_by_users() {
             },
         ).await.parse_resp().await.unwrap();
         // Assert no songs appear in both pages
-        assert!(resp.songs.iter().all(|song1|
-            !resp2.songs.iter().any(|song2| song1.id == song2.id)
-        ));
+        let resp2_ids = resp2.songs.iter().map(|song| song.id).collect::<std::collections::HashSet<_>>();
+        assert!(resp.songs.iter().all(|song1| !resp2_ids.contains(&song1.id)));
 
         println!("Second page: {:#?}", resp2.songs);
+    }).await
+}
+
+#[tokio::test]
+async fn test_likes() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        let songs: RecentResp = env.api
+            .get_query("/song/recent_v2", &RecentReq { cursor: None, limit: None, after: None }).await
+            .parse_resp().await.unwrap();
+        let song = songs.songs.first().unwrap();
+
+        let like_req = LikeReq {
+            song_id: song.id,
+            playback_position_secs: Some(123),
+        };
+
+        assert_is_ok(env.api.post("/song/likes/like", &like_req).await).await;
+
+        let status: LikeStatusResp = env.api
+            .get_query("/song/likes/status", &like_req).await
+            .parse_resp().await.unwrap();
+        assert!(status.liked, "song should be liked after /like");
+
+        let page: MyLikesResp = env.api
+            .get_query(
+                "/song/likes/page_my_likes",
+                &MyLikesReq {
+                    page_index: 0,
+                    page_size: 10,
+                },
+            ).await.parse_resp().await.unwrap();
+        assert_eq!(page.page_index, 0);
+        assert_eq!(page.page_size, 10);
+        assert_eq!(page.total, 1);
+        assert_eq!(page.data.len(), 1);
+        assert_eq!(page.data[0].song_data.id, song.id);
+
+        assert_is_ok(env.api.post("/song/likes/unlike", &like_req).await).await;
+
+        let status: LikeStatusResp = env.api.get_query("/song/likes/status", &like_req)
+            .await.parse_resp().await.unwrap();
+        assert!(!status.liked, "song should be unliked after /unlike");
+
+        let page: MyLikesResp = env
+            .api
+            .get_query(
+                "/song/likes/page_my_likes",
+                &MyLikesReq {
+                    page_index: 0,
+                    page_size: 10,
+                },
+            )
+            .await.parse_resp().await.unwrap();
+        assert_eq!(page.total, 0);
+        assert!(page.data.is_empty());
+    }).await
+}
+
+#[tokio::test]
+async fn test_likes_validation() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        let invalid_index = env
+            .api
+            .get_query(
+                "/song/likes/page_my_likes",
+                &MyLikesReq {
+                    page_index: -1,
+                    page_size: 10,
+                },
+            )
+            .await;
+        assert_is_err(invalid_index).await;
+
+        let invalid_size = env
+            .api
+            .get_query(
+                "/song/likes/page_my_likes",
+                &MyLikesReq {
+                    page_index: 0,
+                    page_size: 0,
+                },
+            )
+            .await;
+        assert_is_err(invalid_size).await;
     }).await
 }

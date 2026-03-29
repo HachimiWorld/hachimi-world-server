@@ -41,15 +41,18 @@ pub fn router() -> Router<AppState> {
         .route("/hot/weekly", get(hot_weekly))
         .route("/recommend", get(recommend))
         .route("/recommend_anonymous", get(recommend_anonymous))
-        // User interactions
-        .route("/like", post(like))
-        .route("/unlike", post(unlike))
-        .route("/play", post(play))
         // Tags
         .route("/tag/create", post(tag_create))
         .route("/tag/search", get(tag_search))
         .route("/tag/recommend", get(tag_recommend))
         .route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
+        // @since 250328 @experimental
+        .nest("/likes", Router::new()
+            .route("/like", post(like))
+            .route("/unlike", post(unlike))
+            .route("/status", get(likes_status))
+            .route("/page_my_likes", get(page_my_likes)),
+        )
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -374,6 +377,7 @@ async fn recommend_anonymous(
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LikeReq {
     pub song_id: i64,
+    pub playback_position_secs: Option<i32>,
 }
 
 #[framed]
@@ -383,31 +387,121 @@ async fn like(
     req: Json<LikeReq>,
 ) -> WebResult<()> {
     song_like::like(
-        &state.redis_conn,
-        &state.sql_pool,
-        claims.uid(), req.song_id).await?;
+        &state.redis_conn, &state.sql_pool,
+        claims.uid(), req.song_id,
+        req.playback_position_secs
+    ).await?;
     ok!(())
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UnlikeReq {
+    pub song_id: i64,
 }
 
 #[framed]
 async fn unlike(
     claims: Claims,
     state: State<AppState>,
-    req: Json<LikeReq>,
+    req: Json<UnlikeReq>,
 ) -> WebResult<()> {
     song_like::unlike(
         &state.redis_conn,
         &state.sql_pool,
-        req.song_id, claims.uid()).await?;
+        claims.uid(), req.song_id
+    ).await?;
     ok!(())
 }
 
-#[framed]
-async fn play() -> WebResult<()> {
-    // TODO
-    err!("no_impl", "Not implemented")
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LikeStatusReq {
+    pub song_id: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LikeStatusResp {
+    pub liked: bool,
+}
+
+#[framed]
+async fn likes_status(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<LikeStatusReq>,
+) -> WebResult<LikeStatusResp> {
+    let liked = song_like::is_liked(
+        &state.redis_conn,
+        &state.sql_pool,
+        claims.uid(), req.song_id,
+    ).await?;
+    ok!(LikeStatusResp { liked })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MyLikesReq {
+    pub page_index: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MyLikesResp {
+    pub data: Vec<MyLikeItem>,
+    pub page_size: i64,
+    pub page_index: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MyLikeItem {
+    pub song_data: PublicSongDetail,
+    pub liked_time: DateTime<Utc>,
+}
+
+#[framed]
+async fn page_my_likes(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<MyLikesReq>,
+) -> WebResult<MyLikesResp> {
+    // Validate
+    if req.page_index < 0 {
+        err!("invalid_page_index", "Page index must be non-negative")
+    }
+    if req.page_size <= 0 || req.page_size > 50 {
+        err!("invalid_page_size", "Page size must be between 1 and 50")
+    }
+
+    // Process
+    let (total, songs) = song_like::page_by_user(
+        &state.redis_conn,
+        &state.sql_pool,
+        claims.uid(),
+        req.page_index,
+        req.page_size,
+    ).await?;
+    let song_ids = songs.iter().map(|song| song.song_id).collect::<Vec<_>>();
+    let song_details = song::get_public_detail_with_cache(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        &song_ids,
+    ).await?;
+    let composed = songs.into_iter().filter_map(|like| {
+        let detail = song_details.get(&like.song_id).cloned();
+        match detail {
+            Some(x) => Some(MyLikeItem {
+                song_data: x,
+                liked_time: like.create_time,
+            }),
+            None => None
+        }
+    }).collect::<Vec<_>>();
+    ok!(MyLikesResp {
+        data: composed,
+        page_size: req.page_size,
+        page_index: req.page_index,
+        total
+    })
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TagSearchReq {
@@ -507,7 +601,7 @@ pub struct TagRecommendRedisCache {
 #[framed]
 async fn tag_recommend(
     claims: Claims,
-    mut state: State<AppState>
+    mut state: State<AppState>,
 ) -> WebResult<TagRecommendResp> {
     let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
     let cache_key = format!("tags:recommend:{}:{}", claims.uid(), date);
@@ -545,7 +639,7 @@ async fn tag_recommend(
 /// This is global tag recommendation for all anonymous users, per day
 async fn tag_recommend_anonymous(
     _ip: XRealIP,
-    mut state: State<AppState>
+    mut state: State<AppState>,
 ) -> WebResult<TagRecommendResp> {
     let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
     let cache_key = format!("tags:recommend:anonymous:{}", date);
