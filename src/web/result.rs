@@ -28,30 +28,114 @@ macro_rules! ok {
     };
 }
 
-/// This is used as the return type for web handlers. Then handlers can use `?` grammar for error handling.
+/// This is used as the return type for web handler functions.
 ///
-/// When a handler returns `OK`, it will return status 200 OK.
+/// # Response structures
 ///
-/// When a `WebError` returns, the status is decided by the error type.
-/// - `Internal` means 500 without response body. This is the default type when an error is returned by `?`.
-/// - `BusinessError` means 200 with an JSON error message (Default to `CommonError` type). This type should be instantiated manually (e.g., by the `err!` macro)
+/// We have different strategies for success responses and error responses
+///
+/// ## Success responses
+///
+/// For any success response, we use [WebResponse] as the unified structure, with `ContentType: application/json` HTTP 200 status.
+///
+/// ```json
+/// {
+///     "ok": true,
+///     "data": {
+///         // The success data
+///     }
+/// }
+/// ```
+///
+/// The success response in code is represented as `Result::Ok(Json<WebResponse<T>>)`
+///
+/// ## Error responses
+///
+/// The error is represented with enum [WebError], there are to type of errors.
+///
+/// ### Business errors
+///
+/// Known errors for business logics, not related to application code errors.
+///
+/// We use `WebResponse` with a serializable error data type. JSON and HTTP 200 status.
+///
+/// The error data type is by default to [CommonError].
+///
+/// For example:
+///
+/// ```json
+/// {
+///     "ok": false,
+///     "data": {
+///         "code": "permission_denied",
+///         "msg": "You don't have permission to access this resource"
+///     }
+/// }
+/// ```
+///
+/// The business error is represented as `Result::Err<WebError::Business<CommonError>>` type, then handled by the `impl IntoResponse for WebError<E>`.
+///
+/// ### Internal errors
+///
+/// Unhandled errors, usually throw by the `?` operator.
+///
+/// For example: network timeout, database connection error, disk full, etc...
+///
+/// Once it is returned, we respond the HTTP 500 status.
+///
+/// ```http
+/// HTTP/1.1 500 Internal Server Error
+///
+/// Something went wrong
+/// ```
+///
+/// It's represented as `Result::Error<WebError::Internal<anyhow::Error>>` type, then handled by the `impl IntoResponse for WebError<E>`.
+///
+/// ### Other status code
+///
+/// We also use other HTTP status code for, but they are not related to a handler
+///
+/// - `4XX`: Bad Request, Not Authorized, Forbidden, Not Found, etc...
+///
+/// ## Macros
+///
+/// And there are two convenience macros:
+/// - `ok!(data)` Returns the data as success
+/// - `err!(code, msg)` Returns a business
+///
+/// ## The `?` operator
+///
+/// Since the `From<Into<anyhow::Error>>` is implemented for the [WebError] You can use `?` in the handler to directly throw an `Into<anyhow::Error>`, and get the 500 http response.
+///
 pub type WebResult<T, E = CommonError> = Result<Json<WebResponse<T>>, WebError<E>>;
 
-/// This is used to represent the unified JSON results.
+/// The unified JSON response structure for almost all http handlers in this project.
+///
+/// Example:
+///
+/// ```json
+/// {
+///     "ok": true,
+///     "data": {
+///         // Some data
+///     }
+/// }
+/// ```
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct WebResponse<T> {
     pub ok: bool,
     pub data: T,
 }
 
-// Use anyhow, define error and enable '?'
-// For a simplified example of using anyhow in axum check /examples/anyhow-error-response
+/// A help type to distinguish business errors and internal errors.
+/// It's useful to enable the `?` operator and the response logic.
 #[derive(Debug)]
 pub enum WebError<E: Serialize> {
     Business(E),
     Internal(anyhow::Error),
 }
 
+/// This is used to enable the `?` operator for every Error type that could be converted to `anyhow::Error` in handlers
 impl<E, F> From<E> for WebError<F>
 where
     E: Into<anyhow::Error>,
@@ -63,9 +147,26 @@ where
 }
 
 
+/// A common error data type used in a business error, contains a string `code` type and `msg`.
+///
+/// It's always used as the default error data type in responses, e.g:
+///
+/// ```json
+/// {
+///     "ok": false,
+///     "data": {
+///         "code": "permission_denied",
+///         "msg": "You don't have permission to access this resource"
+///     }
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommonError {
+    /// Error code type, should be machine-friendly and human-readable.
+    /// e.g: `"permission_denied"`, `"not_found"`
     pub code: String,
+    /// Explain the reason, could be displayed to user.
+    /// e.g: `"You don't have permission to access this resource"`
     pub msg: String,
 }
 
@@ -100,7 +201,12 @@ impl<E: Serialize + 'static> IntoResponse for WebError<E> {
             WebError::Business(ref resp) => {
                 let value_any = resp as &dyn Any;
                 if let Some(as_common_err) = value_any.downcast_ref::<CommonError>() {
-                    tracing::info!("Common error: {}, {}", as_common_err.code, as_common_err.msg);
+                    tracing::info!(
+                        error_type = "common_error",
+                        error_code = as_common_err.code,
+                        error_msg = as_common_err.msg,
+                        "Common error"
+                    )
                 } else {
                     tracing::info!("Business error")
                 }
