@@ -128,7 +128,8 @@ pub async fn get_public_detail_with_cache(
             Some(cache) => {
                 // Cached
                 if cache == "null" {
-
+                    // Skip this item
+                    continue;
                 } else {
                     match serde_json::from_str::<PublicSongDetail>(&cache) {
                         Ok(x) => {
@@ -177,12 +178,9 @@ pub async fn get_public_detail_with_cache(
         redis.mset_ex(&cache_to_save_items, MSetOptions::default().with_expiration(SetExpiry::EX(rand::random_range(30 * 60..40 * 60)))).await?;
     }
 
+    // Assemble the cached and fetch
     cached.extend(fetched);
-    /*let result = song_id_list.iter()
-        // .map(|x| cached.remove(x).or_else(|| fetched.remove(x)))
-        .map(|x| cached.get(x).cloned().or_else(|| fetched.get(x).cloned()))
-        .collect_vec();
-    */
+
     debug!("Get public detail with cache spent {} ms", start.elapsed().as_millis());
     Ok(cached)
 }
