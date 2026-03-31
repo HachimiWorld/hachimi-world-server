@@ -65,7 +65,7 @@ async fn cursor(
         .filter_map(|x| songs.get(&x.song_id)
             .and_then(|song| {
                 Some(PlayHistoryItem {
-                    id: 0,
+                    id: song.id, // Will be deprecated
                     song_info: song.clone(),
                     play_time: x.create_time,
                 })
