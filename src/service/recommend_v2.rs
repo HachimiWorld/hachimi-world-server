@@ -35,11 +35,7 @@ pub async fn get_recent_songs(
             Ok(cache)
         }
         None => {
-            let lock_name = format!(
-                "songs:recent_v2:cursor={cursor}:limit={limit}:after={after}",
-                cursor = cursor.map(|x| x.date_naive().to_string()).unwrap_or("latest".to_string())
-            );
-
+            let lock_name = build_recent_redis_key(cursor, limit, after);
             let guard = lock.lock_with_timeout(&lock_name, Duration::from_secs(10)).await?;
 
             // Double-check if the cache is available now
@@ -123,7 +119,7 @@ async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Opt
 pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow::Result<()> {
     // Just delete the cache
     // TODO: Use event based notification
-    let keys: AsyncIter<String> = redis.scan_match("songs:recent_v2:latest:*").await?;
+    let keys: AsyncIter<String> = redis.scan_match("songs:recent_v2:cursor=latest:*").await?;
     let keys = keys.try_collect::<Vec<_>>().await?;
 
     if !keys.is_empty() {

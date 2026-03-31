@@ -35,8 +35,8 @@ impl RedLock {
                         Ok(_) => {
                             debug!("unlock the resource: {}", lock_info.res_name);
                         }
-                        Err(_) => {
-                            error!("Failed to unlock the resource: {}", lock_info.res_name);
+                        Err(x) => {
+                            error!("Failed to unlock the resource[{}], reason: {}", lock_info.res_name, x);
                         }
                     };
                 }
@@ -84,11 +84,12 @@ impl RedLock {
     pub async fn try_lock(&self, res_name: &str) -> anyhow::Result<Option<RedLockGuard>> {
         info!("try to acquire the lock: {}", res_name);
         let mut conn = self.inner.redis_conn.clone();
-        let lock_info = LockInfo::new(res_name);
+        let lock_name = format!("redlock:{}", res_name);
+        let lock_info = LockInfo::new(&lock_name);
         let opt = SetOptions::default()
             .conditional_set(ExistenceCheck::NX)
             .with_expiration(SetExpiry::PX(30000));
-        let result: Value = conn.set_options(res_name, &lock_info.sign, opt).await?;
+        let result: Value = conn.set_options(&res_name, &lock_info.sign, opt).await?;
         match result {
             Value::Okay => {
                 let guard = RedLockGuard::new(self.inner.unlock_tx.clone(), lock_info);
