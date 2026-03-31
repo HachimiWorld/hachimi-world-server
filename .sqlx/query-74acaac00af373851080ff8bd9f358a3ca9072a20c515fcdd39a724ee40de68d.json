@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, song_id, user_id, anonymous_uid, create_time FROM (\n                SELECT id, song_id, user_id, anonymous_uid, create_time,\n                       ROW_NUMBER() OVER (PARTITION BY song_id ORDER BY create_time DESC) AS rn\n                FROM song_plays\n                WHERE user_id = $1 AND create_time < $2\n            ) t\n            WHERE rn = 1\n            ORDER BY create_time DESC\n            LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "anonymous_uid",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "74acaac00af373851080ff8bd9f358a3ca9072a20c515fcdd39a724ee40de68d"
+}

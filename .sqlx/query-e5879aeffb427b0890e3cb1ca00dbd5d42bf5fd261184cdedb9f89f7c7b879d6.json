@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM user_play_history WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "e5879aeffb427b0890e3cb1ca00dbd5d42bf5fd261184cdedb9f89f7c7b879d6"
+}
