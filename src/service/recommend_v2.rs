@@ -5,6 +5,7 @@ use crate::util;
 use crate::util::redlock::RedLock;
 use chrono::{DateTime, NaiveDate, TimeDelta, Utc};
 use futures::TryStreamExt;
+use itertools::Itertools;
 use metrics::histogram;
 use rand::prelude::SliceRandom;
 use redis::aio::ConnectionManager;
@@ -57,8 +58,8 @@ pub async fn get_recent_songs(
     }
 }
 
-async fn get_from_cache(redis: ConnectionManager, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
-    let cache: Option<String> = redis.clone().get(build_recent_redis_key(cursor, limit, after)).await?;
+async fn get_from_cache(mut redis: ConnectionManager, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
+    let cache: Option<String> = redis.get(build_recent_redis_key(cursor, limit, after)).await?;
     match cache {
         Some(cache) => {
             match serde_json::from_str::<RecentSongRedisCache>(&cache) {
@@ -87,10 +88,12 @@ async fn save_cache(mut redis: ConnectionManager, songs: &[PublicSongDetail], cu
 }
 
 fn build_recent_redis_key(cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> String {
+    let cursor_str = cursor.map(|x| x.date_naive().to_string())
+        .unwrap_or("latest".to_string());
     format!(
-        "songs:recent_v2:{cursor}:{limit}:{after}",
-        cursor = cursor.map(|x| x.date_naive().to_string()
-    ).unwrap_or("latest".to_string()))
+        "songs:recent_v2:cursor={cursor}:limit={limit}:after={after}",
+        cursor = cursor_str
+    )
 }
 
 async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Option<DateTime<Utc>>, limit: i32, after: bool) -> anyhow::Result<Vec<PublicSongDetail>> {
@@ -103,18 +106,18 @@ async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Opt
     };
     
     let songs_ids = recent_songs.iter().map(|x| x.id).collect::<Vec<_>>();
-    let songs = song::get_public_detail_with_cache(redis.clone(), pool, &songs_ids).await?
-        .into_iter()
-        .map(|(_, mut data)| {
+    let songs_map = song::get_public_detail_with_cache(redis.clone(), pool, &songs_ids).await?;
+    let songs_ordered = songs_ids.into_iter().filter_map(|id| songs_map.get(&id).cloned())
+        .map(|mut data| {
             data.description = data.description.chars().take(128).collect();
             data.lyrics.clear();
             data.audio_url.clear();
             data
         })
-        .collect();
+        .collect_vec();
     
     histogram!("recommend_get_from_db_duration_seconds").record(start.elapsed().as_secs_f64());
-    Ok(songs)
+    Ok(songs_ordered)
 }
 
 pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow::Result<()> {
