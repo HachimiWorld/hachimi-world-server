@@ -227,14 +227,8 @@ async fn get_from_db_recommend(
     pool: &PgPool,
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     let start = Instant::now();
-    let random_song_ids: Vec<i64> = sqlx::query!("SELECT id FROM songs TABLESAMPLE SYSTEM_ROWS(30)")
-        .fetch_all(pool)
-        .await?
-        .into_iter()
-        .map(|x| x.id)
-        .collect();
+    let random_song_ids: Vec<i64> = SongDao::list_random(pool, 30).await?;
 
-    
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, &random_song_ids).await?
         .into_iter()
         .map(|(_, mut data)| {

@@ -1,6 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
-use itertools::MultiUnzip;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
 use std::collections::HashMap;
@@ -99,6 +99,7 @@ where
     fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
     fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
     fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn list_random(executor: E, limit: i64) -> impl Future<Output=sqlx::Result<Vec<i64>>>;
     fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
     fn count_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
     fn count_likes(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
@@ -311,6 +312,13 @@ where
     async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>> {
         sqlx::query_as!(Song, "SELECT * FROM songs WHERE create_time < $1 ORDER BY create_time DESC LIMIT $2", create_time, limit)
             .fetch_all(executor).await
+    }
+
+    async fn list_random(executor: E, limit: i64) -> sqlx::Result<Vec<i64>> {
+        let rows = sqlx::query!("SELECT id FROM songs TABLESAMPLE SYSTEM_ROWS($1)", limit)
+            .fetch_all(executor)
+            .await?;
+        Ok(rows.into_iter().map(|x| x.id).collect_vec())
     }
 
     async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
