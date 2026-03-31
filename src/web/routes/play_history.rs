@@ -1,4 +1,5 @@
 use crate::db::song::{ISongDao, SongDao, SongPlay};
+use crate::db::user_play_history::{IUserPlayHistory, IUserPlayHistoryExt, UserPlayHistoryDao};
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use crate::web::extractors::XRealIP;
@@ -38,6 +39,8 @@ pub struct CursorResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayHistoryItem {
+    /// @deprecated since 260331
+    /// @remove in 260901
     pub id: i64,
     pub song_info: PublicSongDetail,
     pub play_time: DateTime<Utc>
@@ -51,7 +54,8 @@ async fn cursor(
     if req.size > 64 {
         err!("size_exceeded", "Page size must be less than 64")
     }
-    let history = SongDao::cursor_plays(&state.sql_pool, claims.uid(), req.cursor.unwrap_or_else(|| Utc::now()), req.size).await?;
+    let before_time = req.cursor.unwrap_or_else(|| Utc::now());
+    let history = UserPlayHistoryDao::cursor_by_user_id(&state.sql_pool, claims.uid(), before_time, req.size).await?;
 
     let song_ids_distinct = history.iter().map(|x| x.song_id)
         .collect::<HashSet<i64>>().into_iter().collect_vec();
@@ -61,7 +65,7 @@ async fn cursor(
         .filter_map(|x| songs.get(&x.song_id)
             .and_then(|song| {
                 Some(PlayHistoryItem {
-                    id: x.id,
+                    id: 0,
                     song_info: song.clone(),
                     play_time: x.create_time,
                 })
@@ -85,6 +89,7 @@ async fn touch(
     if cooldown(claims.uid(), req.song_id, &mut state.redis_conn).await? {
         err!("cooldown", "Please wait 60 seconds before touching again");
     }
+    let mut tx = state.sql_pool.begin().await?;
 
     let data = SongPlay {
         id: 0,
@@ -93,10 +98,11 @@ async fn touch(
         anonymous_uid: None,
         create_time: Utc::now(),
     };
-    SongDao::insert_plays(&state.sql_pool, &[data]).await?;
+    SongDao::insert_plays(&mut *tx, &[data]).await?;
+    UserPlayHistoryDao::delete_and_insert(&mut tx, claims.uid(), req.song_id).await?;
+    tx.commit().await?;
 
     let dau_key = format!("dau:hll:{}", Utc::now().date_naive().to_string());
-
     let r: bool = state.redis_conn.pfadd(&dau_key, claims.uid()).await?;
     if r {
         let dau: i64 = state.redis_conn.pfcount(dau_key).await?;

@@ -112,6 +112,7 @@ where
     fn page_likes_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> impl Future<Output=sqlx::Result<Vec<SongLike>>>;
     fn insert_plays(executor: E, values: &[SongPlay]) -> impl Future<Output=sqlx::Result<()>>;
     fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output=sqlx::Result<Vec<SongPlay>>>;
+    fn cursor_plays_distinct_latest(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output=sqlx::Result<Vec<SongPlay>>>;
     fn delete_play(executor: E, id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<()>>;
 }
 
@@ -419,13 +420,28 @@ where
         ).execute(executor).await?;
         Ok(())
     }
-    async fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>> {
+    async fn cursor_plays(executor: E, user_id: i64, create_before: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>> {
         sqlx::query_as!(
             SongPlay,
             "SELECT * FROM song_plays WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
-            user_id,
-            max_create_time,
-            size as i64
+            user_id, create_before, size as i64
+        ).fetch_all(executor).await
+    }
+
+    /// Very heavy SQL
+    async fn cursor_plays_distinct_latest(executor: E, user_id: i64, create_before: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>> {
+        sqlx::query_as!(
+            SongPlay,
+            "SELECT id, song_id, user_id, anonymous_uid, create_time FROM (
+                SELECT id, song_id, user_id, anonymous_uid, create_time,
+                       ROW_NUMBER() OVER (PARTITION BY song_id ORDER BY create_time DESC) AS rn
+                FROM song_plays
+                WHERE user_id = $1 AND create_time < $2
+            ) t
+            WHERE rn = 1
+            ORDER BY create_time DESC
+            LIMIT $3",
+            user_id, create_before, size as i64
         ).fetch_all(executor).await
     }
 
