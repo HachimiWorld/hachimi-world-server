@@ -29,8 +29,10 @@ where
         todo!()
     }
 
-    async fn page(_executor: E, _page: i64, _size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        todo!()
+    async fn page(executor: E, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        sqlx::query_as!(Self::Entity, "SELECT * FROM version ORDER BY release_time DESC LIMIT $1 OFFSET $2", page_size, page_index * page_size)
+            .fetch_all(executor)
+            .await
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
@@ -93,6 +95,26 @@ impl<'e> VersionDao {
     pub async fn get_latest_version(executor: impl PgExecutor<'e>, variant: &str, end_time: DateTime<Utc>) -> sqlx::Result<Option<Version>> {
         sqlx::query_as!(Version, "SELECT * FROM version WHERE variant = $1 AND release_time <= $2 ORDER BY release_time DESC LIMIT 1", variant, end_time)
             .fetch_optional(executor)
+            .await
+    }
+
+    pub async fn count(executor: impl PgExecutor<'e>, variant: Option<&str>) -> sqlx::Result<i64> {
+        if let Some(variant) = variant {
+            sqlx::query!("SELECT COUNT(*) FROM version WHERE variant = $1", variant)
+                .fetch_one(executor)
+                .await
+                .map(|x| x.count.unwrap_or(0))
+        } else {
+            sqlx::query!("SELECT COUNT(*) FROM version")
+                .fetch_one(executor)
+                .await
+                .map(|x| x.count.unwrap_or(0))
+        }
+    }
+
+    pub async fn page_by_variant(executor: impl PgExecutor<'e>, variant: &str, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Version>> {
+        sqlx::query_as!(Version, "SELECT * FROM version WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3", variant, page_size, page_index * page_size)
+            .fetch_all(executor)
             .await
     }
 }

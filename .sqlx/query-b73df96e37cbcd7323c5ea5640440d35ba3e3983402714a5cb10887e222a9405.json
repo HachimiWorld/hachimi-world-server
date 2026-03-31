@@ -1,0 +1,72 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM version WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "version_name",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "version_number",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 3,
+        "name": "changelog",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "variant",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 5,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "release_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 8,
+        "name": "update_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b73df96e37cbcd7323c5ea5640440d35ba3e3983402714a5cb10887e222a9405"
+}

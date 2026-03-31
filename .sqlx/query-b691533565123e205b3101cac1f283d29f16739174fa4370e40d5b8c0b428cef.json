@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT id FROM songs TABLESAMPLE SYSTEM_ROWS(30)",
+  "query": "SELECT COUNT(*) FROM version",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "id",
+        "name": "count",
         "type_info": "Int8"
       }
     ],
@@ -13,8 +13,8 @@
       "Left": []
     },
     "nullable": [
-      false
+      null
     ]
   },
-  "hash": "e2813647180ec6d23069a92a94c8132caf5889767e805abc1bf86451c200b80c"
+  "hash": "b691533565123e205b3101cac1f283d29f16739174fa4370e40d5b8c0b428cef"
 }

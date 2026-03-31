@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
         .route("/server", get(server))
         .route("/latest", get(latest_version))
         .route("/latest_batch", post(latest_version_batch))
+        .route("/page", get(page_versions))
         .route("/publish", post(publish_version))
         .route("/delete", post(delete_version))
 }
@@ -91,6 +92,55 @@ async fn latest_version_batch(state: State<AppState>, req: Json<LatestVersionBat
         }
     }
     ok!(result)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PageVersionsReq {
+    pub variant: Option<String>,
+    pub page_index: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PageVersionsResp {
+    pub data: Vec<LatestVersionResp>,
+    pub page_index: i64,
+    pub page_size: i64,
+    pub total: i64,
+}
+
+async fn page_versions(state: State<AppState>, req: Query<PageVersionsReq>) -> WebResult<PageVersionsResp> {
+    let page_index = req.page_index.max(0);
+    let page_size = req.page_size.clamp(1, 50);
+
+    let (versions, total) = if let Some(variant) = &req.variant {
+        let versions = VersionDao::page_by_variant(&state.sql_pool, variant, page_index, page_size).await?;
+        let total = VersionDao::count(&state.sql_pool, Some(variant.as_str())).await?;
+        (versions, total)
+    } else {
+        let versions = VersionDao::page(&state.sql_pool, page_index, page_size).await?;
+        let total = VersionDao::count(&state.sql_pool, None).await?;
+        (versions, total)
+    };
+
+    let data = versions
+        .into_iter()
+        .map(|v| LatestVersionResp {
+            variant: v.variant,
+            version_name: v.version_name,
+            version_number: v.version_number,
+            changelog: v.changelog,
+            url: v.url,
+            release_time: v.release_time,
+        })
+        .collect();
+
+    ok!(PageVersionsResp {
+        data,
+        page_index,
+        page_size,
+        total,
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
