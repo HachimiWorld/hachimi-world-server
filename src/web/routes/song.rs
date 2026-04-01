@@ -142,19 +142,19 @@ async fn page_by_user(
     }
 
     let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, page, size).await?;
+    let song_ids = songs.iter().map(|x| x.id).collect::<Vec<i64>>();
     let total = SongDao::count_by_user(&state.sql_pool, req.user_id).await?;
 
     let songs = song::get_public_detail_with_cache(
         state.redis_conn.clone(),
         &state.sql_pool,
-        &songs.iter().map(|x| x.id).collect::<Vec<_>>(),
+        &song_ids,
     ).await?;
-    let songs: Vec<PublicSongDetail> = songs.into_iter().map(|(_, v)| v).collect_vec();
-
+    let songs: Vec<PublicSongDetail> = song_ids.iter().filter_map(|id| songs.get(id).cloned()).collect();
     let resp = PageByUserResp { songs, total, page, size };
 
     // Cache for 5 minutes
-    let _: () = set_page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size, resp.clone()).await?;
+    set_page_by_user_cache(state.redis_conn.clone(), req.user_id, page, size, resp.clone()).await?;
 
     drop(lock);
     ok!(resp)
