@@ -149,6 +149,9 @@ pub async fn create(
     mut state: State<AppState>,
     req: Json<CreateReq>,
 ) -> WebResult<CreateResp> {
+    // Only contributors can create posts
+    contributor::ensure_contributor(&state, claims.uid()).await?;
+
     // Validate input
     if req.title.trim().is_empty() || req.title.chars().count() > 200 {
         err!("invalid_title", "Title is invalid")
