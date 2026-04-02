@@ -25,11 +25,11 @@ use std::collections::HashMap;
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        // @since 250121 @experimental
+        // @since 260121
         .route("/detail", get(detail))
         .route("/detail_private", get(detail_private))
         .route("/list", get(list))
-        // @since 250121 @experimental
+        // @since 260121
         .route("/list_public_by_user", get(list_public_by_user))
         .route("/list_containing", get(list_containing))
         .route("/create", post(create))
@@ -38,15 +38,15 @@ pub fn router() -> Router<AppState> {
         .route("/add_song", post(add_song))
         .route("/remove_song", post(remove_song))
         .route("/change_order", post(change_order))
-        // @since 250121 @experimental
+        // @since 260121
         .route("/search", get(search))
-        // @since 250122 @experimental
+        // @since 260122
         .route("/favorite/page", get(page_favorites))
-        // @since 250122 @experimental
+        // @since 260122
         .route("/favorite/add", post(add_favorite))
-        // @since 250122 @experimental
+        // @since 260122
         .route("/favorite/remove", post(remove_favorite))
-        // @since 250122 @experimental
+        // @since 260122
         .route("/favorite/check", get(check_favorite))
 }
 
@@ -78,7 +78,7 @@ pub struct SongItem {
     pub add_time: DateTime<Utc>,
 }
 
-/// @since 250121
+/// @since 260121
 #[framed]
 async fn detail(
     claims: Claims,

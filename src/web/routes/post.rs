@@ -17,17 +17,17 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
-        // @since 260125 @experimental
+        // @since 260125
         .route("/page", get(page))
-        // @since 260125 @experimental
+        // @since 260125
         .route("/detail", get(detail))
-        // @since 260125 @experimental
+        // @since 260125
         .route("/create", post(create))
-        // @since 260125 @experimental
+        // @since 260125
         .route("/edit", post(edit))
-        // @since 260125 @experimental
+        // @since 260125
         .route("/delete", post(delete))
-        // @since 260125 @experimental
+        // @since 260125
         .route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
 }
 
