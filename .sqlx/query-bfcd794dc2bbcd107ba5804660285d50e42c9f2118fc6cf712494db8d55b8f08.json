@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_connection_accounts SET provider_account_id = $1, provider_account_name = $2, public = $3, update_time = $4 WHERE user_id = $5 AND provider_type = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bfcd794dc2bbcd107ba5804660285d50e42c9f2118fc6cf712494db8d55b8f08"
+}

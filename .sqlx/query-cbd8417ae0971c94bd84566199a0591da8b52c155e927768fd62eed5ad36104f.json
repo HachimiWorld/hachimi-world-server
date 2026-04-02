@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_connection_accounts WHERE user_id = $1 AND provider_type = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "cbd8417ae0971c94bd84566199a0591da8b52c155e927768fd62eed5ad36104f"
+}

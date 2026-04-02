@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO user_connection_accounts(user_id, provider_type, provider_account_id, provider_account_name, public, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Text",
+        "Text",
+        "Bool",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "0ce3c0ac8dd1112a0d7bfc8db8a162695eb4c3afd0fe2b615140551b6492d5f1"
+}

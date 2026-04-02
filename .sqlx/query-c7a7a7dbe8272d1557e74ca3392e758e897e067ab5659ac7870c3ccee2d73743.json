@@ -1,0 +1,59 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM user_connection_accounts WHERE user_id = $1 AND provider_type = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_type",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_account_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_account_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "public",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "create_time",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "update_time",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "c7a7a7dbe8272d1557e74ca3392e758e897e067ab5659ac7870c3ccee2d73743"
+}
