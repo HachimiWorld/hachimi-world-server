@@ -52,6 +52,7 @@ replaygain = "1.0.1"
 chrono-tz = "0.10.4"
 serde_urlencoded = "0.7.1"
 sitemap-rs = "0.4.0"
+bilibili-api-rs = "0.3.9"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"

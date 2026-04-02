@@ -1,6 +1,7 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::search::user::UserDocument;
+use crate::service::connection_account::VerifyChallengeError;
 use crate::service::upload::ResizeType;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
@@ -14,7 +15,6 @@ use axum::{extract::State, routing::get, Json, Router};
 use chrono::Utc;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -23,18 +23,27 @@ pub fn router() -> Router<AppState> {
         .route("/update_profile", post(update_profile))
         .route("/set_avatar", post(set_avatar).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .route("/search", get(search))
+        // @since 260402 @experimental
+        .nest("/connection", Router::new()
+            .route("/list", get(connection_list))
+            .route("/unlink", post(connection_unlink))
+            .route("/set_visibility", post(connection_set_visibility))
+            .route("/sync", post(connection_sync))
+            .route("/generate_challenge", post(connection_generate_challenge))
+            .route("/verify_challenge", post(connection_verify_challenge)),
+        )
 }
 
 async fn greet() -> WebResult<&'static str> {
     ok!("Hello from Hachimi World!")
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetProfileReq {
     pub uid: i64,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicUserProfile {
     pub uid: i64,
     pub username: String,
@@ -42,6 +51,15 @@ pub struct PublicUserProfile {
     pub bio: Option<String>,
     pub gender: Option<i32>,
     pub is_banned: bool,
+    /// @since 260402
+    pub connected_accounts: Vec<ConnectedAccountItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedAccountItem {
+    pub r#type: String,
+    pub id: String,
+    pub name: String,
 }
 
 async fn get_profile(
@@ -55,6 +73,11 @@ async fn get_profile(
         err!("not_found", "User not found")
     };
 
+    let connected_accounts = service::connection_account::list_connections(
+        &state.sql_pool, state.redis_conn.clone(),
+        req.uid, true,
+    ).await?;
+
     let mapped = PublicUserProfile {
         uid: user.id,
         username: user.username,
@@ -62,6 +85,11 @@ async fn get_profile(
         bio: user.bio,
         gender: user.gender,
         is_banned: user.is_banned,
+        connected_accounts: connected_accounts.into_iter().map(|c| ConnectedAccountItem {
+            r#type: c.r#type,
+            id: c.id,
+            name: c.name,
+        }).collect_vec(),
     };
 
     ok!(mapped)
@@ -226,4 +254,136 @@ async fn search(
         limit: result.hits_info.limit,
         offset: result.hits_info.offset,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionResp {
+    pub items: Vec<ConnectionItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionItem {
+    pub r#type: String,
+    pub id: String,
+    pub name: String,
+    pub public: bool,
+}
+
+async fn connection_list(
+    claims: Claims,
+    state: State<AppState>,
+) -> WebResult<ConnectionResp> {
+    let connections = service::connection_account::list_connections(
+        &state.sql_pool, state.redis_conn.clone(),
+        claims.uid(), false,
+    ).await?;
+
+    let mapped_items = connections.into_iter().map(|c| ConnectionItem {
+        r#type: c.r#type,
+        id: c.id,
+        name: c.name,
+        public: c.public,
+    }).collect_vec();
+
+    ok!(ConnectionResp {
+        items: mapped_items
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionUnlinkReq {
+    pub r#type: String,
+}
+
+async fn connection_unlink(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<ConnectionUnlinkReq>,
+) -> WebResult<()> {
+    service::connection_account::unlink(&state.sql_pool, state.redis_conn.clone(), claims.uid(), &req.r#type).await?;
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionSetVisibilityReq {
+    pub r#type: String,
+    pub visible: bool,
+}
+
+async fn connection_set_visibility(
+    claims: Claims,
+    req: Json<ConnectionSetVisibilityReq>,
+) -> WebResult<()> {
+    // TODO
+    ok!(())
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateChallengeReq {
+    pub r#type: String,
+    pub provider_account_id: String
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateChallengeResp {
+    pub challenge_id: String,
+    pub challenge: String,
+}
+async fn connection_generate_challenge(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<GenerateChallengeReq>,
+) -> WebResult<GenerateChallengeResp> {
+    let challenge = service::connection_account::generate_challenge(
+        state.redis_conn.clone(),
+        claims.uid(),
+        &req.r#type,
+        &req.provider_account_id
+    ).await?;
+    ok!(GenerateChallengeResp {
+        challenge_id: challenge.challenge_id,
+        challenge: challenge.challenge
+    })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerifyChallengeReq {
+    pub challenge_id: String
+}
+
+async fn connection_verify_challenge(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<VerifyChallengeReq>,
+) -> WebResult<()> {
+    match service::connection_account::verify_challenge_and_link(
+        &state.sql_pool,
+        state.red_lock.clone(),
+        state.redis_conn.clone(),
+        claims.uid(),
+        &req.challenge_id
+    ).await {
+        Ok(_) => ok!(()),
+        Err(e) => match e {
+            VerifyChallengeError::ChallengeNotFound => err!("challenge_not_found", "{}", e.to_string()),
+            VerifyChallengeError::ChallengeMismatch => err!("challenge_mismatch", "{}", e.to_string()),
+            VerifyChallengeError::UnsupportedProviderType => err!("unsupported_provider_type", "{}", e.to_string()),
+            VerifyChallengeError::AlreadyLinked => err!("already_linked", "{}", &e.to_string()),
+            VerifyChallengeError::Other(e) => Err(e)?
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectionSyncReq {
+    r#type: String,
+}
+
+async fn connection_sync(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<ConnectionSyncReq>,
+) -> WebResult<()> {
+    service::connection_account::sync(&state.sql_pool, claims.uid(), &req.r#type).await?;
+    ok!(())
 }

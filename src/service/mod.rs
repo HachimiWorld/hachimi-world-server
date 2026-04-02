@@ -11,3 +11,4 @@ pub mod tag_recommend;
 pub mod user;
 pub mod playlist;
 pub mod contributor;
+pub mod connection_account;

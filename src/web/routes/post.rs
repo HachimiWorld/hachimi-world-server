@@ -78,6 +78,7 @@ pub async fn page(
                     bio: None,
                     gender: None,
                     is_banned: false,
+                    connected_accounts: vec![],
                 }).clone(),
             title: p.title,
             content: "".to_string(),
@@ -111,6 +112,7 @@ pub async fn detail(
                 bio: None,
                 gender: None,
                 is_banned: false,
+                connected_accounts: vec![],
             });
         let item = PostItem {
             id: p.id,
