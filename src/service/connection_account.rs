@@ -80,6 +80,7 @@ struct ChallengeCacheData {
 pub struct Challenge {
     pub challenge_id: String,
     pub challenge: String,
+    pub provider_account_name: String
 }
 
 const CHALLENGE_CHARS: [char; 13] = ['哈', '基', '米', '南', '北', '绿', '豆', '哦', '马', '自', '立', '曼', '波'];
@@ -93,26 +94,55 @@ fn random_challenge_string() -> String {
     challenge
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum GenerateChallengeError {
+    #[error("Unsupported provider type")]
+    UnsupportedProviderType,
+    #[error("Invalid provider account id")]
+    InvalidProviderAccountId,
+    #[error("Provider account not found")]
+    ProviderAccountNotFound,
+    #[error("Failed to call provider API: {0}")]
+    ProviderApiError(anyhow::Error),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
 /// Generate a challenge string for the user to verify ownership of the account on the provider side.
 pub async fn generate_challenge(
     mut redis: ConnectionManager,
     uid: i64, provider_type: &str, provider_account_id: &str,
-) -> anyhow::Result<Challenge> {
-    let challenge = random_challenge_string();
+) -> Result<Challenge, GenerateChallengeError> {
     match provider_type {
-        "bilibili" => {
+        "bilibili" => generate_challenge_for_bilibili(&mut redis, uid, provider_account_id).await,
+        _ => Err(GenerateChallengeError::UnsupportedProviderType),
+    }
+}
+
+async fn generate_challenge_for_bilibili(
+    redis: &mut ConnectionManager,
+    uid: i64, bili_uid: &str,
+) -> Result<Challenge, GenerateChallengeError> {
+    let bili_int_id = bili_uid.parse::<i64>()
+        .map_err(|_| GenerateChallengeError::InvalidProviderAccountId)?;
+
+    let bili_profile_result = bilibili::get_user_profile(bili_int_id).await;
+    match bili_profile_result {
+        Ok(Some(x)) => {
+            let challenge = random_challenge_string();
             let challenge_id = Uuid::new_v4().to_string();
             let data = ChallengeCacheData {
                 challenge_id: challenge_id.clone(),
                 uid,
-                provider_type: provider_type.to_string(),
-                provider_account_id: provider_account_id.to_string(),
+                provider_type: "bilibili".to_string(),
+                provider_account_id: bili_uid.to_string(),
                 challenge: challenge.clone(),
             };
-            set_challenge_cache(&mut redis, &challenge_id, &data).await?;
-            Ok(Challenge { challenge_id, challenge })
+            set_challenge_cache(redis, &challenge_id, &data).await?;
+            Ok(Challenge { challenge_id, challenge, provider_account_name: x.name })
         }
-        _ => anyhow::bail!("Unsupported provider type"),
+        Ok(None) => Err(GenerateChallengeError::ProviderAccountNotFound),
+        Err(e) => Err(GenerateChallengeError::ProviderApiError(e.into())),
     }
 }
 
@@ -126,6 +156,10 @@ pub enum VerifyChallengeError {
     UnsupportedProviderType,
     #[error("Account already linked")]
     AlreadyLinked,
+    #[error("Provider account not found")]
+    ProviderAccountNotFound,
+    #[error("Failed to call provider API: {0}")]
+    ProviderApiError(anyhow::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -153,15 +187,27 @@ pub async fn verify_challenge_and_link(
     }
 
     let bili_int_id = challenge.provider_account_id.parse::<i64>().with_context(|| "Bad provider account id")?;
-    let bili_profile = bilibili::get_user_profile(bili_int_id).await?;
-    let verified = bili_profile.bio.ends_with(&challenge.challenge);
-    if verified {
-        link_account(sql, uid, &challenge.provider_type, &challenge.provider_account_id, &bili_profile.name, true).await?;
-        invalidate_connections_cache(&mut redis, uid).await?;
-        drop(mutex);
-        Ok(())
-    } else {
-        Err(VerifyChallengeError::ChallengeMismatch)?
+    let bili_profile = bilibili::get_user_profile(bili_int_id).await;
+
+    match bili_profile {
+        Ok(Some(x)) => {
+            let verified = x.bio.ends_with(&challenge.challenge);
+            if verified {
+                link_account(sql, uid, &challenge.provider_type, &challenge.provider_account_id, &x.name, true).await?;
+                invalidate_connections_cache(&mut redis, uid).await?;
+                drop(mutex);
+                Ok(())
+            } else {
+                Err(VerifyChallengeError::ChallengeMismatch)?
+            }
+        }
+        Ok(None) => {
+            Err(VerifyChallengeError::ProviderAccountNotFound)?
+        }
+        Err(e) => {
+            warn!(challenge_id=challenge.challenge_id, provider_account_id=challenge.provider_account_id, error=?e, "Failed to get provider account info");
+            Err(VerifyChallengeError::ProviderApiError(e.into()))?
+        }
     }
 }
 
@@ -169,7 +215,7 @@ pub async fn unlink(
     sql: &PgPool,
     mut redis: ConnectionManager,
     uid: i64,
-    provider_type: &str
+    provider_type: &str,
 ) -> anyhow::Result<()> {
     UserConnectionAccountDao::delete(sql, uid, provider_type).await?;
     invalidate_connections_cache(&mut redis, uid).await?;
@@ -227,22 +273,34 @@ fn generate_challenge_cache_key(challenge_id: &str) -> String {
     format!("user_account_connections:challenge:{}", challenge_id)
 }
 
-pub async fn sync(sql: &PgPool, uid: i64, provider_type: &String) -> anyhow::Result<()>{
+pub async fn sync(sql: &PgPool, uid: i64, provider_type: &String) -> anyhow::Result<()> {
     match provider_type.as_str() {
         "bilibili" => {
             if let Ok(Some(connection)) = UserConnectionAccountDao::get_by_user_id(sql, uid, provider_type).await &&
                 let Ok(bili_int_id) = connection.provider_account_id.parse::<i64>() {
-                let bili_profile = bilibili::get_user_profile(bili_int_id).await?;
-                if bili_profile.name != connection.provider_account_name {
-                    UserConnectionAccountDao::update(sql, &UserConnectionAccount {
-                        user_id: uid,
-                        provider_type: provider_type.to_string(),
-                        provider_account_id: connection.provider_account_id.clone(),
-                        provider_account_name: bili_profile.name,
-                        public: connection.public,
-                        create_time: connection.create_time,
-                        update_time: Utc::now(),
-                    }).await?;
+                let bili_profile_resp = bilibili::get_user_profile(bili_int_id).await;
+                match bili_profile_resp {
+                    Ok(Some(bili_profile)) => {
+                        if bili_profile.name != connection.provider_account_name {
+                            UserConnectionAccountDao::update(sql, &UserConnectionAccount {
+                                user_id: uid,
+                                provider_type: provider_type.to_string(),
+                                provider_account_id: connection.provider_account_id.clone(),
+                                provider_account_name: bili_profile.name,
+                                public: connection.public,
+                                create_time: connection.create_time,
+                                update_time: Utc::now(),
+                            }).await?;
+                        }
+                    }
+                    Ok(None) => {
+                        warn!(user_id=uid, provider_type=provider_type, provider_account_id=connection.provider_account_id, "Provider account not found during sync");
+                        bail!("Provider account not found");
+                    }
+                    Err(e) => {
+                        warn!(user_id=uid, provider_type=provider_type, provider_account_id=connection.provider_account_id, error=?e, "Failed to get provider account info during sync");
+                        bail!("Failed to call provider API");
+                    }
                 }
             }
         }

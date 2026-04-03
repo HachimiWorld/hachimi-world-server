@@ -1,7 +1,7 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::search::user::UserDocument;
-use crate::service::connection_account::VerifyChallengeError;
+use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
 use crate::service::upload::ResizeType;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
@@ -321,34 +321,47 @@ async fn connection_set_visibility(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateChallengeReq {
     pub r#type: String,
-    pub provider_account_id: String
+    pub provider_account_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GenerateChallengeResp {
     pub challenge_id: String,
     pub challenge: String,
+    pub provider_account_name: String,
 }
+
 async fn connection_generate_challenge(
     claims: Claims,
     state: State<AppState>,
     req: Json<GenerateChallengeReq>,
 ) -> WebResult<GenerateChallengeResp> {
-    let challenge = service::connection_account::generate_challenge(
+    match service::connection_account::generate_challenge(
         state.redis_conn.clone(),
         claims.uid(),
         &req.r#type,
-        &req.provider_account_id
-    ).await?;
-    ok!(GenerateChallengeResp {
-        challenge_id: challenge.challenge_id,
-        challenge: challenge.challenge
-    })
+        &req.provider_account_id,
+    ).await {
+        Ok(challenge) => {
+            ok!(GenerateChallengeResp {
+                challenge_id: challenge.challenge_id,
+                challenge: challenge.challenge,
+                provider_account_name: challenge.provider_account_name
+            })
+        }
+        Err(x) => match x {
+            GenerateChallengeError::UnsupportedProviderType => err!("unsupported_provider_type", "{}", x.to_string()),
+            GenerateChallengeError::ProviderApiError(_) => err!("provider_api_error", "{}", x.to_string()),
+            GenerateChallengeError::InvalidProviderAccountId => err!("invalid_provider_account_id", "{}", x.to_string()),
+            GenerateChallengeError::ProviderAccountNotFound => err!("provider_account_not_found", "{}", x.to_string()),
+            GenerateChallengeError::Other(e) => Err(e)?,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyChallengeReq {
-    pub challenge_id: String
+    pub challenge_id: String,
 }
 
 async fn connection_verify_challenge(
@@ -361,7 +374,7 @@ async fn connection_verify_challenge(
         state.red_lock.clone(),
         state.redis_conn.clone(),
         claims.uid(),
-        &req.challenge_id
+        &req.challenge_id,
     ).await {
         Ok(_) => ok!(()),
         Err(e) => match e {
@@ -369,7 +382,9 @@ async fn connection_verify_challenge(
             VerifyChallengeError::ChallengeMismatch => err!("challenge_mismatch", "{}", e.to_string()),
             VerifyChallengeError::UnsupportedProviderType => err!("unsupported_provider_type", "{}", e.to_string()),
             VerifyChallengeError::AlreadyLinked => err!("already_linked", "{}", &e.to_string()),
-            VerifyChallengeError::Other(e) => Err(e)?
+            VerifyChallengeError::ProviderAccountNotFound => err!("provider_account_not_found", "{}", e.to_string()),
+            VerifyChallengeError::ProviderApiError(_) => err!("provider_api_error", "{}", e.to_string()),
+            VerifyChallengeError::Other(e) => Err(e)?,
         }
     }
 }
