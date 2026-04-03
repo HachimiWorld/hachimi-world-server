@@ -190,6 +190,9 @@ pub async fn get_public_detail_with_cache_legacy(
     sql_pool: &PgPool,
     song_id_list: &[i64],
 ) -> Result<Vec<Option<PublicSongDetail>>, anyhow::Error> {
+    if song_id_list.is_empty() { 
+        return Ok(vec![]);
+    }
     let cache_keys = song_id_list.iter().map(|id| format!("song:detail:{}", id))
         .collect::<Vec<_>>();
 
@@ -253,7 +256,7 @@ async fn get_from_db_by_display_id(
         return Ok(None)
     };
 
-    compose_from_db(redis, sql_pool, song).await
+    assemble_from_db(redis, sql_pool, song).await
 }
 
 async fn get_from_db_by_id(
@@ -267,22 +270,30 @@ async fn get_from_db_by_id(
         // Song does not exist in the database
         return Ok(None)
     };
-    compose_from_db(redis, sql_pool, song).await
+    assemble_from_db(redis, sql_pool, song).await
 }
 
 async fn get_from_db_by_ids(
     sql_pool: &PgPool,
     song_ids: &[i64],
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
+    if song_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    
     let songs = SongDao::list_by_ids(sql_pool, song_ids).await?;
 
-    compose_from_db_batch(sql_pool, &songs).await
+    assemble_from_db_batch(sql_pool, &songs).await
 }
 
-async fn compose_from_db_batch(
+async fn assemble_from_db_batch(
     sql_pool: &PgPool,
     songs: &[Song],
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
+    if songs.is_empty() { 
+        return Ok(vec![]);
+    }
+    
     // WTF did I write?
     let song_ids = Arc::new(songs.iter().map(|x| x.id).collect_vec());
 
@@ -419,7 +430,7 @@ async fn compose_from_db_batch(
     Ok(result)
 }
 
-async fn compose_from_db(
+async fn assemble_from_db(
     redis: &ConnectionManager,
     sql_pool: &PgPool,
     song: Song,

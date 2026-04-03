@@ -13,6 +13,10 @@ pub async fn get_public_profile(
     sql_pool: &PgPool,
     user_ids: &[i64],
 ) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+    if user_ids.is_empty() { 
+        return Ok(HashMap::new());
+    }
+    
     let unique_uids = user_ids.iter().copied().unique().collect_vec();
     let mut cached_profiles = get_from_cache(redis.clone(), &unique_uids).await?;
 
@@ -61,6 +65,9 @@ fn gen_cache_key(uid: i64) -> String {
 }
 
 async fn get_from_cache(mut redis: ConnectionManager, user_ids: &[i64]) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+    if user_ids.is_empty() { 
+        return Ok(HashMap::new());
+    }
     // mget
     let keys: Vec<String> = user_ids.iter().map(|uid| gen_cache_key(*uid)).collect();
     let values: Vec<Option<String>> = redis.mget(&keys).await?;
@@ -73,6 +80,10 @@ async fn get_from_cache(mut redis: ConnectionManager, user_ids: &[i64]) -> anyho
 }
 
 async fn save_to_cache(mut redis: ConnectionManager, profiles: &HashMap<i64, PublicUserProfile>) -> anyhow::Result<()> {
+    if profiles.is_empty() { 
+        return Ok(());
+    }
+    
     // mset
     let cache_key_value_pairs: Vec<(String, String)> = profiles.iter()
         .filter_map(

@@ -11,6 +11,10 @@ pub async fn get_song_likes_batch(
     sql_pool: &PgPool,
     song_ids: &[i64],
 ) -> anyhow::Result<HashMap<i64, i64>>{
+    if song_ids.is_empty() {
+        return Ok(HashMap::new())
+    }
+
     let mut redis = redis_conn.clone();
     let likes_cache = get_likes_cache_batch(&mut redis, song_ids).await?;
 
@@ -151,6 +155,8 @@ async fn get_likes_cache(redis: &mut ConnectionManager, song_id: i64) -> anyhow:
 }
 
 async fn get_likes_cache_batch(redis: &mut ConnectionManager, song_ids: &[i64]) -> anyhow::Result<HashMap<i64, Option<i64>>> {
+    if song_ids.is_empty() { return Ok(HashMap::new()) }
+
     let keys: Vec<String> = song_ids.iter().map(|id| format!("song:likes:{}", id)).collect();
     let values: Vec<Option<i64>> = redis.mget(keys).await?;
     let result: HashMap<i64, Option<i64>> = song_ids.iter().cloned().zip(values.into_iter()).collect();
@@ -163,6 +169,8 @@ async fn set_likes_cache(redis: &mut ConnectionManager, song_id: i64, value: i64
 }
 
 async fn set_likes_cache_batch(redis: &mut ConnectionManager, values: &[(i64, i64)]) -> anyhow::Result<()> {
+    if values.is_empty() { return Ok(()) }
+
     let entries = values.iter().map(|(id, likes)|
         (format!("song:likes:{}", id), likes)
     ).collect_vec();
