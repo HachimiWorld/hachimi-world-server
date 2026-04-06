@@ -6,6 +6,7 @@ pub mod song;
 pub mod song_tag;
 pub mod playlist;
 pub mod song_publishing_review;
+pub mod song_publishing_review_comment;
 pub mod version;
 pub mod creator;
 pub mod post;

@@ -7,7 +7,7 @@ use chrono::Utc;
 use hachimi_world_server::db::creator::{Creator, CreatorDao};
 use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
-use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagSearchReq, TagSearchResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
@@ -321,15 +321,15 @@ async fn test_publish_with_jmid() {
 async fn publish_template(env: &TestEnvironment) -> PublishReq {
     // Upload a song
     let upload_resp: UploadAudioFileResp = env.api
-        .post_raw("/song/upload_audio_file")
-        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test.mp3").unwrap())))
+        .post_raw("/publish/upload_audio_file")
+        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test_res/test.mp3").unwrap())))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     // Upload a cover
     let upload_img_resp: UploadImageResp = env
         .api
-        .post_raw("/song/upload_cover_image")
-        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test.webp").unwrap())))
+        .post_raw("/publish/upload_cover_image")
+        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test_Res/test.webp").unwrap())))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     PublishReq {
@@ -357,4 +357,82 @@ async fn publish_template(env: &TestEnvironment) -> PublishReq {
         jmid: Some("JM-ABCD-000".into()),
         comment: Some("Test comment in review".into()),
     }
+}
+
+#[tokio::test]
+async fn test_review_comments() {
+    with_test_environment(|mut env| async move {
+        let uploader = with_new_random_test_user(&mut env).await;
+        let publish_resp: PublishResp = env.api.post("/publish/publish", &publish_template(&env).await)
+            .await
+            .parse_resp()
+            .await
+            .unwrap();
+
+        let maintainer = with_test_contributor_user(&mut env).await;
+        let maintainer_comment = "Maintainer comment for testing".to_string();
+        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
+            review_id: publish_resp.review_id,
+            content: maintainer_comment.clone(),
+        }).await;
+        assert_is_ok(resp).await;
+
+        env.api.set_token(uploader.token.access_token.clone());
+        let uploader_comment = "Uploader reply for testing".to_string();
+        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
+            review_id: publish_resp.review_id,
+            content: uploader_comment.clone(),
+        }).await;
+        assert_is_ok(resp).await;
+
+        let resp: ReviewCommentListResp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
+            review_id: publish_resp.review_id,
+            page_index: 0,
+            page_size: 20,
+        }).await.parse_resp().await.unwrap();
+        assert_eq!(resp.data.len(), 2);
+        assert!(resp.data.iter().any(|x| x.content == maintainer_comment));
+        assert!(resp.data.iter().any(|x| x.content == uploader_comment));
+
+        let uploader_comment_id = resp.data.iter()
+            .find(|x| x.content == uploader_comment)
+            .map(|x| x.id)
+            .unwrap();
+
+        let other_user = with_new_random_test_user(&mut env).await;
+        let resp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
+            review_id: publish_resp.review_id,
+            page_index: 0,
+            page_size: 20,
+        }).await;
+        assert_is_err(resp).await;
+
+        env.api.set_token(uploader.token.access_token.clone());
+        let resp = env.api.post("/publish/review/comment/delete", &ReviewCommentDeleteReq {
+            comment_id: uploader_comment_id,
+        }).await;
+        assert_is_ok(resp).await;
+
+        env.api.set_token(maintainer.token.access_token.clone());
+        let resp: ReviewCommentListResp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
+            review_id: publish_resp.review_id,
+            page_index: 0,
+            page_size: 20,
+        }).await.parse_resp().await.unwrap();
+        assert_eq!(resp.data.len(), 1);
+        assert_eq!(resp.data[0].content, maintainer_comment);
+
+        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
+            review_id: publish_resp.review_id,
+            content: " ".to_string(),
+        }).await;
+        assert_is_err(resp).await;
+
+        env.api.set_token(other_user.token.access_token);
+        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
+            review_id: publish_resp.review_id,
+            content: "random user comment".to_string(),
+        }).await;
+        assert_is_err(resp).await;
+    }).await;
 }

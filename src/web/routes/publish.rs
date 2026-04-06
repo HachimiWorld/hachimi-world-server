@@ -3,18 +3,20 @@ use crate::config::Config;
 use crate::db::creator::{Creator, CreatorDao};
 use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
+use crate::db::song_publishing_review_comment::{ISongPublishingReviewCommentDao, SongPublishingReviewComment, SongPublishingReviewCommentDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, CrudDao};
-use crate::service::contributor::ensure_contributor;
-use crate::service::mailer;
+use crate::service::contributor::{check_contributor, ensure_contributor, CommunityCfg};
 use crate::service::mailer::EmailConfig;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::upload::{scale_down_to_webp, ResizeType};
+use crate::service::{mailer, user};
 use crate::util::{validate_platforms, IsBlank};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::routes::song::TagItem;
+use crate::web::routes::user::PublicUserProfile;
 use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service};
 use anyhow::Context;
@@ -27,7 +29,7 @@ use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use tracing::{info, warn};
 
@@ -44,10 +46,18 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/review/detail", get(detail))
         .route("/review/approve", post(review_approve))
         .route("/review/reject", post(review_reject))
+        // @since 260406 @experimental
+        .route("/review/comment/create", post(review_comment_create))
+        // @since 260406 @experimental
+        .route("/review/comment/list", get(review_comment_list))
+        // @since 260406 @experimental
+        .route("/review/comment/delete", post(review_comment_delete))
         // .route("/review/modify", post(review_modify))
-        // .route("/review/comment/create", post(review_comment))
-        // .route("/review/comment/list", post())
-        // .route("/review/comment/delete", post())
+        // .route("/review/suggestion/create", post(review_suggestion_create))
+        // .route("/review/suggestion/delete", post(review_suggestion_delete))
+        // .route("/review/suggestion/list", get(review_suggestion_list))
+        // .route("/review/suggestion/accept", post(review_suggestion_accept))
+        // .route("/review/suggestion/reject", post(review_suggestion_reject))
         .route("/jmid/check_prefix", get(jmid_check_prefix))
         .route("/jmid/check", get(jmid_check))
         .route("/jmid/mine", get(jmid_mine))
@@ -878,10 +888,7 @@ async fn detail(
 ) -> WebResult<DetailResp> {
     let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?;
     if let Some(review) = review {
-        // Permission check
-        if review.user_id != claims.uid() {
-            ensure_contributor(&state, claims.uid()).await?;
-        }
+        ensure_review_visible(&state, &review, claims.uid()).await?;
 
         let data = serde_json::from_value::<InternalSongPublishReviewData>(review.data)
             .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
@@ -947,6 +954,256 @@ async fn detail(
     } else {
         err!("not_found", "Review not found")
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewCommentCreateReq {
+    pub review_id: i64,
+    pub content: String,
+}
+
+async fn review_comment_create(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<ReviewCommentCreateReq>,
+) -> WebResult<()> {
+    if req.content.is_blank() {
+        err!("comment_required", "Comment is required")
+    }
+    if req.content.chars().count() > 1000 {
+        err!("comment_too_long", "Comment is too long")
+    }
+
+    let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    if review.status != song_publishing_review::STATUS_PENDING {
+        err!("review_closed", "The review is already closed")
+    }
+
+    ensure_review_comment_create_permission(&state, &review, claims.uid()).await?;
+
+    let now = Utc::now();
+    let comment = SongPublishingReviewComment {
+        id: 0,
+        review_id: review.id,
+        user_id: claims.uid(),
+        content: req.content.clone(),
+        create_time: now,
+        update_time: now,
+    };
+    SongPublishingReviewCommentDao::insert(&state.sql_pool, &comment).await?;
+
+    let actor = UserDao::get_by_id(&state.sql_pool, claims.uid()).await?
+        .ok_or_else(|| common!("user_not_found", "User not found"))?;
+    let config = state.config.clone();
+    let sql_pool = state.sql_pool.clone();
+    let review_id = review.id;
+    let actor_uid = actor.id;
+    let actor_name = actor.username;
+    let content = req.content.clone();
+    tokio::spawn(async move {
+        send_review_comment_notification(&config, &sql_pool, review_id, actor_uid, &actor_name, &content).await?;
+        Ok::<(), anyhow::Error>(())
+    });
+
+    ok!(())
+}
+
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewCommentListReq {
+    pub review_id: i64,
+    pub page_index: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewCommentListResp {
+    pub data: Vec<ReviewCommentItem>,
+    pub page_index: i64,
+    pub page_size: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewCommentItem {
+    pub id: i64,
+    pub review_id: i64,
+    pub author: Option<PublicUserProfile>,
+    pub content: String,
+    pub create_time: DateTime<Utc>,
+    pub update_time: DateTime<Utc>,
+}
+
+async fn review_comment_list(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<ReviewCommentListReq>,
+) -> WebResult<ReviewCommentListResp> {
+    if req.page_size > 50 {
+        err!("page_size_exceeded", "Page size too large")
+    }
+
+    let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    ensure_review_visible(&state, &review, claims.uid()).await?;
+
+    let comments = SongPublishingReviewCommentDao::page_by_review_id(
+        &state.sql_pool,
+        req.review_id,
+        req.page_index,
+        req.page_size,
+    ).await?;
+    let total = SongPublishingReviewCommentDao::count_by_review_id(&state.sql_pool, req.review_id).await?;
+
+    let mut data = Vec::with_capacity(comments.len());
+    let uids = comments.iter().map(|x| x.user_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids).await?;
+
+    for comment in comments {
+        data.push(ReviewCommentItem {
+            id: comment.id,
+            review_id: comment.review_id,
+            author: users.get(&comment.user_id).cloned(),
+            content: comment.content,
+            create_time: comment.create_time,
+            update_time: comment.update_time,
+        });
+    }
+
+    ok!(ReviewCommentListResp {
+        data,
+        page_index: req.page_index,
+        page_size: req.page_size,
+        total,
+    })
+}
+
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewCommentDeleteReq {
+    pub comment_id: i64,
+}
+
+async fn review_comment_delete(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<ReviewCommentDeleteReq>,
+) -> WebResult<()> {
+    let comment = SongPublishingReviewCommentDao::get_by_id(&state.sql_pool, req.comment_id).await?
+        .ok_or_else(|| common!("not_found", "Comment not found"))?;
+    let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, comment.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    ensure_review_visible(&state, &review, claims.uid()).await?;
+    ensure_review_comment_delete_permission(&state, &comment, claims.uid()).await?;
+    SongPublishingReviewCommentDao::delete_by_id(&state.sql_pool, req.comment_id).await?;
+    ok!(())
+}
+
+async fn ensure_review_visible(
+    state: &AppState,
+    review: &SongPublishingReview,
+    uid: i64,
+) -> Result<(), WebError<CommonError>> {
+    if review.user_id == uid {
+        return Ok(());
+    }
+
+    let is_contributor = check_contributor(
+        &state.config,
+        state.redis_conn.clone(),
+        &state.red_lock,
+        &state.sql_pool,
+        uid,
+    ).await?;
+    if is_contributor {
+        return Ok(());
+    }
+
+    err!("permission_denied", "You are not allowed to view this review")
+}
+
+async fn ensure_review_comment_create_permission(
+    state: &AppState,
+    review: &SongPublishingReview,
+    uid: i64,
+) -> Result<(), WebError<CommonError>> {
+    if review.user_id == uid {
+        return Ok(());
+    }
+
+    let is_contributor = check_contributor(
+        &state.config,
+        state.redis_conn.clone(),
+        &state.red_lock,
+        &state.sql_pool,
+        uid,
+    ).await?;
+    if !is_contributor {
+        err!("permission_denied", "Only the uploader or a contributor can comment")
+    }
+    Ok(())
+}
+
+async fn ensure_review_comment_delete_permission(
+    state: &AppState,
+    comment: &SongPublishingReviewComment,
+    uid: i64,
+) -> Result<(), WebError<CommonError>> {
+    if comment.user_id == uid {
+        return Ok(());
+    }
+
+    let is_contributor = check_contributor(
+        &state.config,
+        state.redis_conn.clone(),
+        &state.red_lock,
+        &state.sql_pool,
+        uid,
+    ).await?;
+    if !is_contributor {
+        err!("permission_denied", "Only the comment author or a contributor can delete comments")
+    }
+    Ok(())
+}
+
+async fn send_review_comment_notification(
+    config: &Config,
+    sql_pool: &PgPool,
+    review_id: i64,
+    actor_uid: i64,
+    actor_name: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    let email_cfg: EmailConfig = config.get_and_parse("email")?;
+    let community_cfg: CommunityCfg = config.get_and_parse("community")?;
+    let review = SongPublishingReviewDao::get_by_id(sql_pool, review_id).await?
+        .with_context(|| format!("Review {} not found", review_id))?;
+    let actor = UserDao::get_by_id(sql_pool, actor_uid).await?
+        .with_context(|| format!("User {} not found", actor_uid))?;
+    let uploader = UserDao::get_by_id(sql_pool, review.user_id).await?
+        .with_context(|| format!("User {} not found", review.user_id))?;
+
+    let mut recipients = HashSet::new();
+    recipients.insert(uploader.email.clone());
+    recipients.extend(community_cfg.contributors);
+    recipients.remove(&actor.email);
+
+    let subject = format!("稿件评论更新：{}", review.song_display_id);
+    let body = format!(
+        "{actor_name} 在稿件 {} 下发表了新评论：\n\n{}",
+        review.song_display_id,
+        content,
+    );
+
+    for email in recipients {
+        mailer::send_notification(&email_cfg, &email, &subject, &body).await?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1318,10 +1575,6 @@ async fn change_jmid(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommunityCfg {
-    pub contributors: Vec<String>,
-}
 
 /// Check whether the `jmid` is available (not used nor locked by other pending SRs).
 pub async fn check_jmid_available(
