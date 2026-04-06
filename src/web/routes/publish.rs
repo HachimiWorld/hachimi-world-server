@@ -4,6 +4,7 @@ use crate::db::creator::{Creator, CreatorDao};
 use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_publishing_review_comment::{ISongPublishingReviewCommentDao, SongPublishingReviewComment, SongPublishingReviewCommentDao};
+use crate::db::song_publishing_review_history::{self, ISongPublishingReviewHistoryDao, SongPublishingReviewHistory, SongPublishingReviewHistoryDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, CrudDao};
@@ -47,12 +48,15 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/review/approve", post(review_approve))
         .route("/review/reject", post(review_reject))
         // @since 260406 @experimental
+        .route("/review/modify", post(review_modify))
+        // @since 260406 @experimental
         .route("/review/comment/create", post(review_comment_create))
         // @since 260406 @experimental
         .route("/review/comment/list", get(review_comment_list))
         // @since 260406 @experimental
         .route("/review/comment/delete", post(review_comment_delete))
-        // .route("/review/modify", post(review_modify))
+        // @since 260406 @experimental
+        .route("/review/history/list", get(review_history_list))
         // .route("/review/suggestion/create", post(review_suggestion_create))
         // .route("/review/suggestion/delete", post(review_suggestion_delete))
         // .route("/review/suggestion/list", get(review_suggestion_list))
@@ -194,11 +198,12 @@ pub async fn publish(
         &req.external_links,
     ).await?;
 
+    let submit_comment = req.comment.clone();
     let review = SongPublishingReview {
         id: 0,
         user_id: claims.uid(),
         song_display_id: jmid.clone(),
-        data: serde_json::to_value(review_data)?,
+        data: serde_json::to_value(&review_data)?,
         submit_time: now,
         update_time: now,
         review_time: None,
@@ -210,6 +215,15 @@ pub async fn publish(
 
     let mut tx = state.sql_pool.begin().await?;
     let review_id = SongPublishingReviewDao::insert(&mut *tx, &review).await?;
+    SongPublishingReviewHistoryDao::insert(&mut *tx, &SongPublishingReviewHistory {
+        id: 0,
+        review_id,
+        user_id: claims.uid(),
+        action_type: song_publishing_review_history::ACTION_SUBMIT,
+        note: submit_comment,
+        snapshot_data: serde_json::to_value(&review_data)?,
+        create_time: now,
+    }).await?;
 
     if create_new_jmid {
         let (jmid_prefix, _) = parse_jmid(&jmid).ok_or_else(|| common!("invalid_jmid", "Invalid jmid"))?;
@@ -539,11 +553,12 @@ pub async fn modify(
         .await?;
 
     // Create the modify SR
+    let submit_comment = req.comment.clone();
     let review = SongPublishingReview {
         id: 0,
         user_id: claims.uid(),
         song_display_id: orig_song.display_id.clone(),
-        data: serde_json::to_value(data)?,
+        data: serde_json::to_value(&data)?,
         submit_time: now,
         update_time: now,
         review_time: None,
@@ -554,7 +569,18 @@ pub async fn modify(
         comment: req.comment.take(),
     };
 
-    let review_id = SongPublishingReviewDao::insert(&state.sql_pool, &review).await?;
+    let mut tx = state.sql_pool.begin().await?;
+    let review_id = SongPublishingReviewDao::insert(&mut *tx, &review).await?;
+    SongPublishingReviewHistoryDao::insert(&mut *tx, &SongPublishingReviewHistory {
+        id: 0,
+        review_id,
+        user_id: claims.uid(),
+        action_type: song_publishing_review_history::ACTION_SUBMIT,
+        note: submit_comment,
+        snapshot_data: serde_json::to_value(&data)?,
+        create_time: now,
+    }).await?;
+    tx.commit().await?;
 
     ok!(ModifyResp { review_id: review_id })
 
@@ -858,6 +884,7 @@ pub struct PublishSongPublishReviewData {
     pub review_id: i64,
     pub submit_time: DateTime<Utc>,
     pub review_time: Option<DateTime<Utc>>,
+    pub comment: Option<String>,
     pub review_comment: Option<String>,
     pub status: i32,
     pub display_id: String,
@@ -878,6 +905,77 @@ pub struct PublishSongPublishReviewData {
     pub explicit: Option<bool>,
 }
 
+struct PublishSongPublishReviewMeta {
+    review_id: i64,
+    submit_time: DateTime<Utc>,
+    review_time: Option<DateTime<Utc>>,
+    comment: Option<String>,
+    review_comment: Option<String>,
+    status: i32,
+}
+
+async fn compose_publish_song_publish_review_data(
+    sql_pool: &PgPool,
+    meta: PublishSongPublishReviewMeta,
+    data: InternalSongPublishReviewData,
+) -> anyhow::Result<PublishSongPublishReviewData> {
+    let uploader_name = UserDao::get_by_id(sql_pool, data.song_info.uploader_uid).await?
+        .map(|x| x.username)
+        .unwrap_or_else(|| {
+            warn!("User {} not found during compose review({}) detail data", data.song_info.uploader_uid, meta.review_id);
+            "Invalid".to_string()
+        });
+
+    let mut id_display_map = HashMap::new();
+    for x in &data.song_origin_infos {
+        match SongDao::get_by_id(sql_pool, x.song_id).await? {
+            Some(y) => {
+                id_display_map.insert(x.id, y.display_id);
+            }
+            None => {
+                id_display_map.insert(x.id, "deleted".to_string());
+            }
+        }
+    }
+
+    let origin_infos_mapped = data.song_origin_infos.into_iter().map(|x| {
+        let id = x.origin_song_id;
+        CreationTypeInfo::from_song_origin_info(x, id.and_then(|x| id_display_map.get(&x).cloned()))
+    }).collect();
+
+    Ok(PublishSongPublishReviewData {
+        review_id: meta.review_id,
+        submit_time: meta.submit_time,
+        review_time: meta.review_time,
+        comment: meta.comment,
+        review_comment: meta.review_comment,
+        status: meta.status,
+        display_id: data.song_info.display_id,
+        title: data.song_info.title,
+        subtitle: data.song_info.subtitle,
+        description: data.song_info.description,
+        duration_seconds: data.song_info.duration_seconds,
+        tags: data.song_tags.into_iter().map(|x| TagItem {
+            id: x.id,
+            name: x.name,
+            description: x.description,
+        }).collect(),
+        lyrics: data.song_info.lyrics,
+        audio_url: data.song_info.file_url,
+        cover_url: data.song_info.cover_art_url,
+        production_crew: data.song_production_crew,
+        creation_type: data.song_info.creation_type,
+        origin_infos: origin_infos_mapped,
+        uploader_uid: data.song_info.uploader_uid,
+        uploader_name,
+        external_link: data.song_external_links.into_iter().map(|x| ExternalLink {
+            platform: x.platform,
+            url: x.url,
+        }).collect(),
+        explicit: data.song_info.explicit,
+    })
+}
+
 /// Get the review detail
 ///
 /// Permission: Only available for the uploader and contributors.
@@ -893,67 +991,164 @@ async fn detail(
         let data = serde_json::from_value::<InternalSongPublishReviewData>(review.data)
             .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
 
-        let uploader_name = UserDao::get_by_id(&state.sql_pool, data.song_info.uploader_uid).await?
-            .map(|x| x.username)
-            .unwrap_or_else(|| {
-                warn!("User {} not found during compose review({}) detail data", data.song_info.uploader_uid, review.id);
-                "Invalid".to_string()
-            });
-
-
-        let mut id_display_map = HashMap::new();
-
-        for x in &data.song_origin_infos {
-            match SongDao::get_by_id(&state.sql_pool, x.song_id).await? {
-                Some(y) => {
-                    id_display_map.insert(x.id, y.display_id);
-                }
-                None => {
-                    // TODO: Consider to use other way to indicate the song was deleted
-                    id_display_map.insert(x.id, "deleted".to_string());
-                }
-            }
-        }
-
-        let origin_infos_mapped = data.song_origin_infos.into_iter().map(|x| {
-            let id = x.origin_song_id;
-            CreationTypeInfo::from_song_origin_info(x, id.and_then(|x| id_display_map.get(&x).cloned()))
-        }).collect();
-
-        let result = PublishSongPublishReviewData {
-            review_id: review.id,
-            submit_time: review.submit_time,
-            review_time: review.review_time,
-            review_comment: review.review_comment,
-            status: review.status,
-            display_id: data.song_info.display_id,
-            title: data.song_info.title,
-            subtitle: data.song_info.subtitle,
-            description: data.song_info.description,
-            duration_seconds: data.song_info.duration_seconds,
-            tags: data.song_tags.into_iter().map(|x| TagItem {
-                id: x.id,
-                name: x.name,
-                description: x.description,
-            }).collect(),
-            lyrics: data.song_info.lyrics,
-            audio_url: data.song_info.file_url,
-            cover_url: data.song_info.cover_art_url,
-            production_crew: data.song_production_crew,
-            creation_type: data.song_info.creation_type,
-            origin_infos: origin_infos_mapped,
-            uploader_uid: data.song_info.uploader_uid,
-            uploader_name: uploader_name,
-            external_link: data.song_external_links.into_iter().map(|x| ExternalLink {
-                platform: x.platform,
-                url: x.url,
-            }).collect(),
-            explicit: data.song_info.explicit,
-        };
+        let result = compose_publish_song_publish_review_data(
+            &state.sql_pool,
+            PublishSongPublishReviewMeta {
+                review_id: review.id,
+                submit_time: review.submit_time,
+                review_time: review.review_time,
+                comment: review.comment,
+                review_comment: review.review_comment,
+                status: review.status,
+            },
+            data,
+        ).await?;
         ok!(result)
     } else {
         err!("not_found", "Review not found")
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewModifyReq {
+    pub review_id: i64,
+    pub song_temp_id: Option<String>,
+    pub cover_temp_id: Option<String>,
+    pub title: String,
+    pub subtitle: String,
+    pub description: String,
+    pub lyrics: String,
+    pub tag_ids: Vec<i64>,
+    pub creation_info: CreationInfo,
+    pub production_crew: Vec<ProductionItem>,
+    pub external_links: Vec<ExternalLink>,
+    pub explicit: bool,
+    pub comment: Option<String>,
+}
+
+async fn review_modify(
+    claims: Claims,
+    mut state: State<AppState>,
+    req: Json<ReviewModifyReq>,
+) -> WebResult<()> {
+    let _guard = state.red_lock.try_lock(&format!("lock:song_publish:{}", claims.uid())).await?
+        .ok_or_else(|| common!("operation_in_progress", "Operation in progress"))?;
+
+    if let Some(ref x) = req.comment && x.chars().count() > 1000 {
+        err!("comment_too_long", "Comment is too long")
+    }
+
+    let mut review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    if review.user_id != claims.uid() {
+        err!("permission_denied", "You are not allowed to modify this review")
+    }
+    if review.status != song_publishing_review::STATUS_PENDING {
+        err!("invalid_status", "Invalid review status")
+    }
+
+    let current_data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+        .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+
+    let (file_url, duration_secs, gain) = if let Some(ref temp_id) = req.song_temp_id {
+        let song_temp_data: Option<String> = state.redis_conn.get(build_temp_key(temp_id)).await?;
+        let song_temp_data = song_temp_data
+            .ok_or_else(|| common!("invalid_song_temp_id", "Invalid song temp id"))?;
+        let song_temp_data: SongTempData = serde_json::from_str(&song_temp_data)?;
+        (
+            song_temp_data.file_url,
+            song_temp_data.duration_secs,
+            song_temp_data.gain,
+        )
+    } else {
+        (
+            current_data.song_info.file_url.clone(),
+            current_data.song_info.duration_seconds as u64,
+            current_data.song_info.gain,
+        )
+    };
+
+    let cover_art_url = if let Some(ref temp_id) = req.cover_temp_id {
+        let cover_url: Option<String> = state.redis_conn.get(build_image_temp_key(temp_id)).await?;
+        cover_url
+            .ok_or_else(|| common!("invalid_cover_temp_id", "Invalid cover temp id"))?
+    } else {
+        current_data.song_info.cover_art_url.clone()
+    };
+
+    let now = Utc::now();
+    let song = Song {
+        id: current_data.song_info.id,
+        display_id: current_data.song_info.display_id.clone(),
+        title: req.title.clone(),
+        subtitle: req.subtitle.clone(),
+        description: req.description.clone(),
+        artist: current_data.song_info.artist.clone(),
+        file_url,
+        cover_art_url,
+        lyrics: req.lyrics.clone(),
+        duration_seconds: duration_secs as i32,
+        uploader_uid: current_data.song_info.uploader_uid,
+        creation_type: req.creation_info.creation_type,
+        play_count: current_data.song_info.play_count,
+        like_count: current_data.song_info.like_count,
+        is_private: current_data.song_info.is_private,
+        release_time: current_data.song_info.release_time,
+        create_time: current_data.song_info.create_time,
+        update_time: now,
+        gain,
+        explicit: Some(req.explicit),
+    };
+
+    let review_data = build_internal_review_data(
+        &state.sql_pool,
+        song,
+        &req.tag_ids,
+        &req.creation_info,
+        &req.production_crew,
+        &req.external_links,
+    ).await?;
+
+    let mut tx = state.sql_pool.begin().await?;
+    let history_count = SongPublishingReviewHistoryDao::count_by_review_id(&mut *tx, review.id).await?;
+    if history_count == 0 {
+        SongPublishingReviewHistoryDao::insert(&mut *tx, &SongPublishingReviewHistory {
+            id: 0,
+            review_id: review.id,
+            user_id: review.user_id,
+            action_type: song_publishing_review_history::ACTION_SUBMIT,
+            note: review.comment.clone(),
+            snapshot_data: review.data.clone(),
+            create_time: review.submit_time,
+        }).await?;
+    }
+
+    review.data = serde_json::to_value(&review_data)?;
+    review.update_time = now;
+    review.comment = req.comment.clone();
+    SongPublishingReviewDao::update_by_id(&mut *tx, &review).await?;
+    SongPublishingReviewHistoryDao::insert(&mut *tx, &SongPublishingReviewHistory {
+        id: 0,
+        review_id: review.id,
+        user_id: review.user_id,
+        action_type: song_publishing_review_history::ACTION_MODIFY,
+        note: req.comment.clone(),
+        snapshot_data: serde_json::to_value(&review_data)?,
+        create_time: now,
+    }).await?;
+    tx.commit().await?;
+
+    let config = state.config.clone();
+    let sql_pool = state.sql_pool.clone();
+    let actor_uid = claims.uid();
+    let review_id = review.id;
+    let note = req.comment.clone();
+    tokio::spawn(async move {
+        send_review_modified_notification(&config, &sql_pool, review_id, actor_uid, note.as_deref()).await?;
+        Ok::<(), anyhow::Error>(())
+    });
+
+    ok!(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1104,6 +1299,105 @@ async fn review_comment_delete(
     ok!(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewHistoryListReq {
+    pub review_id: i64,
+    pub page_index: i64,
+    pub page_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewHistoryListResp {
+    pub data: Vec<ReviewHistoryItem>,
+    pub page_index: i64,
+    pub page_size: i64,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewHistoryItem {
+    pub id: i64,
+    pub review_id: i64,
+    pub action_type: i32,
+    pub note: Option<String>,
+    pub author: Option<PublicUserProfile>,
+    pub create_time: DateTime<Utc>,
+    pub snapshot: Option<PublishSongPublishReviewData>,
+}
+
+async fn review_history_list(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<ReviewHistoryListReq>,
+) -> WebResult<ReviewHistoryListResp> {
+    if req.page_size > 50 {
+        err!("page_size_exceeded", "Page size too large")
+    }
+
+    let review = SongPublishingReviewDao::get_by_id(&state.sql_pool, req.review_id).await?
+        .ok_or_else(|| common!("not_found", "Review not found"))?;
+    ensure_review_visible(&state, &review, claims.uid()).await?;
+
+    let histories = SongPublishingReviewHistoryDao::page_by_review_id(
+        &state.sql_pool,
+        req.review_id,
+        req.page_index,
+        req.page_size,
+    ).await?;
+    let total = SongPublishingReviewHistoryDao::count_by_review_id(&state.sql_pool, req.review_id).await?;
+
+    let uids = histories.iter().map(|x| x.user_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids).await?;
+
+    let mut data = Vec::with_capacity(histories.len());
+    for x in histories {
+        let snapshot = match serde_json::from_value::<InternalSongPublishReviewData>(x.snapshot_data) {
+            Ok(v) => match compose_publish_song_publish_review_data(
+                &state.sql_pool,
+                PublishSongPublishReviewMeta {
+                    review_id: x.review_id,
+                    submit_time: x.create_time,
+                    review_time: None,
+                    comment: x.note.clone(),
+                    review_comment: None,
+                    status: song_publishing_review::STATUS_PENDING,
+                },
+                v,
+            ).await {
+                Ok(v) => Some(v),
+                Err(err) => {
+                    warn!("Error during composing song publish review history({}) data: {:?}", x.id, err);
+                    None
+                }
+            },
+            Err(err) => {
+                warn!("Error during decoding song publish review history({}) data: {:?}", x.id, err);
+                None
+            }
+        };
+
+        data.push(ReviewHistoryItem {
+            id: x.id,
+            review_id: x.review_id,
+            action_type: x.action_type,
+            note: x.note,
+            author: users.get(&x.user_id).cloned(),
+            create_time: x.create_time,
+            snapshot,
+        });
+    }
+
+    ok!(ReviewHistoryListResp {
+        data,
+        page_index: req.page_index,
+        page_size: req.page_size,
+        total,
+    })
+}
+
 async fn ensure_review_visible(
     state: &AppState,
     review: &SongPublishingReview,
@@ -1198,6 +1492,38 @@ async fn send_review_comment_notification(
         "{actor_name} 在稿件 {} 下发表了新评论：\n\n{}",
         review.song_display_id,
         content,
+    );
+
+    for email in recipients {
+        mailer::send_notification(&email_cfg, &email, &subject, &body).await?;
+    }
+    Ok(())
+}
+
+async fn send_review_modified_notification(
+    config: &Config,
+    sql_pool: &PgPool,
+    review_id: i64,
+    actor_uid: i64,
+    note: Option<&str>,
+) -> anyhow::Result<()> {
+    let email_cfg: EmailConfig = config.get_and_parse("email")?;
+    let community_cfg: CommunityCfg = config.get_and_parse("community")?;
+    let review = SongPublishingReviewDao::get_by_id(sql_pool, review_id).await?
+        .with_context(|| format!("Review {} not found", review_id))?;
+    let actor = UserDao::get_by_id(sql_pool, actor_uid).await?
+        .with_context(|| format!("User {} not found", actor_uid))?;
+
+    let mut recipients = HashSet::new();
+    recipients.extend(community_cfg.contributors);
+    recipients.remove(&actor.email);
+
+    let subject = format!("稿件已更新：{}", review.song_display_id);
+    let body = format!(
+        "{} 更新了稿件 {}。{}",
+        actor.username,
+        review.song_display_id,
+        note.map(|x| format!("\n\n备注：{x}")).unwrap_or_default(),
     );
 
     for email in recipients {

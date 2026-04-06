@@ -7,7 +7,7 @@ use chrono::Utc;
 use hachimi_world_server::db::creator::{Creator, CreatorDao};
 use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
-use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagSearchReq, TagSearchResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
@@ -357,6 +357,117 @@ async fn publish_template(env: &TestEnvironment) -> PublishReq {
         jmid: Some("JM-ABCD-000".into()),
         comment: Some("Test comment in review".into()),
     }
+}
+
+#[tokio::test]
+async fn test_review_modify_and_history() {
+    with_test_environment(|mut env| async move {
+        let uploader = with_new_random_test_user(&mut env).await;
+        let template = publish_template(&env).await;
+        let publish_resp: PublishResp = env.api.post("/publish/publish", &template)
+            .await
+            .parse_resp()
+            .await
+            .unwrap();
+
+        let updated_title = "Updated Test Title".to_string();
+        let updated_subtitle = "Updated subtitle".to_string();
+        let updated_description = "Updated description".to_string();
+        let updated_lyrics = "Updated lyrics".to_string();
+        let updated_comment = Some("Updated note for contributors".to_string());
+
+        let resp = env.api.post("/publish/review/modify", &ReviewModifyReq {
+            review_id: publish_resp.review_id,
+            song_temp_id: None,
+            cover_temp_id: None,
+            title: updated_title.clone(),
+            subtitle: updated_subtitle.clone(),
+            description: updated_description.clone(),
+            lyrics: updated_lyrics.clone(),
+            tag_ids: template.tag_ids.clone(),
+            creation_info: template.creation_info.clone(),
+            production_crew: template.production_crew.clone(),
+            external_links: template.external_links.clone(),
+            explicit: template.explicit.unwrap_or(false),
+            comment: updated_comment.clone(),
+        }).await;
+        assert_is_ok(resp).await;
+
+        let detail: hachimi_world_server::web::routes::publish::DetailResp = env.api.get_query(
+            "/publish/review/detail",
+            &hachimi_world_server::web::routes::publish::DetailReq { review_id: publish_resp.review_id },
+        ).await.parse_resp().await.unwrap();
+        assert_eq!(detail.title, updated_title);
+        assert_eq!(detail.subtitle, updated_subtitle);
+        assert_eq!(detail.description, updated_description);
+        assert_eq!(detail.lyrics, updated_lyrics);
+        assert_eq!(detail.comment, updated_comment);
+
+        let history: ReviewHistoryListResp = env.api.get_query(
+            "/publish/review/history/list",
+            &ReviewHistoryListReq {
+                review_id: publish_resp.review_id,
+                page_index: 0,
+                page_size: 20,
+            },
+        ).await.parse_resp().await.unwrap();
+        assert_eq!(history.total, 2);
+        assert_eq!(history.data.len(), 2);
+        assert_eq!(history.data[0].note, Some("Updated note for contributors".to_string()));
+        assert_eq!(history.data[0].snapshot.as_ref().map(|x| x.title.clone()), Some("Updated Test Title".to_string()));
+
+        let other_user = with_new_random_test_user(&mut env).await;
+        let resp = env.api.post("/publish/review/modify", &ReviewModifyReq {
+            review_id: publish_resp.review_id,
+            song_temp_id: None,
+            cover_temp_id: None,
+            title: "Hacked".to_string(),
+            subtitle: "Hacked".to_string(),
+            description: "Hacked".to_string(),
+            lyrics: "Hacked".to_string(),
+            tag_ids: vec![],
+            creation_info: CreationInfo {
+                creation_type: 0,
+                origin_info: Some(CreationTypeInfo {
+                    song_display_id: None,
+                    title: Some("原作".into()),
+                    artist: Some("群星".into()),
+                    url: None,
+                    origin_type: 0,
+                }),
+                derivative_info: None,
+            },
+            production_crew: vec![],
+            external_links: vec![],
+            explicit: false,
+            comment: Some("Should fail".to_string()),
+        }).await;
+        assert_is_err(resp).await;
+
+        env.api.set_token(uploader.token.access_token.clone());
+        let contributor = with_test_contributor_user(&mut env).await;
+        env.api.set_token(contributor.token.access_token.clone());
+        let history: ReviewHistoryListResp = env.api.get_query(
+            "/publish/review/history/list",
+            &ReviewHistoryListReq {
+                review_id: publish_resp.review_id,
+                page_index: 0,
+                page_size: 20,
+            },
+        ).await.parse_resp().await.unwrap();
+        assert_eq!(history.data.len(), 2);
+
+        env.api.set_token(other_user.token.access_token);
+        let resp = env.api.get_query(
+            "/publish/review/history/list",
+            &ReviewHistoryListReq {
+                review_id: publish_resp.review_id,
+                page_index: 0,
+                page_size: 20,
+            },
+        ).await;
+        assert_is_err(resp).await;
+    }).await;
 }
 
 #[tokio::test]
