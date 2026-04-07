@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE song_publishing_review_comment SET review_id = $1, user_id = $2, content = $3, create_time = $4, update_time = $5 WHERE id = $6",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "26e71bd80614188cb9c05763e450a31e987c93c52d2208aea9a787fd5295dc54"
+}
