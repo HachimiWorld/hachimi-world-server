@@ -51,15 +51,15 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/review/detail", get(review::detail))
         .route("/review/approve", post(review::review_approve))
         .route("/review/reject", post(review::review_reject))
-        // @since 260406 @experimental
+        // @since 260407 @experimental
         .route("/review/modify", post(review::review_modify))
-        // @since 260406 @experimental
+        // @since 260407 @experimental
         .route("/review/comment/create", post(review::review_comment_create))
-        // @since 260406 @experimental
+        // @since 260407 @experimental
         .route("/review/comment/list", get(review::review_comment_list))
-        // @since 260406 @experimental
+        // @since 260407 @experimental
         .route("/review/comment/delete", post(review::review_comment_delete))
-        // @since 260406 @experimental
+        // @since 260407 @experimental
         .route("/review/history/list", get(review::review_history_list))
         // .route("/review/suggestion/create", post(review_suggestion_create))
         // .route("/review/suggestion/delete", post(review_suggestion_delete))
