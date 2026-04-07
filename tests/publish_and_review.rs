@@ -7,7 +7,9 @@ use chrono::Utc;
 use hachimi_world_server::db::creator::{Creator, CreatorDao};
 use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
-use hachimi_world_server::web::routes::publish::{ApproveReviewReq, CreationInfo, JmidCheckPReq, JmidCheckPResp, JmidMineResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::jmid::{JmidCheckPReq, JmidCheckPResp, JmidMineResp};
+use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
+use hachimi_world_server::web::routes::publish::{review, CreationInfo, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagSearchReq, TagSearchResp};
 use reqwest::multipart::{Form, Part};
 use std::fs;
@@ -393,9 +395,9 @@ async fn test_review_modify_and_history() {
         }).await;
         assert_is_ok(resp).await;
 
-        let detail: hachimi_world_server::web::routes::publish::DetailResp = env.api.get_query(
+        let detail: review::DetailResp = env.api.get_query(
             "/publish/review/detail",
-            &hachimi_world_server::web::routes::publish::DetailReq { review_id: publish_resp.review_id },
+            &review::DetailReq { review_id: publish_resp.review_id },
         ).await.parse_resp().await.unwrap();
         assert_eq!(detail.title, updated_title);
         assert_eq!(detail.subtitle, updated_subtitle);
