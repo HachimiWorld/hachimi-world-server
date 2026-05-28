@@ -4,14 +4,14 @@ use axum::routing::get;
 use axum::Router;
 use serde::Deserialize;
 use std::net::SocketAddr;
-use tokio::net::ToSocketAddrs;
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 pub mod routes;
 pub mod state;
 
-mod jwt;
+pub mod jwt;
 pub mod result;
 mod web_metrics;
 mod extractors;
@@ -25,7 +25,7 @@ pub struct ServerCfg {
     pub metrics_listen: String,
     pub jwt_secret: String,
     pub allow_origins: Vec<String>,
-    pub publish_version_token: String
+    pub publish_version_token: String,
 }
 
 pub async fn run_web_app(
@@ -33,12 +33,10 @@ pub async fn run_web_app(
     app_state: AppState,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
-    jwt::initialize_jwt_key(jwt::Keys::new(cfg.jwt_secret.as_bytes()));
-    jwt::initialize_version_token(cfg.publish_version_token);
+    let listener = TcpListener::bind(cfg.listen).await?;
 
-    let allow_origins = cfg.allow_origins.iter().map(|x| x.as_str()).collect::<Vec<&str>>();
     let (_main_server, _metrics_server) = tokio::join!(
-        start_main_server(app_state, cfg.listen, &allow_origins, cancel_token.clone()),
+        start_main_server(listener, app_state, cfg.allow_origins, jwt::Keys::new(cfg.jwt_secret.as_bytes()), cfg.publish_version_token, cancel_token.clone()),
         web_metrics::start_metrics_server(cfg.metrics_listen, cancel_token)
     );
 
@@ -48,21 +46,25 @@ pub async fn run_web_app(
 
 
 pub async fn start_main_server(
+    listener: TcpListener,
     app_state: AppState,
-    addr: impl ToSocketAddrs,
-    allow_origins: &[&str],
+    allow_origins: Vec<String>,
+    jwt_keys: jwt::Keys,
+    publish_version_token: impl Into<String>,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    jwt::initialize_jwt_key(jwt_keys);
+    jwt::initialize_version_token(publish_version_token.into());
     info!("HTTP Server started at {}", listener.local_addr()?);
-    
+
+    let allow_origins = allow_origins.iter().map(|x| x.as_str()).collect::<Vec<&str>>();
     let app = Router::new()
         .nest("/api", routes::router())
         .route("/health", get(health))
         .with_state(app_state)
         .layer(governor::governor_layer())
         .layer(request_id::request_id_layer())
-        .layer(cors::cors_layer(allow_origins))
+        .layer(cors::cors_layer(&allow_origins))
         .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())

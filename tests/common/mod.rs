@@ -7,17 +7,17 @@ use hachimi_world_server::file_hosting::{FileHost, MockFileHost, UploadResult};
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::result::CommonError;
 use hachimi_world_server::web::state::AppState;
-use hachimi_world_server::web::{run_web_app, ServerCfg};
+use hachimi_world_server::web::{start_main_server, ServerCfg};
 use redis::aio::ConnectionManager;
 use reqwest::{RequestBuilder, Response};
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
-use std::env;
 use std::sync::Arc;
 use testcontainers_modules::redis::REDIS_PORT;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use tracing::info;
+use tokio::net::TcpListener;
+use tracing::{info, Level};
 
 pub struct TestEnvironment {
     pub api: ApiClient,
@@ -32,20 +32,29 @@ where
     F: Fn(TestEnvironment) -> Fut,
     Fut: Future<Output=()> + Send + 'static,
 {
+    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
     dotenv::dotenv().unwrap();
 
     let server_cfg = ServerCfg {
-        listen: "localhost:20080".to_string(),
+        listen: "localhost:0".to_string(),
         metrics_listen: "localhost:0".to_string(),
         jwt_secret: "12345678".to_string(),
         allow_origins: vec!["http://localhost".to_string()],
         publish_version_token: "12345678".to_string(),
     };
-
     let app_state = get_test_app_state().await;
-
-    let _handle = tokio::spawn(run_web_app(server_cfg, app_state.clone(), tokio_util::sync::CancellationToken::new()));
-    let api = ApiClient::new("http://localhost:20080".to_string());
+    let listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
+    let port = listener.local_addr().unwrap().port();
+    let server = start_main_server(
+        listener,
+        app_state.clone(),
+        server_cfg.allow_origins,
+        hachimi_world_server::web::jwt::Keys::new(server_cfg.jwt_secret.as_bytes()),
+        server_cfg.publish_version_token,
+        tokio_util::sync::CancellationToken::new()
+    );
+    let _handle = tokio::spawn(server);
+    let api = ApiClient::new(format!("http://localhost:{port}"));
 
     f(TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() }).await
 }
