@@ -2,46 +2,118 @@ pub mod auth;
 pub mod song;
 
 use axum::http::HeaderMap;
+use hachimi_world_server::config::Config;
+use hachimi_world_server::file_hosting::{FileHost, MockFileHost, UploadResult};
+use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::result::CommonError;
+use hachimi_world_server::web::state::AppState;
+use hachimi_world_server::web::{run_web_app, ServerCfg};
 use redis::aio::ConnectionManager;
 use reqwest::{RequestBuilder, Response};
 use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::env;
+use std::sync::Arc;
+use testcontainers_modules::redis::REDIS_PORT;
+use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use tracing::info;
 
 pub struct TestEnvironment {
     pub api: ApiClient,
     pub pool: PgPool,
-    pub redis: ConnectionManager
+    pub redis: ConnectionManager,
 }
 
+
+/// This is used to start a black-box test environment. It will launch the web server and provide an API client, SQL pool and Redis connection for testing.
 pub async fn with_test_environment<F, Fut>(f: F)
 where
     F: Fn(TestEnvironment) -> Fut,
-    Fut: Future<Output = ()> + Send + 'static
+    Fut: Future<Output=()> + Send + 'static,
 {
-    // TODO: Launch a test server?
     dotenv::dotenv().unwrap();
-    let api = ApiClient::new(env::var("TEST_HTTP_BASE_URL").unwrap());
-    let pool = get_sql_pool().await;
-    let redis = get_redis_conn().await;
-    f(TestEnvironment { api, pool, redis }).await
+
+    let server_cfg = ServerCfg {
+        listen: "localhost:20080".to_string(),
+        metrics_listen: "localhost:0".to_string(),
+        jwt_secret: "12345678".to_string(),
+        allow_origins: vec!["http://localhost".to_string()],
+        publish_version_token: "12345678".to_string(),
+    };
+
+    let app_state = get_test_app_state().await;
+
+    let _handle = tokio::spawn(run_web_app(server_cfg, app_state.clone(), tokio_util::sync::CancellationToken::new()));
+    let api = ApiClient::new("http://localhost:20080".to_string());
+
+    f(TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() }).await
 }
 
-pub async fn get_redis_conn() -> ConnectionManager {
-    dotenv::dotenv().ok();
-    let url = env::var("TEST_REDIS_URL").unwrap();
-    let redis = redis::Client::open(url).unwrap();
+async fn get_test_redis_conn() -> ConnectionManager {
+    let redis_instance = testcontainers_modules::redis::Redis::default().start().await.unwrap();
+    let host_ip = redis_instance.get_host().await.unwrap();
+    let host_port = redis_instance.get_host_port_ipv4(REDIS_PORT).await.unwrap();
+    let redis_url = format!("redis://{host_ip}:{host_port}");
+    info!("Open test redis instance at {}", redis_url);
+    let redis = redis::Client::open(redis_url).unwrap();
     redis.get_connection_manager().await.unwrap()
 }
 
-pub async fn get_sql_pool() -> PgPool {
-    dotenv::dotenv().ok();
-    let url = env::var("DATABASE_URL").unwrap();
+async fn get_test_sql_pool() -> PgPool {
+    let instance = testcontainers_modules::postgres::Postgres::default().start().await.unwrap();
+    let host_ip = instance.get_host().await.unwrap();
+    let host_port = instance.get_host_port_ipv4(5432).await.unwrap();
+    let url = format!("postgres://postgres:postgres@{host_ip}:{host_port}/postgres");
+    info!("Open test postgres instance at {}", url);
+    PgPool::connect(&url).await.unwrap()
+}
 
-    let pool = PgPool::connect(&url).await.unwrap();
-    pool
+async fn get_test_meilisearch() -> meilisearch_sdk::client::Client {
+    let instance = testcontainers_modules::meilisearch::Meilisearch::default().start().await.unwrap();
+    let host_ip = instance.get_host().await.unwrap();
+    let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
+    let url = format!("http://{host_ip}:{host_port}");
+    info!("Open test meilisearch instance at {}", url);
+    meilisearch_sdk::client::Client::new(url, Some("")).unwrap()
+}
+
+async fn get_test_file_host() -> impl FileHost {
+    // Return an mock file host since we don't want to actually upload files during tests. The file host is only used for generating file URLs, so it won't affect the tests.
+    let mut mock = MockFileHost::default();
+    mock.expect_rename().withf(|old_key, new_key| {
+        info!("Mock rename file from {} to {}", old_key, new_key);
+        true
+    }).returning(|_, _| Box::pin(async move { Ok(()) }));
+    mock.expect_upload().withf(|bytes, key| {
+        info!("Mock upload file {} ({} bytes)", key, bytes.len());
+        true
+    }).returning(|bytes, key| {
+        let key = key.to_string();
+        Box::pin(async move {
+            Ok(UploadResult {
+                output: aws_sdk_s3::operation::put_object::PutObjectOutput::builder().build(),
+                public_url: format!("https://mock-file-host/{}", key),
+            })
+        })
+    });
+    mock
+}
+
+fn get_test_config() -> Config {
+    Config::parse_by_str("").unwrap()
+}
+
+async fn get_test_app_state() -> AppState {
+    let redis_conn = get_test_redis_conn().await;
+    AppState {
+        sql_pool: get_test_sql_pool().await,
+        file_host: Arc::new(get_test_file_host().await),
+        meilisearch: Arc::new(get_test_meilisearch().await),
+        redis_conn: redis_conn.clone(),
+        config: Arc::new(get_test_config()),
+        red_lock: RedLock::new(redis_conn).unwrap(),
+    }
 }
 
 pub struct ApiClient {
@@ -73,7 +145,7 @@ impl ApiClient {
         println!("[{}] GET to {}", resp.status(), path);
         resp
     }
-    
+
     pub async fn get_query<T: Serialize>(&self, path: &str, query: &T) -> Response {
         let client = reqwest::Client::new();
 
@@ -101,13 +173,13 @@ impl ApiClient {
         println!("[{}] POST to {}; Body: {}", resp.status(), path, body.to_string());
         resp
     }
-    
+
     pub fn post_raw(&self, path: &str) -> RequestBuilder {
         let client = reqwest::Client::new();
         client.post(format!("{}{path}", self.base_url))
             .headers(self.default_headers())
     }
-    
+
     fn default_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert("X-Real-IP", "127.0.0.1".parse().unwrap());
@@ -142,7 +214,7 @@ impl CommonParse for Response {
     async fn parse_resp<T: for<'de> serde::Deserialize<'de>>(self) -> ApiResult<T> {
         let text = self.text().await.unwrap();
         println!("Response: {}", text);
-        
+
         let mut value: Value = serde_json::from_str(&text).unwrap();
         let data = value.get_mut("data").unwrap().take();
 

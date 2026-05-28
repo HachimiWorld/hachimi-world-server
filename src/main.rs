@@ -1,7 +1,7 @@
 extern crate hachimi_world_server as app;
 
 use app::config::Config;
-use app::file_hosting::FileHost;
+use app::file_hosting::{FileHost, S3FileHost};
 use app::util::gracefully_shutdown;
 use app::util::redlock::RedLock;
 use app::web::state::AppState;
@@ -151,7 +151,7 @@ struct S3Config {
     pub access_key_secret: String,
 }
 
-async fn get_file_host(config: Config) -> anyhow::Result<FileHost> {
+async fn get_file_host(config: Config) -> anyhow::Result<impl FileHost> {
     let cfg: S3Config = config.get_and_parse("s3")?;
 
     // Configure the client
@@ -169,10 +169,10 @@ async fn get_file_host(config: Config) -> anyhow::Result<FileHost> {
         .build();
 
     let client = s3::Client::from_conf(config);
-    Ok(FileHost::new(
+    Ok(S3FileHost::new(
         cfg.bucket_name,
-        cfg.public_domain,
         client,
+        cfg.public_domain,
     ))
 }
 

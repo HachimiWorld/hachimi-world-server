@@ -1,25 +1,41 @@
 use anyhow::Context;
+use async_trait::async_trait;
 use aws_sdk_s3::operation::put_object::PutObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
+use mockall::automock;
+use std::fs::File;
+use std::pin::Pin;
 use tracing::info;
 
-pub struct FileHost {
+
+#[async_trait]
+#[automock]
+pub trait FileHost: Send + Sync {
+    async fn upload(&self, bytes: Bytes, key: &str) -> anyhow::Result<UploadResult>;
+    async fn rename(&self, old_key: &str, new_key: &str) -> anyhow::Result<()>;
+}
+
+pub struct S3FileHost {
     bucket_name: String,
     client: aws_sdk_s3::Client,
     public_domain: String,
 }
 
-impl FileHost {
-    pub fn new(bucket_name: String, public_domain: String, client: aws_sdk_s3::Client) -> Self {
-        FileHost {
+
+impl S3FileHost {
+    pub fn new(bucket_name: String, client: aws_sdk_s3::Client, public_domain: String) -> Self {
+        S3FileHost {
             bucket_name,
-            public_domain,
             client,
+            public_domain,
         }
     }
+}
 
-    pub async fn upload(&self, bytes: Bytes, key: &str) -> anyhow::Result<UploadResult> {
+#[async_trait]
+impl FileHost for S3FileHost {
+    async fn upload(&self, bytes: Bytes, key: &str) -> anyhow::Result<UploadResult> {
         info!("Uploading file {} to r2. Total: {} bytes", key, bytes.len());
         let body = ByteStream::from(bytes);
         let result = self
@@ -39,7 +55,7 @@ impl FileHost {
         })
     }
 
-    pub async fn rename(&self, old_key: &str, new_key: &str) -> anyhow::Result<()> {
+    async fn rename(&self, old_key: &str, new_key: &str) -> anyhow::Result<()> {
         self.client
             .copy_object()
             .bucket(self.bucket_name.clone())

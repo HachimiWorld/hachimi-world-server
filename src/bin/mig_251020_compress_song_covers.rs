@@ -1,10 +1,10 @@
-use std::env;
 use aws_sdk_s3::config::Region;
-use serde::{Deserialize, Serialize};
-use tokio::time::Instant;
 use hachimi_world_server::config::Config;
-use hachimi_world_server::file_hosting::FileHost;
+use hachimi_world_server::file_hosting::{FileHost, S3FileHost};
 use hachimi_world_server::service::upload::{scale_down_to_webp, ResizeType};
+use serde::{Deserialize, Serialize};
+use std::env;
+use tokio::time::Instant;
 
 #[tokio::main]
 async fn main() {
@@ -56,7 +56,7 @@ struct S3Config {
     pub access_key_id: String,
     pub access_key_secret: String,
 }
-async fn get_file_host(config: Config) -> anyhow::Result<FileHost> {
+async fn get_file_host(config: Config) -> anyhow::Result<impl FileHost> {
     let cfg: S3Config = config.get_and_parse("s3")?;
 
     // Configure the client
@@ -74,9 +74,9 @@ async fn get_file_host(config: Config) -> anyhow::Result<FileHost> {
         .build();
 
     let client = aws_sdk_s3::Client::from_conf(config);
-    Ok(FileHost::new(
+    Ok(S3FileHost::new(
         cfg.bucket_name,
-        cfg.public_domain,
         client,
+        cfg.public_domain,
     ))
 }

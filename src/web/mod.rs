@@ -47,7 +47,7 @@ pub async fn run_web_app(
 }
 
 
-async fn start_main_server(
+pub async fn start_main_server(
     app_state: AppState,
     addr: impl ToSocketAddrs,
     allow_origins: &[&str],
