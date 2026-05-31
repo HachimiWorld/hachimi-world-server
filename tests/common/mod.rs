@@ -14,8 +14,11 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::Arc;
-use testcontainers_modules::redis::REDIS_PORT;
+use testcontainers_modules::meilisearch::Meilisearch;
+use testcontainers_modules::postgres::Postgres;
+use testcontainers_modules::redis::{Redis, REDIS_PORT};
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
+use testcontainers_modules::testcontainers::ContainerAsync;
 use tokio::net::TcpListener;
 use tracing::{info, Level};
 
@@ -32,7 +35,7 @@ where
     F: Fn(TestEnvironment) -> Fut,
     Fut: Future<Output=()> + Send + 'static,
 {
-    tracing_subscriber::fmt().with_max_level(Level::DEBUG).init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
     dotenv::dotenv().unwrap();
 
     let server_cfg = ServerCfg {
@@ -42,7 +45,19 @@ where
         allow_origins: vec!["http://localhost".to_string()],
         publish_version_token: "12345678".to_string(),
     };
-    let app_state = get_test_app_state().await;
+
+    let (redis_instance, redis_conn) = get_test_redis_conn().await;
+    let (postgres_instance, sql_pool) = get_test_sql_pool().await;
+    let (ms_instance, ms_client) = get_test_meilisearch().await;
+    let app_state = AppState {
+        sql_pool: sql_pool,
+        file_host: Arc::new(get_test_file_host().await),
+        meilisearch: Arc::new(ms_client),
+        redis_conn: redis_conn.clone(),
+        config: Arc::new(get_test_config()),
+        red_lock: RedLock::new(redis_conn).unwrap(),
+    };
+
     let listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
     let port = listener.local_addr().unwrap().port();
     let server = start_main_server(
@@ -56,35 +71,38 @@ where
     let _handle = tokio::spawn(server);
     let api = ApiClient::new(format!("http://localhost:{port}"));
 
-    f(TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() }).await
+    f(TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() }).await;
+    drop(redis_instance);
+    drop(postgres_instance);
+    drop(ms_instance);
 }
 
-async fn get_test_redis_conn() -> ConnectionManager {
+async fn get_test_redis_conn() -> (ContainerAsync<Redis>, ConnectionManager) {
     let redis_instance = testcontainers_modules::redis::Redis::default().start().await.unwrap();
     let host_ip = redis_instance.get_host().await.unwrap();
     let host_port = redis_instance.get_host_port_ipv4(REDIS_PORT).await.unwrap();
     let redis_url = format!("redis://{host_ip}:{host_port}");
     info!("Open test redis instance at {}", redis_url);
     let redis = redis::Client::open(redis_url).unwrap();
-    redis.get_connection_manager().await.unwrap()
+    (redis_instance, redis.get_connection_manager().await.unwrap())
 }
 
-async fn get_test_sql_pool() -> PgPool {
+async fn get_test_sql_pool() -> (ContainerAsync<Postgres>, PgPool) {
     let instance = testcontainers_modules::postgres::Postgres::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@{host_ip}:{host_port}/postgres");
     info!("Open test postgres instance at {}", url);
-    PgPool::connect(&url).await.unwrap()
+    (instance, PgPool::connect(&url).await.unwrap())
 }
 
-async fn get_test_meilisearch() -> meilisearch_sdk::client::Client {
+async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch>, meilisearch_sdk::client::Client) {
     let instance = testcontainers_modules::meilisearch::Meilisearch::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
     let url = format!("http://{host_ip}:{host_port}");
     info!("Open test meilisearch instance at {}", url);
-    meilisearch_sdk::client::Client::new(url, Some("")).unwrap()
+    (instance, meilisearch_sdk::client::Client::new(url, Some("")).unwrap())
 }
 
 async fn get_test_file_host() -> impl FileHost {
@@ -111,18 +129,6 @@ async fn get_test_file_host() -> impl FileHost {
 
 fn get_test_config() -> Config {
     Config::parse_by_str("").unwrap()
-}
-
-async fn get_test_app_state() -> AppState {
-    let redis_conn = get_test_redis_conn().await;
-    AppState {
-        sql_pool: get_test_sql_pool().await,
-        file_host: Arc::new(get_test_file_host().await),
-        meilisearch: Arc::new(get_test_meilisearch().await),
-        redis_conn: redis_conn.clone(),
-        config: Arc::new(get_test_config()),
-        red_lock: RedLock::new(redis_conn).unwrap(),
-    }
 }
 
 pub struct ApiClient {
