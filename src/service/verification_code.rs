@@ -73,7 +73,7 @@ mod test {
     fn test_gen_verify_code() {
         for _ in 0..100 {
             let code = generate_verify_code();
-            assert_eq!(8, code.len())
+            assert_eq!(6, code.len())
         }
     }
 }
