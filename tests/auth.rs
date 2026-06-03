@@ -4,11 +4,11 @@ use crate::common::auth::{generate_pass_captcha_key, generate_pass_verification_
 use crate::common::{assert_is_err, assert_is_ok, CommonParse};
 use chrono::Utc;
 use common::with_test_environment;
-use hachimi_world_server::service;
 use hachimi_world_server::web::jwt::generate_access_token;
 use hachimi_world_server::web::routes::auth::{DeviceListResp, DeviceLogoutReq, EmailRegisterReq, LoginReq, LoginResp, RefreshTokenReq, ResetPasswordReq, TokenPair};
+use hachimi_world_server::{service, web};
 use reqwest::StatusCode;
-use serde_json::json;
+use web::routes::auth::SendVerificationReq;
 
 #[tokio::test]
 async fn test_send_verification_code() {
@@ -17,15 +17,12 @@ async fn test_send_verification_code() {
             .api
             .post(
                 "/auth/send_email_code",
-                &json!({
-                    "email": "test@example.com"
-                }),
-            )
-            .await;
+                &SendVerificationReq {
+                    email: "test@example.com".to_string(),
+                },
+            ).await;
         assert_is_ok(resp).await;
-        ()
-    })
-        .await;
+    }).await;
 }
 
 #[tokio::test]
@@ -99,7 +96,7 @@ async fn test_register_and_login() {
         assert_is_ok(resp).await;
 
         // Test refresh token with revoked, expected error
-        let resp = env.api.post("/auth/refresh_token",  &RefreshTokenReq {
+        let resp = env.api.post("/auth/refresh_token", &RefreshTokenReq {
             refresh_token: new_token.refresh_token,
             device_info: "test".to_string(),
         }).await;
@@ -131,12 +128,55 @@ async fn test_register_and_login() {
 }
 
 #[tokio::test]
+async fn test_max_verification_code_retries() {
+    with_test_environment(|mut env| async move {
+        let random_email = format!("test_{}@example.com", uuid::Uuid::new_v4());
+
+        // Set a known verification code
+        service::verification_code::set_code(&mut env.redis, &random_email, "12345678")
+            .await
+            .unwrap();
+
+        // Submit wrong code 4 times — on the 4th attempt the retry counter exceeds 3
+        // and the code is automatically invalidated
+        for _ in 0..4 {
+            let captcha_key = generate_pass_captcha_key(&env.api).await;
+            let resp = env.api.post(
+                "/auth/register/email",
+                &EmailRegisterReq {
+                    email: random_email.clone(),
+                    password: "test12345678".to_string(),
+                    code: "000000".to_string(),
+                    device_info: "test".to_string(),
+                    captcha_key,
+                },
+            ).await;
+            assert_is_err(resp).await;
+        }
+
+        // Now the correct code should also be rejected because it was invalidated
+        let captcha_key = generate_pass_captcha_key(&env.api).await;
+        let resp = env.api.post(
+            "/auth/register/email",
+            &EmailRegisterReq {
+                email: random_email.clone(),
+                password: "test12345678".to_string(),
+                code: "12345678".to_string(),
+                device_info: "test".to_string(),
+                captcha_key,
+            },
+        ).await;
+        assert_is_err(resp).await;
+    }).await;
+}
+
+
+#[tokio::test]
 async fn test_access_protected_url_without_token() {
     with_test_environment(|env| async move {
         let resp = env.api.get("/auth/protected").await;
         assert_eq!(StatusCode::UNAUTHORIZED, resp.status());
-    })
-        .await;
+    }).await;
 }
 
 #[tokio::test]
@@ -148,8 +188,7 @@ async fn test_access_with_expired_token() {
 
         let resp = env.api.get("/auth/protected").await;
         assert_eq!(StatusCode::UNAUTHORIZED, resp.status());
-    })
-        .await;
+    }).await;
 }
 
 #[tokio::test]
