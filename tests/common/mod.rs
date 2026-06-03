@@ -206,7 +206,7 @@ impl ApiClient {
 
     pub fn post_raw(&self, path: &str) -> RequestBuilder {
         let client = reqwest::Client::new();
-        client.post(format!("{}{path}", self.base_url))
+        client.post(self.build_url(path))
             .headers(self.default_headers())
     }
 
