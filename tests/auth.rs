@@ -1,13 +1,14 @@
 pub mod common;
 
+use crate::common::auth::{generate_pass_captcha_key, generate_pass_verification_code};
 use crate::common::{assert_is_err, assert_is_ok, CommonParse};
+use chrono::Utc;
 use common::with_test_environment;
-use hachimi_world_server::web::result::WebResponse;
+use hachimi_world_server::service;
+use hachimi_world_server::web::jwt::generate_access_token;
 use hachimi_world_server::web::routes::auth::{DeviceListResp, DeviceLogoutReq, EmailRegisterReq, LoginReq, LoginResp, RefreshTokenReq, ResetPasswordReq, TokenPair};
 use reqwest::StatusCode;
 use serde_json::json;
-use hachimi_world_server::service;
-use crate::common::auth::{generate_pass_captcha_key, generate_pass_verification_code};
 
 #[tokio::test]
 async fn test_send_verification_code() {
@@ -30,10 +31,7 @@ async fn test_send_verification_code() {
 #[tokio::test]
 async fn test_register_and_login() {
     with_test_environment(|mut env| async move {
-        let random_email = format!("test_{}@mail.com", uuid::Uuid::new_v4());
-
-        // TODO[test]: Mock email sender?
-        // TODO[test]: Separate these tests
+        let random_email = format!("test_{}@example.com", uuid::Uuid::new_v4());
 
         // Put a fake email code for test
         let code = generate_pass_verification_code(&mut env.redis, &random_email).await;
@@ -144,7 +142,9 @@ async fn test_access_protected_url_without_token() {
 #[tokio::test]
 async fn test_access_with_expired_token() {
     with_test_environment(|mut env| async move {
-        env.api.set_token("".into());
+        let expires_in = Utc::now() - chrono::Duration::days(1);
+        let token = generate_access_token("0", expires_in.timestamp());
+        env.api.set_token(token);
 
         let resp = env.api.get("/auth/protected").await;
         assert_eq!(StatusCode::UNAUTHORIZED, resp.status());

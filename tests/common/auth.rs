@@ -1,8 +1,9 @@
-use std::env;
-use redis::aio::ConnectionManager;
 use crate::common::{assert_is_ok, ApiClient, CommonParse, TestEnvironment};
 use hachimi_world_server::service;
 use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, LoginReq, LoginResp, SubmitCaptchaReq, TokenPair};
+use redis::aio::ConnectionManager;
+use std::env;
+use tracing::info;
 
 pub struct TestUser {
     pub uid: i64,
@@ -36,7 +37,7 @@ pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestU
 
     env.api.set_token(reg_resp.token.access_token.clone());
 
-    println!("Test user created: {}, {}", email, reg_resp.uid);
+    info!("Test user created: {}, {}", email, reg_resp.uid);
     TestUser {
         uid: reg_resp.uid,
         email: email.to_string(),
@@ -45,22 +46,9 @@ pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestU
 }
 
 pub async fn with_test_contributor_user(env: &mut TestEnvironment) -> TestUser {
-    let email = env::var("TEST_CONTRIBUTOR_EMAIL").unwrap();
-    let pass = env::var("TEST_CONTRIBUTOR_PASSWORD").unwrap();
-    let captcha_key = generate_pass_captcha_key(&env.api).await;
-    let resp = env.api.post("/auth/login/email", &LoginReq {
-        email: email.clone(),
-        password: pass,
-        device_info: "test".to_string(),
-        code: None,
-        captcha_key: captcha_key,
-    }).await.parse_resp::<LoginResp>().await.unwrap();
-    env.api.set_token(resp.token.access_token.clone());
-    TestUser {
-        uid: resp.uid,
-        email: email,
-        token: resp.token
-    }
+    let email = "maintainer@example.com"; // This is configured in test-config.yaml as a contributor user
+
+    with_new_test_user(env, email).await
 }
 
 /// Make sure using test-captcha environment in integrated tests

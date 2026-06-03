@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::Arc;
+use std::time::Duration;
 use testcontainers_modules::meilisearch::Meilisearch;
 use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::redis::{Redis, REDIS_PORT};
@@ -47,7 +48,11 @@ where
     };
 
     let (redis_instance, redis_conn) = get_test_redis_conn().await;
+
     let (postgres_instance, sql_pool) = get_test_sql_pool().await;
+    // Run migrate
+    sqlx::migrate!().run(&sql_pool).await.unwrap();
+
     let (ms_instance, ms_client) = get_test_meilisearch().await;
     let app_state = AppState {
         sql_pool: sql_pool,
@@ -58,10 +63,10 @@ where
         red_lock: RedLock::new(redis_conn).unwrap(),
     };
 
-    let listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
-    let port = listener.local_addr().unwrap().port();
+    let random_listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
+    let random_port = random_listener.local_addr().unwrap().port();
     let server = start_main_server(
-        listener,
+        random_listener,
         app_state.clone(),
         server_cfg.allow_origins,
         hachimi_world_server::web::jwt::Keys::new(server_cfg.jwt_secret.as_bytes()),
@@ -69,9 +74,14 @@ where
         tokio_util::sync::CancellationToken::new()
     );
     let _handle = tokio::spawn(server);
-    let api = ApiClient::new(format!("http://localhost:{port}"));
+    let api = ApiClient::new(format!("http://localhost:{random_port}"));
 
-    f(TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() }).await;
+    // A trick to wait for the server to start. Especially for waiting the invocation of `initialize_jwt_key`
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    let test_env = TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() };
+    f(test_env).await;
+
+    // Hold the instances until the end of the test to make sure the connections are still valid
     drop(redis_instance);
     drop(postgres_instance);
     drop(ms_instance);
@@ -97,12 +107,14 @@ async fn get_test_sql_pool() -> (ContainerAsync<Postgres>, PgPool) {
 }
 
 async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch>, meilisearch_sdk::client::Client) {
-    let instance = testcontainers_modules::meilisearch::Meilisearch::default().start().await.unwrap();
+    let instance = testcontainers_modules::meilisearch::Meilisearch::default()
+        .with_master_key("12345678")
+        .start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
     let url = format!("http://{host_ip}:{host_port}");
     info!("Open test meilisearch instance at {}", url);
-    (instance, meilisearch_sdk::client::Client::new(url, Some("")).unwrap())
+    (instance, meilisearch_sdk::client::Client::new(url, Some("12345678")).unwrap())
 }
 
 async fn get_test_file_host() -> impl FileHost {
@@ -128,7 +140,7 @@ async fn get_test_file_host() -> impl FileHost {
 }
 
 fn get_test_config() -> Config {
-    Config::parse_by_str("").unwrap()
+    Config::parse("tests/fixtures/test-config.yaml").unwrap()
 }
 
 pub struct ApiClient {
@@ -152,7 +164,7 @@ impl ApiClient {
         let client = reqwest::Client::new();
 
         let resp = client
-            .get(format!("{}{path}", self.base_url))
+            .get(self.build_url(path))
             .headers(self.default_headers())
             .send()
             .await
@@ -165,7 +177,7 @@ impl ApiClient {
         let client = reqwest::Client::new();
 
         let resp = client
-            .get(format!("{}{path}", self.base_url))
+            .get(self.build_url(path))
             .headers(self.default_headers())
             .query(&query)
             .send()
@@ -179,7 +191,7 @@ impl ApiClient {
         let client = reqwest::Client::new();
         let body = serde_json::to_value(body).unwrap();
         let resp = client
-            .post(format!("{}{path}", self.base_url))
+            .post(self.build_url(path))
             .headers(self.default_headers())
             .json(&body)
             .send()
@@ -193,6 +205,15 @@ impl ApiClient {
         let client = reqwest::Client::new();
         client.post(format!("{}{path}", self.base_url))
             .headers(self.default_headers())
+    }
+
+    fn build_url(&self, path: &str) -> String {
+        // Trick for health check endpoint, since it's not under /api prefix
+        if path == "/health" {
+            format!("{}{path}", self.base_url)
+        } else {
+            format!("{}/api{path}", self.base_url)
+        }
     }
 
     fn default_headers(&self) -> HeaderMap {
