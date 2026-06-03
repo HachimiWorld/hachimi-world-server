@@ -4,6 +4,7 @@ use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterRes
 use redis::aio::ConnectionManager;
 use tracing::info;
 
+#[allow(dead_code)]
 pub struct TestUser {
     pub uid: i64,
     pub email: String,

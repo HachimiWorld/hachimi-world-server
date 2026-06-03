@@ -42,47 +42,47 @@ pub async fn check_contributor(
     pool: &PgPool,
     uid: i64,
 ) -> anyhow::Result<bool> {
-    let contributors = redis.get("contributors").await?;
-    if let Some(contributors) = contributors {
-        counter!("check_contributor_cache_hit_count").increment(1);
-        let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
-        Ok(contributor_uids.contains(&uid))
-    } else {
-        counter!("check_contributor_cache_miss_count").increment(1);
+    if let Some(uids) = get_contributors_from_cache(&mut redis).await?
+        && uids.contains(&uid) {
+        return Ok(true);
+    }
 
-        let lock = red_lock.lock_with_timeout("lock:contributors", Duration::from_secs(30)).await?;
-        if lock.is_none() {
-            counter!("check_contributor_lock_timeout_count").increment(1);
-            bail!("Can't get lock")
-        }
+    // Lock
+    let lock = red_lock.lock_with_timeout("lock:contributors", Duration::from_secs(30)).await?;
+    if lock.is_none() {
+        counter!("check_contributor_lock_timeout_count").increment(1);
+        bail!("Can't get lock")
+    }
+    // Check cache again
+    if let Some(uids) = get_contributors_from_cache(&mut redis).await?
+        && uids.contains(&uid) {
+        return Ok(true);
+    }
 
-        // Check cache again
-        let contributors = redis.get("contributors").await?;
-        if let Some(contributors) = contributors {
-            let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
-            if contributor_uids.contains(&uid) {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
+    // Get from source of truth
+    // TODO: Get from github repository
+    let cfg: CommunityCfg = config.get_and_parse("community")?;
+    let mut contributor_uids = HashSet::new();
+    for email in cfg.contributors {
+        if let Some(user) = UserDao::get_by_email(pool, &email).await? {
+            contributor_uids.insert(user.id);
         } else {
-            // Get from source of truth
-            // TODO: Get from github repository
-            let cfg: CommunityCfg = config.get_and_parse("community")?;
-            let mut contributor_uids = HashSet::new();
-            for email in cfg.contributors {
-                if let Some(user) = UserDao::get_by_email(pool, &email).await? {
-                    contributor_uids.insert(user.id);
-                } else {
-                    warn!("Contributor {} was configured but not found in database", email);
-                }
-            }
-            redis.set("contributors", serde_json::to_string(&contributor_uids)?).await?;
-            if contributor_uids.contains(&uid) {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
+            warn!("Contributor {} was configured but not found in database", email);
         }
+    }
+    redis.set("contributors", serde_json::to_string(&contributor_uids)?).await?;
+
+    Ok(contributor_uids.contains(&uid))
+}
+
+async fn get_contributors_from_cache(redis: &mut ConnectionManager) -> anyhow::Result<Option<Vec<i64>>> {
+    let contributors_cache = redis.get("contributors").await?;
+    if let Some(contributors) = contributors_cache {
+        let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
+        counter!("check_contributor_cache_hit_count").increment(1);
+        Ok(Some(contributor_uids))
+    } else {
+        counter!("check_contributor_cache_missed_count").increment(1);
+        Ok(None)
     }
 }

@@ -14,13 +14,13 @@ async fn test_check_contributor() {
             .get("/contributor/check").await
             .parse_resp().await.unwrap();
 
-        assert_eq!(resp.is_contributor, false);
+        assert_eq!(false, resp.is_contributor);
 
         let _test_cont_user = with_test_contributor_user(&mut env).await;
 
         let resp: CheckContributorResp = env.api
             .get("/contributor/check").await
             .parse_resp().await.unwrap();
-        assert_eq!(resp.is_contributor, true);
+        assert_eq!(true, resp.is_contributor);
     }).await;
 }
