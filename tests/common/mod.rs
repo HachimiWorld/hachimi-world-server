@@ -2,6 +2,7 @@
 
 pub mod auth;
 pub mod song;
+pub mod bilibili;
 
 use async_trait::async_trait;
 use axum::http::HeaderMap;
@@ -64,6 +65,7 @@ where
         redis_conn: redis_conn.clone(),
         config: Arc::new(get_test_config()),
         red_lock: RedLock::new(redis_conn).unwrap(),
+        bili_client: Arc::new(bilibili::get_mock_bili_client()),
     };
 
     let random_listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
@@ -74,7 +76,7 @@ where
         server_cfg.allow_origins,
         hachimi_world_server::web::jwt::Keys::new(server_cfg.jwt_secret.as_bytes()),
         server_cfg.publish_version_token,
-        tokio_util::sync::CancellationToken::new()
+        tokio_util::sync::CancellationToken::new(),
     );
     let _handle = tokio::spawn(server);
     let api = ApiClient::new(format!("http://localhost:{random_port}"));
@@ -141,6 +143,7 @@ async fn get_test_file_host() -> impl FileHost {
     });
     mock
 }
+
 
 fn get_test_config() -> Config {
     Config::parse("tests/fixtures/test-config.yaml").unwrap()

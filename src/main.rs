@@ -2,6 +2,7 @@ extern crate hachimi_world_server as app;
 
 use app::config::Config;
 use app::file_hosting::{FileHost, S3FileHost};
+use app::util::bilibili::BilibiliClientImpl;
 use app::util::gracefully_shutdown;
 use app::util::redlock::RedLock;
 use app::web::state::AppState;
@@ -54,7 +55,8 @@ async fn main() -> anyhow::Result<()> {
                 sql_pool: sql_pool,
                 file_host: Arc::new(file_host?),
                 meilisearch: Arc::new(meilisearch_client?),
-                red_lock: RedLock::new(redis_conn)?
+                red_lock: RedLock::new(redis_conn)?,
+                bili_client: Arc::new(BilibiliClientImpl::new())
             }
         }
         _ = cancel_token.cancelled() => {

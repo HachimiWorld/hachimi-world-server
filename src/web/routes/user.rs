@@ -337,6 +337,7 @@ async fn connection_generate_challenge(
     req: Json<GenerateChallengeReq>,
 ) -> WebResult<GenerateChallengeResp> {
     match service::connection_account::generate_challenge(
+        &state.bili_client,
         state.redis_conn.clone(),
         claims.uid(),
         &req.r#type,
@@ -370,6 +371,7 @@ async fn connection_verify_challenge(
     req: Json<VerifyChallengeReq>,
 ) -> WebResult<()> {
     match service::connection_account::verify_challenge_and_link(
+        &state.bili_client,
         &state.sql_pool,
         state.red_lock.clone(),
         state.redis_conn.clone(),
@@ -399,6 +401,10 @@ async fn connection_sync(
     state: State<AppState>,
     req: Json<ConnectionSyncReq>,
 ) -> WebResult<()> {
-    service::connection_account::sync(&state.sql_pool, claims.uid(), &req.r#type).await?;
+    service::connection_account::sync(
+        &state.bili_client,
+        &state.sql_pool, claims.uid(),
+        &req.r#type
+    ).await?;
     ok!(())
 }

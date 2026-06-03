@@ -1,5 +1,6 @@
 use crate::config::Config;
 use crate::file_hosting::FileHost;
+use crate::util::bilibili::BilibiliClient;
 use crate::util::redlock::RedLock;
 use redis::aio::ConnectionManager;
 use sqlx::{Pool, Postgres};
@@ -12,5 +13,6 @@ pub struct AppState {
     pub sql_pool: Pool<Postgres>,
     pub file_host: Arc<dyn FileHost>,
     pub meilisearch: Arc<meilisearch_sdk::client::Client>,
-    pub red_lock: RedLock
+    pub red_lock: RedLock,
+    pub bili_client: Arc<dyn BilibiliClient>
 }

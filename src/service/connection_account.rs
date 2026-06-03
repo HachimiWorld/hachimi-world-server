@@ -110,23 +110,25 @@ pub enum GenerateChallengeError {
 
 /// Generate a challenge string for the user to verify ownership of the account on the provider side.
 pub async fn generate_challenge(
+    bili: &impl bilibili::BilibiliClient,
     mut redis: ConnectionManager,
     uid: i64, provider_type: &str, provider_account_id: &str,
 ) -> Result<Challenge, GenerateChallengeError> {
     match provider_type {
-        "bilibili" => generate_challenge_for_bilibili(&mut redis, uid, provider_account_id).await,
+        "bilibili" => generate_challenge_for_bilibili(bili, &mut redis, uid, provider_account_id).await,
         _ => Err(GenerateChallengeError::UnsupportedProviderType),
     }
 }
 
 async fn generate_challenge_for_bilibili(
+    bili: &impl bilibili::BilibiliClient,
     redis: &mut ConnectionManager,
     uid: i64, bili_uid: &str,
 ) -> Result<Challenge, GenerateChallengeError> {
     let bili_int_id = bili_uid.parse::<i64>()
         .map_err(|_| GenerateChallengeError::InvalidProviderAccountId)?;
 
-    let bili_profile_result = bilibili::get_user_profile(bili_int_id).await;
+    let bili_profile_result = bili.user_info(bili_int_id).await;
     match bili_profile_result {
         Ok(Some(x)) => {
             let challenge = random_challenge_string();
@@ -165,6 +167,7 @@ pub enum VerifyChallengeError {
 }
 
 pub async fn verify_challenge_and_link(
+    bili: &impl bilibili::BilibiliClient,
     sql: &PgPool, red_lock: RedLock, mut redis: ConnectionManager,
     uid: i64, challenge_id: &str,
 ) -> Result<(), VerifyChallengeError> {
@@ -187,7 +190,7 @@ pub async fn verify_challenge_and_link(
     }
 
     let bili_int_id = challenge.provider_account_id.parse::<i64>().with_context(|| "Bad provider account id")?;
-    let bili_profile = bilibili::get_user_profile(bili_int_id).await;
+    let bili_profile = bili.user_info(bili_int_id).await;
 
     match bili_profile {
         Ok(Some(x)) => {
@@ -273,12 +276,17 @@ fn generate_challenge_cache_key(challenge_id: &str) -> String {
     format!("user_account_connections:challenge:{}", challenge_id)
 }
 
-pub async fn sync(sql: &PgPool, uid: i64, provider_type: &String) -> anyhow::Result<()> {
+pub async fn sync(
+    bili: &impl bilibili::BilibiliClient,
+    sql: &PgPool,
+    uid: i64,
+    provider_type: &String
+) -> anyhow::Result<()> {
     match provider_type.as_str() {
         "bilibili" => {
             if let Ok(Some(connection)) = UserConnectionAccountDao::get_by_user_id(sql, uid, provider_type).await &&
                 let Ok(bili_int_id) = connection.provider_account_id.parse::<i64>() {
-                let bili_profile_resp = bilibili::get_user_profile(bili_int_id).await;
+                let bili_profile_resp = bili.user_info(bili_int_id).await;
                 match bili_profile_resp {
                     Ok(Some(bili_profile)) => {
                         if bili_profile.name != connection.provider_account_name {
