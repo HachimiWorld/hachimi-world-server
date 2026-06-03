@@ -311,8 +311,8 @@ pub struct ConnectionSetVisibilityReq {
 }
 
 async fn connection_set_visibility(
-    claims: Claims,
-    req: Json<ConnectionSetVisibilityReq>,
+    _claims: Claims,
+    _req: Json<ConnectionSetVisibilityReq>,
 ) -> WebResult<()> {
     // TODO
     ok!(())

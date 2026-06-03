@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod song;
 
+use async_trait::async_trait;
 use axum::http::HeaderMap;
 use hachimi_world_server::config::Config;
 use hachimi_world_server::file_hosting::{FileHost, MockFileHost, UploadResult};
@@ -127,7 +128,7 @@ async fn get_test_file_host() -> impl FileHost {
     mock.expect_upload().withf(|bytes, key| {
         info!("Mock upload file {} ({} bytes)", key, bytes.len());
         true
-    }).returning(|bytes, key| {
+    }).returning(|_bytes, key| {
         let key = key.to_string();
         Box::pin(async move {
             Ok(UploadResult {
@@ -242,10 +243,12 @@ pub async fn assert_is_err(resp: Response) {
 
 pub type ApiResult<T, E = CommonError> = Result<T, E>;
 
+#[async_trait]
 pub trait CommonParse {
     async fn parse_resp<T: for<'de> serde::Deserialize<'de>>(self) -> ApiResult<T>;
 }
 
+#[async_trait]
 impl CommonParse for Response {
     async fn parse_resp<T: for<'de> serde::Deserialize<'de>>(self) -> ApiResult<T> {
         let text = self.text().await.unwrap();

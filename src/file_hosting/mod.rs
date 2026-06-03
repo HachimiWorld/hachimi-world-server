@@ -4,8 +4,6 @@ use aws_sdk_s3::operation::put_object::PutObjectOutput;
 use aws_sdk_s3::primitives::ByteStream;
 use bytes::Bytes;
 use mockall::automock;
-use std::fs::File;
-use std::pin::Pin;
 use tracing::info;
 
 

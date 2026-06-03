@@ -1,8 +1,7 @@
 use crate::common::{assert_is_ok, ApiClient, CommonParse, TestEnvironment};
 use hachimi_world_server::service;
-use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, LoginReq, LoginResp, SubmitCaptchaReq, TokenPair};
+use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, SubmitCaptchaReq, TokenPair};
 use redis::aio::ConnectionManager;
-use std::env;
 use tracing::info;
 
 pub struct TestUser {

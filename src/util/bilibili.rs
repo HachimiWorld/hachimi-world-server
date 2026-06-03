@@ -12,7 +12,7 @@ pub async fn get_user_profile(mid: i64) -> anyhow::Result<Option<BiliUserProfile
     let handle = tokio::task::spawn(async move {
         let mut cli = bilibili_api_rs::Client::new();
         let mut init_cnt = 0;
-        let mut last_error: Option<anyhow::Error> = None;
+        let mut last_error: anyhow::Error;
 
         let info = loop {
             match cli.user(mid).info().await {
@@ -21,12 +21,12 @@ pub async fn get_user_profile(mid: i64) -> anyhow::Result<Option<BiliUserProfile
                     if e.to_string().starts_with("bilibili api reject: -404") {
                         return Ok(None)
                     }
-                    last_error = Some(anyhow!("failed to get user info: {e}"));
+                    last_error = anyhow!("failed to get user info: {e}");
                 }
             }
             init_cnt += 1;
             if init_cnt > 5 {
-                return Err(last_error.unwrap_or_else(|| anyhow!("failed to get user info after 5 attempts")))
+                return Err(last_error)
             }
         };
 
