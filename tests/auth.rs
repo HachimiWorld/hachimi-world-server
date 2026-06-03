@@ -1,10 +1,10 @@
 pub mod common;
 
-use crate::common::auth::{generate_pass_captcha_key, generate_pass_verification_code};
+use crate::common::auth::{generate_pass_captcha_key, generate_pass_verification_code, with_new_random_test_user};
 use crate::common::{assert_is_err, assert_is_ok, CommonParse};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use common::with_test_environment;
-use hachimi_world_server::web::jwt::generate_access_token;
+use hachimi_world_server::web::jwt::{generate_access_token, generate_refresh_token_with_exp};
 use hachimi_world_server::web::routes::auth::{DeviceListResp, DeviceLogoutReq, EmailRegisterReq, LoginReq, LoginResp, RefreshTokenReq, ResetPasswordReq, TokenPair};
 use hachimi_world_server::{service, web};
 use reqwest::StatusCode;
@@ -47,7 +47,7 @@ async fn test_register_and_login() {
         ).await;
         assert_is_ok(resp).await;
 
-        // Test login with an error password
+        // Test login with a wrong password
         let captcha_key = generate_pass_captcha_key(&env.api).await;
         let resp = env.api.post(
             "/auth/login/email",
@@ -73,40 +73,92 @@ async fn test_register_and_login() {
                 captcha_key,
             },
         ).await.parse_resp::<LoginResp>().await.unwrap();
+        assert!(!resp.token.access_token.is_empty());
+        assert!(!resp.token.refresh_token.is_empty());
+    }).await;
+}
 
-        println!("{:?}", resp);
-        let token = resp.token;
+#[tokio::test]
+async fn test_refresh_token() {
+    with_test_environment(|mut env| async move {
+        let user = with_new_random_test_user(&mut env).await;
 
-        // Test refresh token
         let new_token: TokenPair = env.api.post("/auth/refresh_token", &RefreshTokenReq {
-            refresh_token: token.refresh_token,
+            refresh_token: user.token.refresh_token.clone(),
             device_info: "test".to_string(),
         }).await.parse_resp::<TokenPair>().await.unwrap();
 
-        // Test get logged device list
-        env.api.set_token(new_token.access_token.clone());
+        assert!(!new_token.access_token.is_empty());
+        assert!(!new_token.refresh_token.is_empty());
+    }).await;
+}
+
+#[tokio::test]
+async fn test_refresh_token_should_reject_expired_token() {
+    with_test_environment(|mut env| async move {
+        let user = with_new_random_test_user(&mut env).await;
+        // Generate an expired refresh token for test
+        let expired_refresh_token = generate_refresh_token_with_exp(
+            &user.uid.to_string(),
+            chrono::Utc::now() - Duration::days(1)
+        );
+        let resp = env.api.post("/auth/refresh_token", &RefreshTokenReq {
+            refresh_token: expired_refresh_token.0,
+            device_info: "test".to_string(),
+        }).await.parse_resp::<TokenPair>().await.unwrap_err();
+        assert_eq!("token_expired", resp.code);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_device_management() {
+    with_test_environment(|mut env| async move {
+        let user = with_new_random_test_user(&mut env).await;
+
+        let captcha_key = generate_pass_captcha_key(&env.api).await;
+        let second_login: LoginResp = env.api.post(
+            "/auth/login/email",
+            &LoginReq {
+                email: user.email.clone(),
+                password: "test12345678".to_string(),
+                device_info: "test-device-2".to_string(),
+                code: None,
+                captcha_key,
+            },
+        ).await.parse_resp::<LoginResp>().await.unwrap();
+
+        env.api.set_token(second_login.token.access_token.clone());
         let resp: DeviceListResp = env.api.get("/auth/device/list").await.parse_resp().await.unwrap();
         assert_eq!(2, resp.devices.len());
-        let last_device = resp.devices.last().unwrap();
 
-        // Test revoke device
+        let second_device = resp
+            .devices
+            .iter()
+            .find(|d| d.device_info.as_deref() == Some("test-device-2"))
+            .expect("second device should exist");
+
         let resp = env.api.post("/auth/device/logout", &DeviceLogoutReq {
-            device_id: last_device.id
+            device_id: second_device.id,
         }).await;
         assert_is_ok(resp).await;
 
-        // Test refresh token with revoked, expected error
         let resp = env.api.post("/auth/refresh_token", &RefreshTokenReq {
-            refresh_token: new_token.refresh_token,
-            device_info: "test".to_string(),
+            refresh_token: second_login.token.refresh_token,
+            device_info: "test-device-2".to_string(),
         }).await;
         assert_is_err(resp).await;
+    }).await;
+}
 
-        // Test reset password
+#[tokio::test]
+async fn test_reset_password() {
+    with_test_environment(|mut env| async move {
+        let user = with_new_random_test_user(&mut env).await;
+
         let captcha_key = generate_pass_captcha_key(&env.api).await;
-        service::verification_code::set_code(&mut env.redis, &random_email, "12345678").await.unwrap();
+        service::verification_code::set_code(&mut env.redis, &user.email, "12345678").await.unwrap();
         let resp = env.api.post("/auth/reset_password", &ResetPasswordReq {
-            email: random_email.to_string(),
+            email: user.email.clone(),
             code: "12345678".to_string(),
             new_password: "test-changed".to_string(),
             logout_all_devices: true,
@@ -114,10 +166,25 @@ async fn test_register_and_login() {
         }).await;
         assert_is_ok(resp).await;
 
-        // Test login with the new password
+        let resp = env.api.post("/auth/refresh_token", &RefreshTokenReq {
+            refresh_token: user.token.refresh_token,
+            device_info: "test".to_string(),
+        }).await;
+        assert_is_err(resp).await;
+
         let captcha_key = generate_pass_captcha_key(&env.api).await;
         let resp = env.api.post("/auth/login/email", &LoginReq {
-            email: random_email.to_string(),
+            email: user.email.clone(),
+            password: "test12345678".to_string(),
+            device_info: "test".to_string(),
+            code: None,
+            captcha_key,
+        }).await;
+        assert_is_err(resp).await;
+
+        let captcha_key = generate_pass_captcha_key(&env.api).await;
+        let resp = env.api.post("/auth/login/email", &LoginReq {
+            email: user.email,
             password: "test-changed".to_string(),
             device_info: "test".to_string(),
             code: None,
@@ -191,7 +258,3 @@ async fn test_access_with_expired_token() {
     }).await;
 }
 
-#[tokio::test]
-async fn test_refresh_token() {
-    // TODO: How to mock refresh tokens?
-}

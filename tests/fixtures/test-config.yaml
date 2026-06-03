@@ -14,9 +14,10 @@ redis:
   address: redis:6379
   database: 0
 email:
+  disabled: true
   host: email.example.com
   username: noreply@example.com
-  password: 12345678
+  password: "12345678"
   no_reply_email: noreply@example.com
 s3:
   bucket_name: bucket-name

@@ -36,7 +36,7 @@ where
     F: Fn(TestEnvironment) -> Fut,
     Fut: Future<Output=()> + Send + 'static,
 {
-    tracing_subscriber::fmt().with_max_level(Level::INFO).init();
+    tracing_subscriber::fmt().with_max_level(Level::INFO).try_init().ok(); // Ignore error
     dotenv::dotenv().unwrap();
 
     let server_cfg = ServerCfg {
