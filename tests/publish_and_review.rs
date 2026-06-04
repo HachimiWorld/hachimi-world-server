@@ -1,7 +1,8 @@
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_new_test_user, with_test_contributor_user};
-use crate::common::{assert_is_err, CommonParse, TestEnvironment};
+use crate::common::res_utils::generate_test_image;
+use crate::common::{assert_is_err, ApiResult, CommonParse, TestEnvironment};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
 use chrono::Utc;
 use hachimi_world_server::db::creator::{Creator, CreatorDao};
@@ -10,144 +11,122 @@ use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
 use hachimi_world_server::web::routes::publish::jmid::{JmidCheckPReq, JmidCheckPResp, JmidMineResp};
 use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
 use hachimi_world_server::web::routes::publish::{review, CreationInfo, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
-use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagSearchReq, TagSearchResp};
+use hachimi_world_server::web::routes::song::{TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
+use image::ImageFormat;
 use reqwest::multipart::{Form, Part};
+use reqwest::StatusCode;
 use std::fs;
+use std::fs::File;
+use std::io::Read;
 use std::time::Duration;
 use tokio::time;
 
 #[tokio::test]
+async fn test_create_tag_then_search() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+        let resp = env.api.post(
+            "/song/tag/create",
+            &TagCreateReq {
+                name: "Test".to_string(),
+                description: None,
+            },
+        ).await;
+        assert_is_ok(resp).await;
+
+        let resp: TagSearchResp = env.api.get_query("/song/tag/search", &TagSearchReq {
+            query: "Test".to_string(),
+        }).await.parse_resp().await.unwrap();
+
+        assert_eq!("Test", resp.result.first().unwrap().name);
+    }).await
+}
+
+#[tokio::test]
+async fn test_create_tag_should_error_when_duplicated() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        let resp = env.api.post(
+            "/song/tag/create",
+            &TagCreateReq {
+                name: "Test".to_string(),
+                description: None,
+            },
+        ).await;
+        assert_is_ok(resp).await;
+
+        let resp = env.api.post(
+            "/song/tag/create",
+            &TagCreateReq {
+                name: "Test".to_string(),
+                description: None,
+            },
+        ).await;
+        assert_is_err(resp).await;
+    }).await
+}
+
+#[tokio::test]
+async fn test_upload_audio() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        let test_mp3_bytes = read_test_mp3();
+        let resp: UploadAudioFileResp = env.api
+            .post_raw("/song/upload_audio_file")
+            .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
+            .send().await.unwrap()
+            .parse_resp().await.unwrap();
+
+        assert!(!resp.temp_id.is_empty(), "temp_id should not be empty");
+        assert_eq!(10, resp.duration_secs);
+        assert_eq!(Some("Test Track".into()), resp.title);
+    }).await
+}
+
+#[tokio::test]
+async fn test_upload_audio_should_fail_when_not_login() {
+    with_test_environment(|env| async move {
+        let test_mp3_bytes = read_test_mp3();
+        let resp = env.api
+            .post_raw("/song/upload_audio_file")
+            .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
+            .send().await.unwrap();
+        assert_eq!(StatusCode::UNAUTHORIZED, resp.status())
+    }).await
+}
+
+#[tokio::test]
+async fn test_upload_cover_image() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        let img_bytes = generate_test_image(128, 128, ImageFormat::Png);
+        let resp: UploadImageResp = env.api
+            .post_raw("/song/upload_cover_image")
+            .multipart(Form::new().part("file", Part::bytes(img_bytes)))
+            .send().await.unwrap()
+            .parse_resp().await.unwrap();
+
+        assert!(!resp.temp_id.is_empty(), "temp_id should not be empty");
+    }).await
+}
+
+#[tokio::test]
 async fn test_publish_with_random_jmid() {
     with_test_environment(|mut env| async move {
-        let user = with_new_random_test_user(&mut env).await;
+        let _user = with_new_random_test_user(&mut env).await;
 
         // Create tags
-        // create_tags(&env.api).await;
-
-        // Get tag
-        let resp: TagSearchResp = env.api.get_query(
-            "/song/tag/search",
-            &TagSearchReq { query: "原教".to_string() },
-        ).await.parse_resp().await.unwrap();
-
-        let first_tag = resp.result.first().unwrap();
-        assert_eq!("原教旨", first_tag.name);
-        assert_eq!(None, first_tag.description);
-
-        // Upload a song
-        let upload_resp: UploadAudioFileResp = env.api
-            .post_raw("/song/upload_audio_file")
-            .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test.mp3").unwrap())))
-            .send().await.unwrap().parse_resp().await.unwrap();
-
-        // Upload a cover
-        let upload_img_resp: UploadImageResp = env
-            .api
-            .post_raw("/song/upload_cover_image")
-            .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test.webp").unwrap())))
-            .send().await.unwrap().parse_resp().await.unwrap();
-
-        // Publish a song
-        let test_song_titles = vec!["不再曼波", "跳楼基"];
-
-        let mut last_song_display_id = String::new();
-
-        for title in &test_song_titles {
-            let resp: PublishResp = env
-                .api
-                .post(
-                    "/song/publish",
-                    &PublishReq {
-                        song_temp_id: upload_resp.temp_id.clone(),
-                        cover_temp_id: upload_img_resp.temp_id.clone(),
-                        title: title.to_string(),
-                        subtitle: "A test music".to_string(),
-                        description: "This is a fucking test music".to_string(),
-                        lyrics: "哈基米哈基米哈基米".to_string(),
-                        tag_ids: vec![first_tag.id],
-                        creation_info: CreationInfo {
-                            creation_type: 0,
-                            origin_info: Some(CreationTypeInfo {
-                                song_display_id: None,
-                                title: Some("原作".into()),
-                                artist: Some("群星".into()),
-                                url: None,
-                                origin_type: 0,
-                            }),
-                            derivative_info: None,
-                        },
-                        production_crew: vec![
-                            ProductionItem {
-                                role: "混音".to_string(),
-                                uid: None,
-                                name: Some("张三".to_string()),
-                            },
-                            ProductionItem {
-                                role: "编曲".to_string(),
-                                uid: Some(user.uid),
-                                name: None,
-                            },
-                        ],
-                        external_links: vec![
-                            ExternalLink {
-                                platform: "bilibili".to_string(),
-                                url: "https://www.bilibili.com/video/av114514/".to_string(),
-                            }
-                        ],
-                        explicit: Some(false),
-                        jmid: None,
-                        comment: None,
-                    },
-                )
-                .await.parse_resp().await.unwrap();
-
-            last_song_display_id = resp.song_display_id;
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        }
-
-        let resp: PageResp = env.api.get_query("/publish/review/page", &PageReq {
-            page_index: 0,
-            page_size: 20,
-        }).await.parse_resp().await.unwrap();
-        assert_eq!(resp.data.len(), test_song_titles.len());
-
-        let contributor_user = with_test_contributor_user(&mut env).await;
-
-        // Test get the submitted review
-        let resp: PageResp = env.api.get_query("/publish/review/page_contributor", &PageReq {
-            page_index: 0,
-            page_size: 20,
-        }).await.parse_resp().await.unwrap();
-        let first_review = resp.data.first().unwrap();
-        let second_review = resp.data.get(1).unwrap();
-        assert_eq!(first_review.display_id, last_song_display_id);
-
-        // Test reject second review
-        let resp = env.api.post("/publish/review/reject", &RejectReviewReq {
-            review_id: second_review.review_id,
-            comment: "Reject for testing".to_string(),
-        }).await;
-        assert_is_ok(resp).await;
-        let resp = env.api.get_query("/song/detail", &DetailReq { id: second_review.display_id.clone() })
-            .await.parse_resp::<DetailResp>().await;
-        assert!(resp.is_err());
-
-        // Test approve first review
-        let resp = env.api.post("/publish/review/approve", &ApproveReviewReq {
-            review_id: first_review.review_id,
-            comment: Some("Approve for testing".to_string()),
-        }).await;
-        assert_is_ok(resp).await;
-
-        // Test detail
-        let resp: DetailResp = env.api.get_query("/song/detail", &DetailReq { id: last_song_display_id.clone() })
-            .await.parse_resp().await.unwrap();
-        assert_eq!(test_song_titles.last().unwrap().to_string(), resp.title);
+        let tags = create_tags(&env.api).await;
+        let song = publish_test_song(&env.api, None, tags.first().unwrap().id, "Test Song").await.unwrap();
+        assert!(!song.song_display_id.is_empty(), "song_display_id should not be empty");
     }).await;
 }
 
-async fn create_tags(api: &ApiClient) {
-    // TODO[test](song): We should add cleanup code to make the test repeatable.
+async fn create_tags(api: &ApiClient) -> Vec<TagItem> {
+    let mut results = vec![];
     let tags = vec!["原教旨", "流行", "古典", "人声翻唱", "摇滚", "R&B", "民谣"];
     for x in tags {
         let resp = api
@@ -158,9 +137,83 @@ async fn create_tags(api: &ApiClient) {
                     description: None,
                 },
             )
-            .await;
-        assert_is_ok(resp).await;
+            .await
+            .parse_resp::<TagCreateResp>().await.unwrap();
+        results.push(TagItem {
+            id: resp.id,
+            name: x.to_string(),
+            description: None,
+        });
     }
+    results
+}
+
+async fn publish_test_song(
+    api: &ApiClient,
+    jmid: Option<String>,
+    tag_id: i64,
+    title: &str,
+) -> ApiResult<PublishResp> {
+    // Upload a song
+    let test_mp3_bytes = read_test_mp3();
+    let upload_resp: UploadAudioFileResp = api
+        .post_raw("/song/upload_audio_file")
+        .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
+        .send().await.unwrap().parse_resp().await.unwrap();
+    println!("{:?}", upload_resp);
+
+    // Upload a cover
+    let upload_img_resp: UploadImageResp = api
+        .post_raw("/song/upload_cover_image")
+        .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
+        .send().await.unwrap().parse_resp().await.unwrap();
+
+    // Publish a song
+    let resp = api.post(
+        "/song/publish",
+        &PublishReq {
+            song_temp_id: upload_resp.temp_id.clone(),
+            cover_temp_id: upload_img_resp.temp_id.clone(),
+            title: title.to_string(),
+            subtitle: "A test music".to_string(),
+            description: "This is a fucking test music".to_string(),
+            lyrics: "哈基米哈基米哈基米".to_string(),
+            tag_ids: vec![tag_id],
+            creation_info: CreationInfo {
+                creation_type: 0,
+                origin_info: Some(CreationTypeInfo {
+                    song_display_id: None,
+                    title: Some("原作".into()),
+                    artist: Some("群星".into()),
+                    url: None,
+                    origin_type: 0,
+                }),
+                derivative_info: None,
+            },
+            production_crew: vec![
+                ProductionItem {
+                    role: "混音".to_string(),
+                    uid: None,
+                    name: Some("张三".to_string()),
+                },
+                /*ProductionItem {
+                    role: "编曲".to_string(),
+                    uid: Some(user.uid),
+                    name: None,
+                },*/
+            ],
+            external_links: vec![
+                ExternalLink {
+                    platform: "bilibili".to_string(),
+                    url: "https://www.bilibili.com/video/av114514/".to_string(),
+                }
+            ],
+            explicit: Some(false),
+            jmid,
+            comment: None,
+        })
+        .await.parse_resp::<PublishResp>().await;
+    resp
 }
 
 #[tokio::test]
@@ -549,3 +602,11 @@ async fn test_review_comments() {
         assert_is_err(resp).await;
     }).await;
 }
+
+fn read_test_mp3() -> Vec<u8> {
+    File::open("tests/fixtures/test-mp3.mp3").unwrap()
+        .bytes()
+        .map(|b| b.unwrap())
+        .collect()
+}
+

@@ -1,9 +1,10 @@
 mod common;
 
+use crate::common::res_utils::generate_test_image;
 use crate::common::{assert_is_ok, auth, CommonParse};
 use common::with_test_environment;
 use hachimi_world_server::web::routes::user::{GetProfileReq, PublicUserProfile, SearchReq, SearchResp, UpdateProfileReq};
-use image::{ImageBuffer, ImageFormat, Rgb};
+use image::ImageFormat;
 use reqwest::multipart::{Form, Part};
 
 #[tokio::test]
@@ -38,7 +39,7 @@ async fn test_set_avatar() {
     with_test_environment(|mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;
 
-        let png = generate_test_avatar(64, 128, ImageFormat::Png);
+        let png = generate_test_image(64, 128, ImageFormat::Png);
 
         let resp = env.api
             .post_raw("/user/set_avatar")
@@ -58,19 +59,7 @@ async fn test_set_avatar() {
     }).await
 }
 
-fn generate_test_avatar(width: u32, height: u32, format: ImageFormat) -> Vec<u8> {
-    let mut img = ImageBuffer::new(width, height);
 
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        *pixel = Rgb([ (x % 256) as u8, (y % 256) as u8, 128 ]);
-    }
-
-    let mut bytes: Vec<u8> = Vec::new();
-    let mut cursor = std::io::Cursor::new(&mut bytes);
-    img.write_to(&mut cursor, format).unwrap();
-
-    bytes
-}
 
 #[tokio::test]
 async fn test_search() {

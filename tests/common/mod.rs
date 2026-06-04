@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod song;
 pub mod bilibili;
+pub mod res_utils;
 
 use async_trait::async_trait;
 use axum::http::HeaderMap;
