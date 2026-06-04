@@ -16,7 +16,6 @@ use image::ImageFormat;
 use itertools::Itertools;
 use reqwest::multipart::{Form, Part};
 use reqwest::StatusCode;
-use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
@@ -75,7 +74,7 @@ async fn test_upload_audio() {
 
         let test_mp3_bytes = read_test_mp3();
         let resp: UploadAudioFileResp = env.api
-            .post_raw("/song/upload_audio_file")
+            .post_raw("/publish/upload_audio_file")
             .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
             .send().await.unwrap()
             .parse_resp().await.unwrap();
@@ -91,7 +90,7 @@ async fn test_upload_audio_should_fail_when_not_login() {
     with_test_environment(|env| async move {
         let test_mp3_bytes = read_test_mp3();
         let resp = env.api
-            .post_raw("/song/upload_audio_file")
+            .post_raw("/publish/upload_audio_file")
             .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
             .send().await.unwrap();
         assert_eq!(StatusCode::UNAUTHORIZED, resp.status())
@@ -105,7 +104,7 @@ async fn test_upload_cover_image() {
 
         let img_bytes = generate_test_image(128, 128, ImageFormat::Png);
         let resp: UploadImageResp = env.api
-            .post_raw("/song/upload_cover_image")
+            .post_raw("/publish/upload_cover_image")
             .multipart(Form::new().part("file", Part::bytes(img_bytes)))
             .send().await.unwrap()
             .parse_resp().await.unwrap();
@@ -122,19 +121,19 @@ async fn test_publish_song_with_minium_data() {
         // Upload a song
         let test_mp3_bytes = read_test_mp3();
         let upload_resp: UploadAudioFileResp = env.api
-            .post_raw("/song/upload_audio_file")
+            .post_raw("/publish/upload_audio_file")
             .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
             .send().await.unwrap().parse_resp().await.unwrap();
 
         // Upload a cover
         let upload_img_resp: UploadImageResp = env.api
-            .post_raw("/song/upload_cover_image")
+            .post_raw("/publish/upload_cover_image")
             .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
             .send().await.unwrap().parse_resp().await.unwrap();
 
         // Publish a song without cover and tags
         let resp = env.api.post(
-            "/song/publish",
+            "/publish/publish",
             &PublishReq {
                 song_temp_id: upload_resp.temp_id.clone(),
                 cover_temp_id: upload_img_resp.temp_id.clone(),
@@ -204,19 +203,19 @@ async fn publish_test_song(
     // Upload a song
     let test_mp3_bytes = read_test_mp3();
     let upload_resp: UploadAudioFileResp = api
-        .post_raw("/song/upload_audio_file")
+        .post_raw("/publish/upload_audio_file")
         .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     // Upload a cover
     let upload_img_resp: UploadImageResp = api
-        .post_raw("/song/upload_cover_image")
+        .post_raw("/publish/upload_cover_image")
         .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     // Publish a song
     let resp = api.post(
-        "/song/publish",
+        "/publish/publish",
         &PublishReq {
             song_temp_id: upload_resp.temp_id.clone(),
             cover_temp_id: upload_img_resp.temp_id.clone(),
@@ -407,112 +406,126 @@ async fn test_check_jmid() {
 }
 
 #[tokio::test]
-async fn test_publish_with_jmid() {
+async fn test_publish_should_fail_when_first_publication_is_not_finished_yet() {
     with_test_environment(|mut env| async move {
-        let user = with_new_random_test_user(&mut env).await;
+        let _user = with_new_random_test_user(&mut env).await;
 
-        // Publish first song, this jmid is `never_used`
+        // Publish first song should succeed when JMID is never used before.
         let mut req = publish_template(&env).await;
         req.jmid = Some("JM-ABCD-001".into());
-        let publish_001_resp: PublishResp = env.api.post("/song/publish", &req)
-            .await.parse_resp().await.unwrap();
+        let resp = env.api.post("/publish/publish", &req).await;
+        assert_is_ok(resp).await;
 
-        time::sleep(Duration::from_secs(1)).await;
+        // Wait for redis lock to be unlocked asynchronously
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Test the `locked_by_self` logic, should fail
+        // Publish should fail when first publication is not finished yet.
         let mut req = publish_template(&env).await;
         req.jmid = Some("JM-ABCD-002".into());
-        let resp = env.api.post("/song/publish", &req)
+        let resp = env.api.post("/publish/publish", &req)
             .await.parse_resp::<PublishResp>().await;
         assert_eq!(resp.unwrap_err().code, "pending");
 
-        time::sleep(Duration::from_secs(1)).await;
+        // Wait for redis lock to be unlocked asynchronously
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
-        // Create a new user and test the `used(locked)` logic, should fail
+        // Even another jmid prefix
+        let mut req = publish_template(&env).await;
+        req.jmid = Some("JM-BCDE-001".into());
+        let resp = env.api.post("/publish/publish", &req)
+            .await.parse_resp::<PublishResp>().await;
+        assert_eq!(resp.unwrap_err().code, "pending");
+    }).await
+}
+
+#[tokio::test]
+async fn test_publish_should_fail_when_jmid_prefix_hold_by_others() {
+    with_test_environment(|mut env| async move {
+        let _user1 = with_new_random_test_user(&mut env).await;
+
+        let mut req = publish_template(&env).await;
+        req.jmid = Some("JM-ABCD-001".into());
+        let publish_001_resp: PublishResp = env.api.post("/publish/publish", &req)
+            .await.parse_resp().await.unwrap();
+
+        time::sleep(Duration::from_millis(100)).await;
+
+        // User 2 should fail to publish with prefix "ABCD" because it's hold by user 1
         let user2 = with_new_random_test_user(&mut env).await;
         let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-ABCD-003".into());
-        let resp = env.api.post("/song/publish", &req)
+        req.jmid = Some("JM-ABCD-999".into());
+        let resp = env.api.post("/publish/publish", &req)
             .await.parse_resp::<PublishResp>().await;
         assert_eq!(resp.unwrap_err().code, "jmid_prefix_already_used");
 
-        time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_millis(100)).await;
 
-        let contributor_user = with_test_contributor_user(&mut env).await;
-
-        // Reject ABCD-001, thus release the prefix "ABCD"
+        // Reject the review, thus release the prefix "ABCD"
+        let _contributor = with_test_contributor_user(&mut env).await;
         let resp = env.api.post("/publish/review/reject", &RejectReviewReq {
             review_id: publish_001_resp.review_id,
             comment: "Reject for testing".into(),
         }).await;
         assert_is_ok(resp).await;
 
-        time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_millis(100)).await;
 
-        // Let user2 publish with prefix ABCD because it has been released
+        // User 2 should be able to publish with prefix "ABCD" because it's released after rejection
         env.api.set_token(user2.token.access_token.clone());
         let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-ABCD-003".into());
-        let publish_001_resp2 = env.api.post("/song/publish", &req).await
-            .parse_resp::<PublishResp>().await
-            .unwrap();
+        req.jmid = Some("JM-ABCD-002".into());
+        let publish_001_resp2 = env.api.post("/publish/publish", &req).await
+            .parse_resp::<PublishResp>().await;
+        assert!(publish_001_resp2.is_ok())
+    }).await
+}
 
-        time::sleep(Duration::from_secs(1)).await;
+#[tokio::test]
+async fn test_publish_with_another_prefix_should_fail() {
+    with_test_environment(|mut env| async move {
+        let user = with_new_random_test_user(&mut env).await;
 
-        // Approve it
+        // 1. Publish with ABCD prefix
+        let mut req = publish_template(&env).await;
+        req.jmid = Some("JM-ABCD-001".into());
+        let abcd_resp: PublishResp = env.api.post("/publish/publish", &req)
+            .await.parse_resp().await.unwrap();
+
+        time::sleep(Duration::from_millis(100)).await;
+
+        // 2. Let contributor approve it
+        let contributor_user = with_test_contributor_user(&mut env).await;
         env.api.set_token(contributor_user.token.access_token);
         let resp = env.api.post("/publish/review/approve", &ApproveReviewReq {
-            review_id: publish_001_resp2.review_id,
+            review_id: abcd_resp.review_id,
             comment: Some("Approve for testing".to_string()),
         }).await;
         assert_is_ok(resp).await;
 
-        time::sleep(Duration::from_secs(1)).await;
+        time::sleep(Duration::from_millis(100)).await;
 
-        // The user2 has owned the prefix "ABCD", so he can publish again
-        env.api.set_token(user2.token.access_token);
-        let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-ABCD-002".into());
-        let resp = env.api.post("/song/publish", &req)
-            .await.parse_resp::<PublishResp>().await;
-        assert!(resp.is_ok());
-
-        // Publish again, the jmid ABCD-002 is already im use, should fail
-        let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-ABCD-002".into());
-        let resp = env.api.post("/song/publish", &req)
-            .await.parse_resp::<PublishResp>().await;
-        assert_eq!(resp.unwrap_err().code, "jmid_already_used");
-
-        // Publish with another prefix, should fail
-        let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-EFGH-001".into());
-        let resp = env.api.post("/song/publish", &req)
-            .await.parse_resp::<PublishResp>().await;
-        assert_eq!(resp.unwrap_err().code, "jmid_prefix_mismatch");
-
-        // Create a new user and test the `used(owned by another user)` logic
+        // 3. Publish with another prefix, should fail (jmid_prefix_mismatch)
         env.api.set_token(user.token.access_token);
         let mut req = publish_template(&env).await;
-        req.jmid = Some("JM-ABCD-003".into());
-        let resp = env.api.post("/song/publish", &req)
+        req.jmid = Some("JM-EFGH-001".into());
+        let resp = env.api.post("/publish/publish", &req)
             .await.parse_resp::<PublishResp>().await;
-        assert_eq!(resp.unwrap_err().code, "jmid_prefix_already_used");
+        assert_eq!(resp.unwrap_err().code, "jmid_prefix_mismatch");
     }).await
 }
 
 async fn publish_template(env: &TestEnvironment) -> PublishReq {
     // Upload a song
+    let test_mp3_bytes = read_test_mp3();
     let upload_resp: UploadAudioFileResp = env.api
         .post_raw("/publish/upload_audio_file")
-        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test_res/test.mp3").unwrap())))
+        .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     // Upload a cover
-    let upload_img_resp: UploadImageResp = env
-        .api
+    let upload_img_resp: UploadImageResp = env.api
         .post_raw("/publish/upload_cover_image")
-        .multipart(Form::new().part("file", Part::bytes(fs::read(".local/test_Res/test.webp").unwrap())))
+        .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
         .send().await.unwrap().parse_resp().await.unwrap();
 
     PublishReq {
@@ -543,7 +556,7 @@ async fn publish_template(env: &TestEnvironment) -> PublishReq {
 }
 
 #[tokio::test]
-async fn test_review_modify_and_history() {
+async fn test_modify_review_then_get_history() {
     with_test_environment(|mut env| async move {
         let uploader = with_new_random_test_user(&mut env).await;
         let template = publish_template(&env).await;
@@ -552,6 +565,7 @@ async fn test_review_modify_and_history() {
             .parse_resp()
             .await
             .unwrap();
+        time::sleep(Duration::from_millis(100)).await;
 
         let updated_title = "Updated Test Title".to_string();
         let updated_subtitle = "Updated subtitle".to_string();
@@ -650,6 +664,49 @@ async fn test_review_modify_and_history() {
             },
         ).await;
         assert_is_err(resp).await;
+    }).await;
+}
+
+
+#[tokio::test]
+async fn test_modify_review_by_other_user_should_fail() {
+    with_test_environment(|mut env| async move {
+        let _uploader = with_new_random_test_user(&mut env).await;
+        let publish_resp: PublishResp = env.api.post("/publish/publish", &publish_template(&env).await)
+            .await
+            .parse_resp()
+            .await
+            .unwrap();
+
+        let other_user = with_new_random_test_user(&mut env).await;
+        env.api.set_token(other_user.token.access_token.clone());
+        let resp = env.api.post("/publish/review/modify", &ReviewModifyReq {
+            review_id: publish_resp.review_id,
+            song_temp_id: None,
+            cover_temp_id: None,
+            title: "Hacked".to_string(),
+            subtitle: "Hacked".to_string(),
+            description: "Hacked".to_string(),
+            lyrics: "Hacked".to_string(),
+            tag_ids: vec![],
+            creation_info: CreationInfo {
+                creation_type: 0,
+                origin_info: Some(CreationTypeInfo {
+                    song_display_id: None,
+                    title: Some("原作".into()),
+                    artist: Some("群星".into()),
+                    url: None,
+                    origin_type: 0,
+                }),
+                derivative_info: None,
+            },
+            production_crew: vec![],
+            external_links: vec![],
+            explicit: false,
+            comment: Some("Should fail".to_string()),
+        }).await.parse_resp::<()>().await;
+
+        assert_eq!("permission_denied", resp.unwrap_err().code);
     }).await;
 }
 
