@@ -22,9 +22,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use testcontainers_modules::meilisearch::Meilisearch;
 use testcontainers_modules::postgres::Postgres;
-use testcontainers_modules::redis::{Redis, REDIS_PORT};
+use testcontainers_modules::redis::REDIS_PORT;
+use testcontainers_modules::testcontainers::core::WaitFor;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use testcontainers_modules::testcontainers::ContainerAsync;
+use testcontainers_modules::testcontainers::{ContainerAsync, Image};
 use tokio::net::TcpListener;
 use tracing::{info, Level};
 
@@ -93,8 +94,8 @@ where
     drop(ms_instance);
 }
 
-async fn get_test_redis_conn() -> (ContainerAsync<Redis>, ConnectionManager) {
-    let redis_instance = testcontainers_modules::redis::Redis::default().start().await.unwrap();
+async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
+    let redis_instance = Redis8::default().start().await.unwrap();
     let host_ip = redis_instance.get_host().await.unwrap();
     let host_port = redis_instance.get_host_port_ipv4(REDIS_PORT).await.unwrap();
     let redis_url = format!("redis://{host_ip}:{host_port}");
@@ -274,5 +275,27 @@ impl CommonParse for Response {
             let data: CommonError = serde_json::from_value(data).unwrap();
             Err(data)
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Redis8 {
+    /// (remove if there is another variable)
+    /// Field is included to prevent this struct to be a unit struct.
+    /// This allows extending functionality (and thus further variables) without breaking changes
+    _priv: (),
+}
+
+impl Image for Redis8 {
+    fn name(&self) -> &str {
+        "redis"
+    }
+
+    fn tag(&self) -> &str {
+        "8.8.0"
+    }
+
+    fn ready_conditions(&self) -> Vec<WaitFor> {
+        vec![WaitFor::message_on_stdout("Ready to accept connections")]
     }
 }
