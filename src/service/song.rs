@@ -29,6 +29,7 @@ pub struct PublicSongDetail {
     pub audio_url: String,
     pub cover_url: String,
     pub production_crew: Vec<SongProductionCrew>,
+    /// 0: original, 1: derivative work, 2: tertiary work
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
     pub uploader_uid: i64,

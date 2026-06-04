@@ -345,9 +345,7 @@ async fn build_internal_review_data(
                 uid: Some(user.id),
                 person_name: Some(user.username),
             });
-        }
-
-        if let Some(ref name) = member.name {
+        } else if let Some(ref name) = member.name {
             production_crew.push(SongProductionCrew {
                 id: 0,
                 song_id: 0,
