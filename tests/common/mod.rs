@@ -54,13 +54,17 @@ where
         publish_version_token: "12345678".to_string(),
     };
 
-    let (redis_instance, redis_conn) = get_test_redis_conn().await;
-
-    let (postgres_instance, sql_pool) = get_test_sql_pool().await;
-    // Run migrate
-    sqlx::migrate!().run(&sql_pool).await.unwrap();
-
-    let (ms_instance, ms_client) = get_test_meilisearch().await;
+    // Boot external dependencies in parallel to reduce test startup time.
+    let ((redis_instance, redis_conn), (postgres_instance, sql_pool), (ms_instance, ms_client)) = tokio::join!(
+        get_test_redis_conn(),
+        async {
+            let (postgres_instance, sql_pool) = get_test_sql_pool().await;
+            // Migrations depend on Postgres only, so run them in the same task.
+            sqlx::migrate!().run(&sql_pool).await.unwrap();
+            (postgres_instance, sql_pool)
+        },
+        get_test_meilisearch(),
+    );
     let app_state = AppState {
         sql_pool: sql_pool,
         file_host: Arc::new(get_test_file_host().await),
