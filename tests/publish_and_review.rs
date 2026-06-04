@@ -115,7 +115,52 @@ async fn test_upload_cover_image() {
 }
 
 #[tokio::test]
-async fn test_publish_with_random_jmid() {
+async fn test_publish_song_with_minium_data() {
+    with_test_environment(|mut env| async move {
+        let _user = with_new_random_test_user(&mut env).await;
+
+        // Upload a song
+        let test_mp3_bytes = read_test_mp3();
+        let upload_resp: UploadAudioFileResp = env.api
+            .post_raw("/song/upload_audio_file")
+            .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
+            .send().await.unwrap().parse_resp().await.unwrap();
+
+        // Upload a cover
+        let upload_img_resp: UploadImageResp = env.api
+            .post_raw("/song/upload_cover_image")
+            .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
+            .send().await.unwrap().parse_resp().await.unwrap();
+
+        // Publish a song without cover and tags
+        let resp = env.api.post(
+            "/song/publish",
+            &PublishReq {
+                song_temp_id: upload_resp.temp_id.clone(),
+                cover_temp_id: upload_img_resp.temp_id.clone(),
+                title: "test".to_string(),
+                subtitle: "".to_string(),
+                description: "".to_string(),
+                lyrics: "".to_string(),
+                tag_ids: vec![],
+                creation_info: CreationInfo {
+                    creation_type: 0,
+                    origin_info: None,
+                    derivative_info: None,
+                },
+                production_crew: vec![],
+                external_links: vec![],
+                explicit: Some(false),
+                jmid: Some("JM-TEST-001".into()),
+                comment: None,
+            },
+        ).await.parse_resp::<PublishResp>().await;
+        assert!(resp.is_ok());
+    }).await
+}
+
+#[tokio::test]
+async fn test_publish_should_compatible_when_jmid_not_specified() {
     with_test_environment(|mut env| async move {
         let _user = with_new_random_test_user(&mut env).await;
 
@@ -162,7 +207,6 @@ async fn publish_test_song(
         .post_raw("/song/upload_audio_file")
         .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
         .send().await.unwrap().parse_resp().await.unwrap();
-    println!("{:?}", upload_resp);
 
     // Upload a cover
     let upload_img_resp: UploadImageResp = api
@@ -250,7 +294,7 @@ async fn test_approve_publishing_then_verify_public_detail() {
         let publish_resp = publish_test_song(&env.api, Some("JM-TEST-001".into()), tag.id, "Test Song For Grant", Some(user_additional_author.uid)).await.unwrap();
 
         // Switch to contributor and approve
-        let contributor_user = with_test_contributor_user(&mut env).await;
+        let _contributor_user = with_test_contributor_user(&mut env).await;
         let resp = env.api.post(
             "/publish/review/approve",
             &ApproveReviewReq {
@@ -323,7 +367,7 @@ async fn test_approve_publishing_then_verify_public_detail() {
 #[tokio::test]
 async fn test_check_jmid() {
     with_test_environment(|mut env| async move {
-        let user = with_new_random_test_user(&mut env).await;
+        let _user = with_new_random_test_user(&mut env).await;
 
         let resp = env.api.get("/publish/jmid/me")
             .await.parse_resp::<JmidMineResp>().await.unwrap();
