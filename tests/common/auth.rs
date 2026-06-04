@@ -9,6 +9,7 @@ pub struct TestUser {
     pub uid: i64,
     pub email: String,
     pub token: TokenPair,
+    pub name: String
 }
 
 pub async fn with_new_random_test_user(env: &mut TestEnvironment) -> TestUser {
@@ -42,6 +43,7 @@ pub async fn with_new_test_user(env: &mut TestEnvironment, email: &str) -> TestU
         uid: reg_resp.uid,
         email: email.to_string(),
         token: reg_resp.token,
+        name: reg_resp.generated_username
     }
 }
 

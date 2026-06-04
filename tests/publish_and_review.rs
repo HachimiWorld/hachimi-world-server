@@ -1,6 +1,6 @@
 mod common;
 
-use crate::common::auth::{with_new_random_test_user, with_new_test_user, with_test_contributor_user};
+use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
 use crate::common::res_utils::generate_test_image;
 use crate::common::{assert_is_err, ApiResult, CommonParse, TestEnvironment};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
@@ -11,8 +11,9 @@ use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
 use hachimi_world_server::web::routes::publish::jmid::{JmidCheckPReq, JmidCheckPResp, JmidMineResp};
 use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
 use hachimi_world_server::web::routes::publish::{review, CreationInfo, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
-use hachimi_world_server::web::routes::song::{TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
+use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
 use image::ImageFormat;
+use itertools::Itertools;
 use reqwest::multipart::{Form, Part};
 use reqwest::StatusCode;
 use std::fs;
@@ -120,7 +121,7 @@ async fn test_publish_with_random_jmid() {
 
         // Create tags
         let tags = create_tags(&env.api).await;
-        let song = publish_test_song(&env.api, None, tags.first().unwrap().id, "Test Song").await.unwrap();
+        let song = publish_test_song(&env.api, None, tags.first().unwrap().id, "Test Song", None).await.unwrap();
         assert!(!song.song_display_id.is_empty(), "song_display_id should not be empty");
     }).await;
 }
@@ -153,6 +154,7 @@ async fn publish_test_song(
     jmid: Option<String>,
     tag_id: i64,
     title: &str,
+    additional_author_uid: Option<i64>,
 ) -> ApiResult<PublishResp> {
     // Upload a song
     let test_mp3_bytes = read_test_mp3();
@@ -175,12 +177,12 @@ async fn publish_test_song(
             song_temp_id: upload_resp.temp_id.clone(),
             cover_temp_id: upload_img_resp.temp_id.clone(),
             title: title.to_string(),
-            subtitle: "A test music".to_string(),
-            description: "This is a fucking test music".to_string(),
+            subtitle: "Test subtitle".to_string(),
+            description: "This is a test description".to_string(),
             lyrics: "哈基米哈基米哈基米".to_string(),
             tag_ids: vec![tag_id],
             creation_info: CreationInfo {
-                creation_type: 0,
+                creation_type: 1,
                 origin_info: Some(CreationTypeInfo {
                     song_display_id: None,
                     title: Some("原作".into()),
@@ -190,18 +192,27 @@ async fn publish_test_song(
                 }),
                 derivative_info: None,
             },
-            production_crew: vec![
-                ProductionItem {
-                    role: "混音".to_string(),
-                    uid: None,
-                    name: Some("张三".to_string()),
-                },
-                /*ProductionItem {
-                    role: "编曲".to_string(),
-                    uid: Some(user.uid),
-                    name: None,
-                },*/
-            ],
+            production_crew: match additional_author_uid {
+                Some(uid) => vec![
+                    ProductionItem {
+                        role: "混音".to_string(),
+                        uid: None,
+                        name: Some("张三".to_string()),
+                    },
+                    ProductionItem {
+                        role: "合作".to_string(),
+                        uid: Some(uid),
+                        name: Some("李四".to_string()), // Should be overridden by the user name in response, just for testing
+                    },
+                ],
+                None => vec![
+                    ProductionItem {
+                        role: "混音".to_string(),
+                        uid: None,
+                        name: Some("张三".to_string()),
+                    }
+                ]
+            },
             external_links: vec![
                 ExternalLink {
                     platform: "bilibili".to_string(),
@@ -229,10 +240,83 @@ async fn test_get_reviews() {
 }
 
 #[tokio::test]
-async fn test_grant() {
+async fn test_approve_publishing_then_verify_public_detail() {
     with_test_environment(|mut env| async move {
-        let contributor_user = with_new_test_user(&mut env, "contributor1@example.com").await;
-        // env.api.post("/review/grant", &GrantReq {})
+        let user_additional_author = with_new_random_test_user(&mut env).await;
+        let user = with_new_random_test_user(&mut env).await;
+        let tags = create_tags(&env.api).await;
+        let tag = tags.first().unwrap();
+
+        let publish_resp = publish_test_song(&env.api, Some("JM-TEST-001".into()), tag.id, "Test Song For Grant", Some(user_additional_author.uid)).await.unwrap();
+
+        // Switch to contributor and approve
+        let contributor_user = with_test_contributor_user(&mut env).await;
+        let resp = env.api.post(
+            "/publish/review/approve",
+            &ApproveReviewReq {
+                review_id: publish_resp.review_id,
+                comment: Some("Approve for testing".to_string()),
+            },
+        ).await;
+
+        assert_is_ok(resp).await;
+
+        // Switch to guest user then verify the song detail
+        env.api.clear_token();
+        let detail = env.api.get_query("/song/detail", &DetailReq {
+            id: publish_resp.song_display_id.clone(),
+        }).await.parse_resp::<DetailResp>().await.unwrap();
+
+        assert_eq!("JM-TEST-001", detail.display_id);
+        assert_eq!("Test Song For Grant", detail.title);
+        assert_eq!("Test subtitle", detail.subtitle);
+        assert_eq!("This is a test description", detail.description);
+        assert_eq!(10, detail.duration_seconds);
+        assert_eq!("哈基米哈基米哈基米", detail.lyrics);
+
+        assert!(!detail.audio_url.is_empty(), "audio_url should not be empty");
+        assert!(!detail.cover_url.is_empty(), "cover_url should not be empty");
+
+        assert_eq!(user.uid, detail.uploader_uid);
+        assert_eq!(user.name, detail.uploader_name);
+        assert_ne!(Some(0f32), detail.gain);
+        assert_eq!(Some(false), detail.explicit);
+
+        // Check tags (data from create_tags)
+        assert_eq!(1, detail.tags.len());
+        let resp_tag = detail.tags.first().unwrap();
+        assert_eq!(tag.id, resp_tag.id);
+        assert_eq!(tag.name, resp_tag.name);
+        assert_eq!(tag.description, resp_tag.description);
+
+        // Check production crew
+        assert_eq!(2, detail.production_crew.len());
+        let sorted_by_uid = detail.production_crew.iter().sorted_by(|a, b| a.uid.cmp(&b.uid)).collect_vec();
+        let crew = sorted_by_uid.first().unwrap();
+        assert_eq!("混音", crew.role);
+        assert_eq!(Some("张三".to_string()), crew.person_name);
+        assert_eq!(None, crew.uid);
+
+        let additional = sorted_by_uid.last().unwrap();
+        assert_eq!("合作", additional.role);
+        assert_eq!(Some(user_additional_author.name), additional.person_name);
+        assert_eq!(Some(user_additional_author.uid), additional.uid);
+
+        // Check origin infos
+        assert_eq!(1, detail.creation_type);
+        assert_eq!(1, detail.origin_infos.len());
+        let origin_info = detail.origin_infos.first().unwrap();
+        assert_eq!(Some("原作".into()), origin_info.title);
+        assert_eq!(Some("群星".into()), origin_info.artist);
+        assert_eq!(0, origin_info.origin_type);
+        assert_eq!(None, origin_info.song_display_id);
+        assert_eq!(None, origin_info.url);
+
+        // Check external links
+        assert_eq!(1, detail.external_links.len());
+        let external_link = detail.external_links.first().unwrap();
+        assert_eq!("bilibili", external_link.platform);
+        assert_eq!("https://www.bilibili.com/video/av114514/", external_link.url);
     }).await
 }
 

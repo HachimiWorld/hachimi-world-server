@@ -167,6 +167,10 @@ impl ApiClient {
         self.token = Some(token);
     }
 
+    pub fn clear_token(&mut self) {
+        self.token = None;
+    }
+
     pub async fn get(&self, path: &str) -> Response {
         let client = reqwest::Client::new();
 
