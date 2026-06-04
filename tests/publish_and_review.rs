@@ -1,23 +1,18 @@
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
+use crate::common::publish::{publish_template, read_test_mp3};
 use crate::common::res_utils::generate_test_image;
-use crate::common::{assert_is_err, ApiResult, CommonParse, TestEnvironment};
+use crate::common::{assert_is_err, ApiResult, CommonParse};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
-use chrono::Utc;
-use hachimi_world_server::db::creator::{Creator, CreatorDao};
-use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
-use hachimi_world_server::web::routes::publish::jmid::{JmidCheckPReq, JmidCheckPResp, JmidMineResp};
-use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewCommentCreateReq, ReviewCommentDeleteReq, ReviewCommentListReq, ReviewCommentListResp, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
+use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
 use hachimi_world_server::web::routes::publish::{review, CreationInfo, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
 use image::ImageFormat;
 use itertools::Itertools;
 use reqwest::multipart::{Form, Part};
 use reqwest::StatusCode;
-use std::fs::File;
-use std::io::Read;
 use std::time::Duration;
 use tokio::time;
 
@@ -364,48 +359,6 @@ async fn test_approve_publishing_then_verify_public_detail() {
 }
 
 #[tokio::test]
-async fn test_check_jmid() {
-    with_test_environment(|mut env| async move {
-        let _user = with_new_random_test_user(&mut env).await;
-
-        let resp = env.api.get("/publish/jmid/me")
-            .await.parse_resp::<JmidMineResp>().await.unwrap();
-        assert_eq!(resp.jmid_prefix, None);
-
-        let resp = env.api.get("/publish/jmid/get_next")
-            .await;
-        assert_is_err(resp).await;
-
-        // This code is never used
-        let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid_prefix: "ZJDB".to_string(),
-        }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
-        assert_eq!(resp.result, true);
-
-        // This code is in the song_publishing_review old data, should be available
-        let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid_prefix: "YCGU".to_string(),
-        }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
-        assert_eq!(resp.result, true);
-
-        // This code is used, should not available
-        CreatorDao::insert(&env.pool, &Creator {
-            id: 0,
-            user_id: 0,
-            jmid_prefix: "".to_string(),
-            active: false,
-            create_time: Utc::now(),
-            update_time: Utc::now(),
-        }).await.unwrap();
-
-        let resp = env.api.get_query("/publish/jmid/check_prefix", &JmidCheckPReq {
-            jmid_prefix: "".to_string(),
-        }).await.parse_resp::<JmidCheckPResp>().await.unwrap();
-        assert_eq!(resp.result, false);
-    }).await
-}
-
-#[tokio::test]
 async fn test_publish_should_fail_when_first_publication_is_not_finished_yet() {
     with_test_environment(|mut env| async move {
         let _user = with_new_random_test_user(&mut env).await;
@@ -514,46 +467,6 @@ async fn test_publish_with_another_prefix_should_fail() {
     }).await
 }
 
-async fn publish_template(env: &TestEnvironment) -> PublishReq {
-    // Upload a song
-    let test_mp3_bytes = read_test_mp3();
-    let upload_resp: UploadAudioFileResp = env.api
-        .post_raw("/publish/upload_audio_file")
-        .multipart(Form::new().part("file", Part::bytes(test_mp3_bytes)))
-        .send().await.unwrap().parse_resp().await.unwrap();
-
-    // Upload a cover
-    let upload_img_resp: UploadImageResp = env.api
-        .post_raw("/publish/upload_cover_image")
-        .multipart(Form::new().part("file", Part::bytes(generate_test_image(128, 128, ImageFormat::Png))))
-        .send().await.unwrap().parse_resp().await.unwrap();
-
-    PublishReq {
-        song_temp_id: upload_resp.temp_id.clone(),
-        cover_temp_id: upload_img_resp.temp_id.clone(),
-        title: "Test".to_string(),
-        subtitle: "A test music".to_string(),
-        description: "This is a fucking test music".to_string(),
-        lyrics: "哈基米哈基米哈基米".to_string(),
-        tag_ids: vec![],
-        creation_info: CreationInfo {
-            creation_type: 0,
-            origin_info: Some(CreationTypeInfo {
-                song_display_id: None,
-                title: Some("原作".into()),
-                artist: Some("群星".into()),
-                url: None,
-                origin_type: 0,
-            }),
-            derivative_info: None,
-        },
-        production_crew: vec![],
-        external_links: vec![],
-        explicit: Some(false),
-        jmid: Some("JM-ABCD-000".into()),
-        comment: Some("Test comment in review".into()),
-    }
-}
 
 #[tokio::test]
 async fn test_modify_review_then_get_history() {
@@ -708,90 +621,5 @@ async fn test_modify_review_by_other_user_should_fail() {
 
         assert_eq!("permission_denied", resp.unwrap_err().code);
     }).await;
-}
-
-#[tokio::test]
-async fn test_review_comments() {
-    with_test_environment(|mut env| async move {
-        let uploader = with_new_random_test_user(&mut env).await;
-        let publish_resp: PublishResp = env.api.post("/publish/publish", &publish_template(&env).await)
-            .await
-            .parse_resp()
-            .await
-            .unwrap();
-
-        let maintainer = with_test_contributor_user(&mut env).await;
-        let maintainer_comment = "Maintainer comment for testing".to_string();
-        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
-            review_id: publish_resp.review_id,
-            content: maintainer_comment.clone(),
-        }).await;
-        assert_is_ok(resp).await;
-
-        env.api.set_token(uploader.token.access_token.clone());
-        let uploader_comment = "Uploader reply for testing".to_string();
-        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
-            review_id: publish_resp.review_id,
-            content: uploader_comment.clone(),
-        }).await;
-        assert_is_ok(resp).await;
-
-        let resp: ReviewCommentListResp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
-            review_id: publish_resp.review_id,
-            page_index: 0,
-            page_size: 20,
-        }).await.parse_resp().await.unwrap();
-        assert_eq!(resp.data.len(), 2);
-        assert!(resp.data.iter().any(|x| x.content == maintainer_comment));
-        assert!(resp.data.iter().any(|x| x.content == uploader_comment));
-
-        let uploader_comment_id = resp.data.iter()
-            .find(|x| x.content == uploader_comment)
-            .map(|x| x.id)
-            .unwrap();
-
-        let other_user = with_new_random_test_user(&mut env).await;
-        let resp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
-            review_id: publish_resp.review_id,
-            page_index: 0,
-            page_size: 20,
-        }).await;
-        assert_is_err(resp).await;
-
-        env.api.set_token(uploader.token.access_token.clone());
-        let resp = env.api.post("/publish/review/comment/delete", &ReviewCommentDeleteReq {
-            comment_id: uploader_comment_id,
-        }).await;
-        assert_is_ok(resp).await;
-
-        env.api.set_token(maintainer.token.access_token.clone());
-        let resp: ReviewCommentListResp = env.api.get_query("/publish/review/comment/list", &ReviewCommentListReq {
-            review_id: publish_resp.review_id,
-            page_index: 0,
-            page_size: 20,
-        }).await.parse_resp().await.unwrap();
-        assert_eq!(resp.data.len(), 1);
-        assert_eq!(resp.data[0].content, maintainer_comment);
-
-        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
-            review_id: publish_resp.review_id,
-            content: " ".to_string(),
-        }).await;
-        assert_is_err(resp).await;
-
-        env.api.set_token(other_user.token.access_token);
-        let resp = env.api.post("/publish/review/comment/create", &ReviewCommentCreateReq {
-            review_id: publish_resp.review_id,
-            content: "random user comment".to_string(),
-        }).await;
-        assert_is_err(resp).await;
-    }).await;
-}
-
-fn read_test_mp3() -> Vec<u8> {
-    File::open("tests/fixtures/test-mp3.mp3").unwrap()
-        .bytes()
-        .map(|b| b.unwrap())
-        .collect()
 }
 
