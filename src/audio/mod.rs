@@ -222,9 +222,15 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_parse() {
-        let file = fs::File::open(".local/test_res/test.mp3").unwrap();
-        let result = parse_and_validate(Box::new(file), Some("test.mp3")).unwrap();
-        println!("{:?}", result);
+    fn test_parse_mp3() {
+        let file = fs::File::open("tests/fixtures/test-mp3.mp3").unwrap();
+        let result = parse_and_validate(Box::new(file), Some("test-mp3.mp3")).unwrap();
+        assert_eq!(result.format, "mp3");
+        assert_eq!(result.title, Some("Test Track".to_string()));
+        assert_eq!(result.artist, Some("Test Artist".to_string()));
+        assert_eq!(result.duration_secs, 10);
+        assert_eq!(result.sample_rate, 44100);
+        assert_ne!(result.peak, 0f32);
+        assert_ne!(result.gain_db, 0f32);
     }
 }
