@@ -44,7 +44,7 @@ where
     Fut: Future<Output=()> + Send + 'static,
 {
     tracing_subscriber::fmt().with_max_level(Level::INFO).try_init().ok(); // Ignore error
-    dotenv::dotenv().unwrap();
+    dotenv::dotenv().ok();
 
     let server_cfg = ServerCfg {
         listen: "localhost:0".to_string(),
