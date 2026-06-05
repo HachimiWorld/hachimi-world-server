@@ -11,5 +11,7 @@ steps:
     environment:
       SQLX_OFFLINE: true
     commands:
-      - curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C ${CARGO_HOME:-~/.cargo}/bin
+      # Install cargo-nextest, the cargo folder of rust image is /usr/local/cargo/bin
+      - curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/cargo/bin
+      # Run tests
       - cargo nextest run --tests
