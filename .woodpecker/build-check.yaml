@@ -33,7 +33,7 @@ steps:
         fi
       - cargo build --bin hachimi-world-server
       # Update cargo registry cache after build
-      - mv "$CARGO_HOME/registry/"* /woodpecker/cargo-registry/
+      - mkdir -p /woodpecker/cargo-registry/ && mv "$CARGO_HOME/registry/"* /woodpecker/cargo-registry/
   - name: rebuild-cache
     image: meltwater/drone-cache:dev
     # Rebuild cache regardless of test results, so that we can speed up next tests if the cache is not hit.
