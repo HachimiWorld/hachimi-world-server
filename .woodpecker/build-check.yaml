@@ -6,9 +6,48 @@ when:
     - push
     - manual
 steps:
+  - name: restore-cache
+    image: meltwater/drone-cache:dev
+    settings:
+      backend: "filesystem"
+      archive_format: zstd
+      restore: true
+      cache_key: "{{ .Repo.Name }}-{{ .Commit.Branch }}-{{ checksum \"Cargo.lock\" }}-build-check"
+      mount:
+        # Cargo registry cache
+        - /woodpecker/cargo-registry
+        # Project build cache
+        - /woodpecker/src/github.com/HachimiWorld/hachimi-world-server/target
+    volumes:
+      - woodpecker-hachimi-world-cache:/tmp/cache
   - name: build
     image: rust:1.96.0
     environment:
       SQLX_OFFLINE: true
     commands:
+      # Restore cargo registry cache to speed up build
+      - |
+        if [ -d /woodpecker/cargo-registry/ ] && ! [ -z "$(ls -A /woodpecker/cargo-registry/)" ]; then
+          mkdir -p "$CARGO_HOME/registry"
+          mv /woodpecker/cargo-registry/* "$CARGO_HOME/registry/"
+        fi
       - cargo build --bin hachimi-world-server
+      # Update cargo registry cache after build
+      - mv "$CARGO_HOME/registry/"* /woodpecker/cargo-registry/
+  - name: rebuild-cache
+    image: meltwater/drone-cache:dev
+    # Rebuild cache regardless of test results, so that we can speed up next tests if the cache is not hit.
+    when:
+      status:
+        - success
+        - failure
+    settings:
+      backend: "filesystem"
+      archive_format: zstd
+      rebuild: true
+      cache_key: "{{ .Repo.Name }}-{{ .Commit.Branch }}-{{ checksum \"Cargo.lock\" }}-build-check"
+      mount:
+        - /woodpecker/cargo-registry
+        - /woodpecker/src/github.com/HachimiWorld/hachimi-world-server/target
+    volumes:
+      - woodpecker-hachimi-world-cache:/tmp/cache

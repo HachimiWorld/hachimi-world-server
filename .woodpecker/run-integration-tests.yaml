@@ -6,12 +6,70 @@ when:
     - push
     - manual
 steps:
-  - name: build
+  - name: restore-cache
+    image: meltwater/drone-cache:dev
+    settings:
+      backend: "filesystem"
+      archive_format: zstd
+      restore: true
+      cache_key: "{{ .Repo.Name }}-{{ .Commit.Branch }}-{{ checksum \"Cargo.lock\" }}-run-integration-tests"
+      mount:
+        - /woodpecker/cargo-nextest
+        # Cargo registry cache
+        - /woodpecker/cargo-registry
+        # Project build cache
+        - /woodpecker/src/github.com/HachimiWorld/hachimi-world-server/target
+    volumes:
+      - woodpecker-hachimi-world-cache:/tmp/cache
+  - name: run-tests
     image: rust:1.96.0
     environment:
       SQLX_OFFLINE: true
+      RUST_BACKTRACE: 1
+    volumes:
+      # For launch test docker containers
+      - /var/run/docker.sock:/var/run/docker.sock
     commands:
-      # Install cargo-nextest, the cargo folder of rust image is /usr/local/cargo/bin
-      - curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /usr/local/cargo/bin
+      # Restore cargo registry cache to speed up build
+      - |
+        if [ -d /woodpecker/cargo-registry/ ] && ! [ -z "$(ls -A /woodpecker/cargo-registry/)" ]; then
+          mkdir -p "$CARGO_HOME/registry"
+          mv /woodpecker/cargo-registry/* "$CARGO_HOME/registry/"
+        fi
+      # Install cargo-nextest if not existed
+      - |
+        if ! [ -x "$(command -v cargo-nextest)" ]; then
+          NEXT_DIR=/woodpecker/cargo-nextest
+        
+          if ! [ -d /woodpecker/cargo-nextest ]; then
+            echo "Downloading nextest..."
+            mkdir -p "$NEXT_DIR"
+            curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$NEXT_DIR"
+          fi
+          
+          cp -r -- "$NEXT_DIR/"* "$CARGO_HOME"/bin/
+        fi
       # Run tests
       - cargo nextest run --tests
+      # Update cargo registry cache after build
+      - mv "$CARGO_HOME/registry/"* /woodpecker/cargo-registry/
+  - name: rebuild-cache
+    image: meltwater/drone-cache:dev
+    # Rebuild cache regardless of test results, so that we can speed up next tests if the cache is not hit.
+    when:
+      status:
+        - success
+        - failure
+    settings:
+      backend: "filesystem"
+      archive_format: zstd
+      rebuild: true
+      cache_key: "{{ .Repo.Name }}-{{ .Commit.Branch }}-{{ checksum \"Cargo.lock\" }}-run-integration-tests"
+      mount:
+        - /woodpecker/cargo-nextest
+        # Cargo registry cache
+        - /woodpecker/cargo-registry
+        # Project build cache
+        - /woodpecker/src/github.com/HachimiWorld/hachimi-world-server/target
+    volumes:
+      - woodpecker-hachimi-world-cache:/tmp/cache
