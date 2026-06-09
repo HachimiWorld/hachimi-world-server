@@ -1,16 +1,11 @@
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
-use crate::common::publish::publish_template;
+use crate::common::publish::create_approved_song;
 use crate::common::{with_test_environment, CommonParse, TestEnvironment};
-use hachimi_world_server::db::song::{ISongDao, SongDao};
-use hachimi_world_server::service::song::generate_song_display_id;
 use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
     CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
     ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, SearchReq, SearchResp,
 };
-use hachimi_world_server::web::routes::publish::jmid::JmidGetNextResp;
-use hachimi_world_server::web::routes::publish::review::ApproveReviewReq;
-use hachimi_world_server::web::routes::publish::PublishResp;
 use tokio::time::{sleep, Duration, Instant};
 
 mod common;
@@ -31,7 +26,7 @@ async fn test_playlist_detail_and_reorder_are_isolated() {
         let mut song_ids = Vec::new();
         for title in ["Playlist Song 1", "Playlist Song 2", "Playlist Song 3", "Playlist Song 4"] {
             song_ids.push(
-                create_approved_song(&mut env, &owner_token, &contributor_token, title).await,
+                create_approved_song(&mut env, &owner_token, &contributor_token, title).await.id,
             );
         }
 
@@ -119,7 +114,7 @@ async fn test_playlist_list_containing() {
         env.api.set_token(owner_token.clone());
 
         let playlist_id = create_playlist(&env, "Containing Playlist", Some("Created for list_containing test"), false).await;
-        let song_id = create_approved_song(&mut env, &owner_token, &contributor_token, "Contained Song").await;
+        let song_id = create_approved_song(&mut env, &owner_token, &contributor_token, "Contained Song").await.id;
 
         add_song_to_playlist(&env, playlist_id, song_id).await;
 
@@ -170,7 +165,7 @@ async fn test_add_song_rejects_duplicates() {
         env.api.set_token(owner_token.clone());
 
         let playlist_id = create_playlist(&env, "Duplicate Guard", None, false).await;
-        let song_id = create_approved_song(&mut env, &owner_token, &contributor_token, "Duplicate Song").await;
+        let song_id = create_approved_song(&mut env, &owner_token, &contributor_token, "Duplicate Song").await.id;
 
         add_song_to_playlist(&env, playlist_id, song_id).await;
 
@@ -317,50 +312,6 @@ async fn add_song_to_playlist(env: &TestEnvironment, playlist_id: i64, song_id: 
             song_id,
         },
     ).await.parse_resp::<()>().await.unwrap();
-}
-
-async fn create_approved_song(
-    env: &mut TestEnvironment,
-    owner_token: &str,
-    contributor_token: &str,
-    title: &str,
-) -> i64 {
-    env.api.set_token(owner_token.to_string());
-
-    let unique = uuid::Uuid::new_v4().simple().to_string();
-    let mut req = publish_template(env).await;
-
-    // Get next jmid or random
-    let next_jmid = env.api.get("/publish/jmid/get_next").await.parse_resp::<JmidGetNextResp>().await;
-    let jmid = match next_jmid {
-        Ok(x) => format!("JM-{}", x.jmid),
-        Err(_) => unique_jmid()
-    };
-
-    req.title = format!("{title}-{unique}");
-    req.subtitle = format!("subtitle-{unique}");
-    req.description = format!("description-{unique}");
-    req.lyrics = format!("lyrics-{unique}");
-    req.jmid = Some(jmid);
-
-    let publish_resp = env.api.post("/publish/publish", &req).await
-        .parse_resp::<PublishResp>().await.unwrap();
-
-    env.api.set_token(contributor_token.to_string());
-    env.api.post(
-        "/publish/review/approve",
-        &ApproveReviewReq {
-            review_id: publish_resp.review_id,
-            comment: Some("Approve for playlist integration test".to_string()),
-        },
-    ).await.parse_resp::<()>().await.unwrap();
-
-    env.api.set_token(owner_token.to_string());
-    SongDao::get_by_display_id(&env.pool, &publish_resp.song_display_id).await.unwrap().unwrap().id
-}
-
-fn unique_jmid() -> String {
-    generate_song_display_id()
 }
 
 async fn wait_for_playlist_search_hit(
