@@ -35,8 +35,9 @@ pub async fn run_web_app(
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(cfg.listen).await?;
 
+    let burst_size = 16u32;
     let (_main_server, _metrics_server) = tokio::join!(
-        start_main_server(listener, app_state, cfg.allow_origins, jwt::Keys::new(cfg.jwt_secret.as_bytes()), cfg.publish_version_token, cancel_token.clone()),
+        start_main_server(listener, app_state, cfg.allow_origins, jwt::Keys::new(cfg.jwt_secret.as_bytes()), cfg.publish_version_token, burst_size, cancel_token.clone()),
         web_metrics::start_metrics_server(cfg.metrics_listen, cancel_token)
     );
 
@@ -51,6 +52,7 @@ pub async fn start_main_server(
     allow_origins: Vec<String>,
     jwt_keys: jwt::Keys,
     publish_version_token: impl Into<String>,
+    burst_size: u32,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     jwt::initialize_jwt_key(jwt_keys);
@@ -62,7 +64,7 @@ pub async fn start_main_server(
         .nest("/api", routes::router())
         .route("/health", get(health))
         .with_state(app_state)
-        .layer(governor::governor_layer())
+        .layer(governor::governor_layer(burst_size))
         .layer(request_id::request_id_layer())
         .layer(cors::cors_layer(&allow_origins))
         .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));

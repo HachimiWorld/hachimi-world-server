@@ -83,6 +83,7 @@ where
         server_cfg.allow_origins,
         hachimi_world_server::web::jwt::Keys::new(server_cfg.jwt_secret.as_bytes()),
         server_cfg.publish_version_token,
+        128,
         tokio_util::sync::CancellationToken::new(),
     );
     let _handle = tokio::spawn(server);

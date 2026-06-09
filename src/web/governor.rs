@@ -6,9 +6,11 @@ use tower_governor::key_extractor::KeyExtractor;
 use tower_governor::{GovernorError, GovernorLayer};
 use tracing::error;
 
-pub fn governor_layer<RespBody>() -> GovernorLayer<RealIPExtractor, NoOpMiddleware, RespBody> {
+pub fn governor_layer<RespBody>(
+    burst_size: u32,
+) -> GovernorLayer<RealIPExtractor, NoOpMiddleware, RespBody> {
     let governor_conf = GovernorConfigBuilder::default()
-        .burst_size(16)
+        .burst_size(burst_size)
         .key_extractor(RealIPExtractor)
         .finish().unwrap();
     GovernorLayer::new(governor_conf)
