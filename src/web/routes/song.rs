@@ -603,6 +603,7 @@ async fn tag_recommend(
     claims: Claims,
     mut state: State<AppState>,
 ) -> WebResult<TagRecommendResp> {
+    // Resets at 6:00 UTC+8 every day
     let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
     let cache_key = format!("tags:recommend:{}:{}", claims.uid(), date);
 
@@ -613,8 +614,16 @@ async fn tag_recommend(
     }
 
     let since = Utc::now() - chrono::TimeDelta::days(30);
-    let scored = tag_recommend::recommend_tags(&state.sql_pool, claims.uid(), 50, since).await?;
-    let result = scored
+    let mut tags = tag_recommend::recommend_tags(&state.sql_pool, claims.uid(), 50, since).await?;
+    // If it's empty, return random tags
+    if tags.is_empty() {
+        tags = SongTagDao::get_random_tags(&state.sql_pool, 20).await?
+            .into_iter()
+            .map(|x| (x, 0))
+            .collect_vec();
+    }
+
+    let result = tags
         .into_iter()
         .map(|(t, score)| TagRecommendItem {
             id: t.id,
@@ -641,6 +650,7 @@ async fn tag_recommend_anonymous(
     _ip: XRealIP,
     mut state: State<AppState>,
 ) -> WebResult<TagRecommendResp> {
+    // Resets at 6:00 UTC+8 every day
     let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
     let cache_key = format!("tags:recommend:anonymous:{}", date);
 
@@ -651,7 +661,16 @@ async fn tag_recommend_anonymous(
     }
 
     // For anonymous users, we can only recommend hot tags
-    let tags = tag_recommend::get_hot_tags(&state.sql_pool, 10000, 20).await?;
+    let mut tags = tag_recommend::get_hot_tags(&state.sql_pool, 10000, 20).await?;
+
+    // If it's empty, return random tags
+    if tags.is_empty() {
+        tags = SongTagDao::get_random_tags(&state.sql_pool, 20).await?
+            .into_iter()
+            .map(|x| (x, 0))
+            .collect_vec();
+    }
+
     let result = tags
         .into_iter()
         .map(|(t, score)| TagRecommendItem {

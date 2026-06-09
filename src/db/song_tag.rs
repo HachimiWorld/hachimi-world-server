@@ -23,6 +23,7 @@ where E: PgExecutor<'e> {
     fn list_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, Vec<i64>>>> + Send;
     fn get_by_name(executor: E, name: &str) -> impl Future<Output = sqlx::Result<Option<SongTag>>> + Send;
     fn search_by_prefix(executor: E, prefix: &str) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
+    fn get_random_tags(executor: E, limit: i64) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
 }
 
 impl <'e, E> CrudDao<'e, E> for SongTagDao
@@ -125,6 +126,13 @@ where E: PgExecutor<'e> {
             .replace("_", "\\_");
         escaped.push_str("%");
         sqlx::query_as!(SongTag, "SELECT * FROM song_tags WHERE name LIKE $1 LIMIT 20", escaped)
+            .fetch_all(executor)
+            .await
+    }
+
+    async fn get_random_tags(executor: E, limit: i64) -> sqlx::Result<Vec<SongTag>> {
+        // Table sampling
+        sqlx::query_as!(SongTag, "SELECT * FROM song_tags TABLESAMPLE SYSTEM_ROWS($1)", limit)
             .fetch_all(executor)
             .await
     }
