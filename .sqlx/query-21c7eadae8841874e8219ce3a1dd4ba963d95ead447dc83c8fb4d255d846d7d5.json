@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, display_id, title, file_url, gain FROM songs WHERE gain IS NULL",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "display_id",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "file_url",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 4,
+        "name": "gain",
+        "type_info": "Float4"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "21c7eadae8841874e8219ce3a1dd4ba963d95ead447dc83c8fb4d255d846d7d5"
+}
