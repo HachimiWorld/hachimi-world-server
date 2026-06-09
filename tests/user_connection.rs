@@ -2,6 +2,7 @@ use crate::common::auth::with_new_random_test_user;
 use crate::common::CommonParse;
 use crate::common::{assert_is_ok, bilibili, with_test_environment};
 use hachimi_world_server::web::routes::user::{ConnectionResp, ConnectionUnlinkReq, GenerateChallengeReq, GenerateChallengeResp, VerifyChallengeReq};
+use tokio::time::{sleep, Duration};
 
 mod common;
 
@@ -24,6 +25,9 @@ async fn test_bind_bilibili() {
             challenge_id: challenge_id.clone(),
         }).await.parse_resp::<()>().await.unwrap_err();
         assert_eq!("challenge_mismatch", resp.code);
+
+        // Wait for redlock to be released asynchronously
+        sleep(Duration::from_millis(100)).await;
 
         // Set bio for mock object
         bilibili::set_mock_test_user_bio(format!("Some bio 123456 {}", generate_challenge_resp.challenge));

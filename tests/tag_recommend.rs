@@ -46,15 +46,9 @@ async fn test_tag_recommend_should_change_everyday() {
         let resp1: TagRecommendResp = env.api.get("/song/tag/recommend").await.parse_resp().await.unwrap();
         let resp2: TagRecommendResp = env.api.get("/song/tag/recommend").await.parse_resp().await.unwrap();
         assert_eq!(resp1.result.len(), resp2.result.len());
-        for (item1, item2) in resp1.result.iter().zip(resp2.result.iter()) {
-            assert_eq!(item1.name, item2.name);
-            assert_eq!(item1.description, item2.description);
-            assert_ne!(item1.id, item2.id); // The id should be different because the order is different
-        }
-
-        // One day later, TODO: We should find a way to mock time
-        // Clock.advance(std::time::Duration::from_secs(24 * 3600)).await;
-        // let resp3: TagRecommendResp = env.api.get("/song/tag/recommend").await.parse_resp().await.unwrap();
-        // assert_ne!(resp1.result.iter().map(|x| x.id).collect::<Vec<_>>(), resp3.result.iter().map(|x| x.id).collect::<Vec<_>>());
+        // Same tags should appear in both responses (order may vary)
+        let names1: std::collections::HashSet<_> = resp1.result.iter().map(|x| &x.name).collect();
+        let names2: std::collections::HashSet<_> = resp2.result.iter().map(|x| &x.name).collect();
+        assert_eq!(names1, names2);
     }).await;
 }

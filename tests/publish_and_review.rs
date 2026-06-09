@@ -273,7 +273,12 @@ async fn test_get_reviews() {
             page_index: 0,
             page_size: 20,
         }).await.parse_resp().await.unwrap();
-        println!("{:?}", resp);
+
+        // Fresh DB should have 0 reviews for contributor
+        assert_eq!(resp.page_index, 0);
+        assert_eq!(resp.page_size, 20);
+        assert_eq!(resp.total, 0);
+        assert!(resp.data.is_empty());
     }).await
 }
 
