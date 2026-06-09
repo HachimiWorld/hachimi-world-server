@@ -152,6 +152,8 @@ async fn list(
         };
         result.push(item);
     }
+    // Order by create time desc
+    result.sort_by(|a, b| b.create_time.cmp(&a.create_time));
     ok!(ListResp {
         playlists: result
     })
