@@ -1,7 +1,7 @@
+use crate::common;
 use crate::service::upload::ValidationError::{InvalidImage, UnsupportedFormat};
 use crate::web::result::{CommonError, WebError};
 use crate::web::state::AppState;
-use crate::common;
 use anyhow::{anyhow, Context};
 use axum::extract::{Multipart, State};
 use bytes::Bytes;
@@ -190,11 +190,67 @@ fn build_image_temp_key(module_type: &str, temp_id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use crate::service::upload::{scale_down_to_webp, ResizeType};
-    use std::fs;
+    use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
+    use std::io::Cursor;
+
+    /// Generate a test image in any format as raw bytes.
+    fn make_test_image(w: u32, h: u32, format: ImageFormat) -> Vec<u8> {
+        let img: ImageBuffer<Rgb<u8>, _> = ImageBuffer::from_fn(w, h, |x, y| {
+            Rgb([(x % 256) as u8, (y % 256) as u8, 128])
+        });
+        let mut buf = Vec::new();
+        img.write_to(&mut Cursor::new(&mut buf), format).unwrap();
+        buf
+    }
 
     #[test]
-    fn test_scale_down() {
-        let bytes = fs::read(".local/test_res/test_rgb48be.png").unwrap();
-        let webp = scale_down_to_webp(1920, 1920, bytes.into(), ResizeType::Fit, 95f32).unwrap();
+    fn test_scale_down_no_resize_needed() {
+        let png = make_test_image(100, 100, ImageFormat::Png);
+        let webp = scale_down_to_webp(200, 200, png.into(), ResizeType::Fit, 90.0).unwrap();
+
+        // Output should be valid WebP (starts with "RIFF" magic)
+        assert!(webp.len() > 12);
+        assert_eq!(&webp[0..4], b"RIFF");
+        assert_eq!(&webp[8..12], b"WEBP");
+    }
+
+    #[test]
+    fn test_scale_down_resize_triggered() {
+        let png = make_test_image(800, 600, ImageFormat::Png);
+        let webp = scale_down_to_webp(400, 300, png.into(), ResizeType::Fit, 90.0).unwrap();
+
+        assert!(webp.len() > 12);
+        assert_eq!(&webp[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn test_scale_down_rgb48be() {
+        // 16-bit deep color images must be converted to RGB8 first
+        let img = DynamicImage::ImageRgb16(
+            ImageBuffer::from_fn(64, 64, |x, y| {
+                image::Rgb([((x * 256) % 65536) as u16, ((y * 256) % 65536) as u16, 32768])
+            })
+        );
+        let mut png = Vec::new();
+        img.write_to(&mut Cursor::new(&mut png), ImageFormat::Png).unwrap();
+
+        let webp = scale_down_to_webp(128, 128, png.into(), ResizeType::Fit, 95.0).unwrap();
+        assert_eq!(&webp[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn test_scale_down_quality_affects_size() {
+        let png = make_test_image(400, 300, ImageFormat::Png);
+        let low_q  = scale_down_to_webp(400, 300, png.clone().into(), ResizeType::Fit, 10.0).unwrap();
+        let high_q = scale_down_to_webp(400, 300, png.into(), ResizeType::Fit, 99.0).unwrap();
+
+        // Lower quality should produce smaller output
+        assert!(low_q.len() < high_q.len());
+    }
+
+    #[test]
+    fn test_scale_down_invalid_bytes() {
+        let result = scale_down_to_webp(100, 100, vec![0u8; 10].into(), ResizeType::Fit, 90.0);
+        assert!(result.is_err());
     }
 }

@@ -25,17 +25,3 @@ where E: PgExecutor<'e> {
     fn insert(executor: E, value: &Self::Entity) -> impl Future<Output = sqlx::Result<i64>> + Send;
     fn delete_by_id(executor: E, id: i64) -> impl Future<Output = sqlx::Result<()>> + Send;
 }
-
-#[cfg(test)]
-mod test {
-    use sqlx::PgPool;
-
-    pub async fn get_test_pool() -> PgPool {
-        dotenv::dotenv().ok();
-        let url = std::env::var("TEST_DATABASE_URL")
-            .expect("TEST_DATABASE_URL must be set for unit test");
-        PgPool::connect(&url)
-            .await
-            .expect("Failed to connect to test database")
-    }
-}

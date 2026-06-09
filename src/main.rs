@@ -16,7 +16,6 @@ use sqlx::PgPool;
 use std::sync::Arc;
 #[cfg(not(target_env = "msvc"))]
 use tikv_jemallocator::Jemalloc;
-use tokio::join;
 use tracing::{info, info_span, Instrument};
 
 #[cfg(not(target_env = "msvc"))]

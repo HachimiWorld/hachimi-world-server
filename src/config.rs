@@ -97,6 +97,9 @@ postgres:
         }
         let cfg = Config::parse_by_str(TEST_CONFIG).unwrap();
         let data = cfg.get_and_parse::<PostgresCfg>("postgres").unwrap();
-        assert_eq!("127.0.0.1", data.host)
+        assert_eq!("127.0.0.1", data.host);
+        assert_eq!(5432, data.port);
+        assert_eq!("postgres", data.user);
+        assert_eq!("postgres", data.password);
     }
 }
