@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use axum::http::HeaderMap;
 use hachimi_world_server::config::Config;
 use hachimi_world_server::file_hosting::{FileHost, MockFileHost, UploadResult};
+use hachimi_world_server::search::setup_meilisearch_indexes;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::result::CommonError;
 use hachimi_world_server::web::state::AppState;
@@ -65,6 +66,9 @@ where
         },
         get_test_meilisearch(),
     );
+
+    setup_meilisearch_indexes(&ms_client, &sql_pool).await.unwrap();
+
     let app_state = AppState {
         sql_pool: sql_pool,
         file_host: Arc::new(get_test_file_host().await),

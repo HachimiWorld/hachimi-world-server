@@ -189,13 +189,7 @@ async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result
     let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
     let span = info_span!("search");
     async {
-        info!("Setting up search index");
-        let (a, b, c) = join!(
-            search::song::setup_search_index(&client, pool),
-            search::user::setup_search_index(&client, pool),
-            search::playlist::setup_search_index(&client, pool)
-        );
-        a.or(b).or(c)
+        search::setup_meilisearch_indexes(&client, pool).await
     }.instrument(span).await?;
     Ok(client)
 }
