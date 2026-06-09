@@ -50,7 +50,7 @@ steps:
           cp -r -- "$NEXT_DIR/"* "$CARGO_HOME"/bin/
         fi
       # Run tests
-      - cargo nextest run --tests
+      - cargo nextest run --tests -j 4
       # Update cargo registry cache after build
       - mkdir -p /woodpecker/cargo-registry/ && mv "$CARGO_HOME/registry/"* /woodpecker/cargo-registry/
   - name: rebuild-cache
