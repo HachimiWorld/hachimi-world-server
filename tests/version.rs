@@ -11,6 +11,11 @@ use serde_json::Value;
 
 mod common;
 
+/// Truncate DateTime to microsecond precision to match JSON serialization round-trip.
+fn truncate_to_micros(dt: chrono::DateTime<Utc>) -> chrono::DateTime<Utc> {
+    chrono::DateTime::from_timestamp_micros(dt.timestamp_micros()).unwrap()
+}
+
 #[tokio::test]
 async fn test_publish_version() {
     with_test_environment(|mut env| async move {
@@ -32,7 +37,7 @@ async fn test_publish_version() {
         assert_eq!(resp.changelog, "test");
         assert_eq!(resp.variant, "test-android");
         assert_eq!(resp.url, "https://test.example.com/android/latest.apk");
-        assert_eq!(resp.release_time, now);
+        assert_eq!(resp.release_time, truncate_to_micros(now));
     }).await
 }
 
@@ -132,7 +137,7 @@ async fn test_get_latest_version_returns_latest_released_version_for_same_varian
         assert_eq!(resp.version_number, 2);
         assert_eq!(resp.changelog, "latest");
         assert_eq!(resp.url, "https://test.example.com/android/v2.apk");
-        assert_eq!(resp.release_time, latest_release);
+        assert_eq!(resp.release_time, truncate_to_micros(latest_release));
     }).await
 }
 
@@ -167,7 +172,7 @@ async fn test_get_latest_version_skips_future_release() {
 
         assert_eq!(resp.version_name, "v1.0.0");
         assert_eq!(resp.version_number, 1);
-        assert_eq!(resp.release_time, released_at);
+        assert_eq!(resp.release_time, truncate_to_micros(released_at));
     }).await
 }
 
@@ -206,7 +211,7 @@ async fn test_publish_version_clears_latest_cache() {
         }).await.parse_resp::<Option<LatestVersionResp>>().await.unwrap().unwrap();
         assert_eq!(refreshed.version_name, "v1.1.0");
         assert_eq!(refreshed.version_number, 2);
-        assert_eq!(refreshed.release_time, latest_release);
+        assert_eq!(refreshed.release_time, truncate_to_micros(latest_release));
     }).await
 }
 
@@ -543,6 +548,6 @@ async fn test_delete_version_clears_latest_cache_and_falls_back() {
         }).await.parse_resp::<Option<LatestVersionResp>>().await.unwrap().unwrap();
         assert_eq!(fallback.version_name, "v1.0.0");
         assert_eq!(fallback.version_number, 1);
-        assert_eq!(fallback.release_time, old_release);
+        assert_eq!(fallback.release_time, truncate_to_micros(old_release));
     }).await
 }
