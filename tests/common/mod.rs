@@ -22,9 +22,8 @@ use serde_json::Value;
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
-use testcontainers_modules::meilisearch::Meilisearch;
-use testcontainers_modules::postgres::Postgres;
 use testcontainers_modules::redis::REDIS_PORT;
+use testcontainers_modules::testcontainers::core::wait::HttpWaitStrategy;
 use testcontainers_modules::testcontainers::core::WaitFor;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
 use testcontainers_modules::testcontainers::{ContainerAsync, Image};
@@ -114,7 +113,7 @@ async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
     (redis_instance, redis.get_connection_manager().await.unwrap())
 }
 
-async fn get_test_sql_pool() -> (ContainerAsync<Postgres>, PgPool) {
+async fn get_test_sql_pool() -> (ContainerAsync<Postgres17>, PgPool) {
     let instance = testcontainers_modules::postgres::Postgres::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(5432).await.unwrap();
@@ -123,7 +122,7 @@ async fn get_test_sql_pool() -> (ContainerAsync<Postgres>, PgPool) {
     (instance, PgPool::connect(&url).await.unwrap())
 }
 
-async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch>, meilisearch_sdk::client::Client) {
+async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch1_32>, meilisearch_sdk::client::Client) {
     let instance = testcontainers_modules::meilisearch::Meilisearch::default()
         .with_master_key("12345678")
         .start().await.unwrap();
@@ -289,12 +288,7 @@ impl CommonParse for Response {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Redis8 {
-    /// (remove if there is another variable)
-    /// Field is included to prevent this struct to be a unit struct.
-    /// This allows extending functionality (and thus further variables) without breaking changes
-    _priv: (),
-}
+pub struct Redis8;
 
 impl Image for Redis8 {
     fn name(&self) -> &str {
@@ -302,10 +296,39 @@ impl Image for Redis8 {
     }
 
     fn tag(&self) -> &str {
-        "8.8.0"
+        "8.4"
     }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
         vec![WaitFor::message_on_stdout("Ready to accept connections")]
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Postgres17;
+
+impl Image for Postgres17 {
+    fn name(&self) -> &str { "postgres" }
+    fn tag(&self) -> &str { "17.0" }
+    fn ready_conditions(&self) -> Vec<WaitFor> {
+        vec![
+            WaitFor::message_on_stderr("database system is ready to accept connections"),
+            WaitFor::message_on_stdout("database system is ready to accept connections"),
+        ]
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Meilisearch1_32;
+
+impl Image for Meilisearch1_32 {
+    fn name(&self) -> &str { "getmeili/meilisearch" }
+    fn tag(&self) -> &str { "v1.32" }
+    fn ready_conditions(&self) -> Vec<WaitFor> {
+        vec![WaitFor::http(
+            HttpWaitStrategy::new("/health")
+                .with_expected_status_code(200_u16)
+                .with_body(r#"{ "status": "available" }"#.as_bytes()),
+        )]
     }
 }
