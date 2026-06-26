@@ -5,7 +5,9 @@ pub mod song;
 pub mod bilibili;
 pub mod res_utils;
 pub mod publish;
+pub mod images;
 
+use crate::common::images::{Meilisearch1_32, Postgres17, Redis8};
 use async_trait::async_trait;
 use axum::http::HeaderMap;
 use hachimi_world_server::config::Config;
@@ -23,10 +25,8 @@ use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
 use testcontainers_modules::redis::REDIS_PORT;
-use testcontainers_modules::testcontainers::core::wait::HttpWaitStrategy;
-use testcontainers_modules::testcontainers::core::WaitFor;
 use testcontainers_modules::testcontainers::runners::AsyncRunner;
-use testcontainers_modules::testcontainers::{ContainerAsync, Image};
+use testcontainers_modules::testcontainers::ContainerAsync;
 use tokio::net::TcpListener;
 use tracing::{info, Level};
 
@@ -114,7 +114,7 @@ async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
 }
 
 async fn get_test_sql_pool() -> (ContainerAsync<Postgres17>, PgPool) {
-    let instance = testcontainers_modules::postgres::Postgres::default().start().await.unwrap();
+    let instance = Postgres17::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(5432).await.unwrap();
     let url = format!("postgres://postgres:postgres@{host_ip}:{host_port}/postgres");
@@ -123,9 +123,7 @@ async fn get_test_sql_pool() -> (ContainerAsync<Postgres17>, PgPool) {
 }
 
 async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch1_32>, meilisearch_sdk::client::Client) {
-    let instance = testcontainers_modules::meilisearch::Meilisearch::default()
-        .with_master_key("12345678")
-        .start().await.unwrap();
+    let instance = Meilisearch1_32::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
     let url = format!("http://{host_ip}:{host_port}");
@@ -284,51 +282,5 @@ impl CommonParse for Response {
             let data: CommonError = serde_json::from_value(data).unwrap();
             Err(data)
         }
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Redis8;
-
-impl Image for Redis8 {
-    fn name(&self) -> &str {
-        "redis"
-    }
-
-    fn tag(&self) -> &str {
-        "8.4"
-    }
-
-    fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::message_on_stdout("Ready to accept connections")]
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Postgres17;
-
-impl Image for Postgres17 {
-    fn name(&self) -> &str { "postgres" }
-    fn tag(&self) -> &str { "17.0" }
-    fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![
-            WaitFor::message_on_stderr("database system is ready to accept connections"),
-            WaitFor::message_on_stdout("database system is ready to accept connections"),
-        ]
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Meilisearch1_32;
-
-impl Image for Meilisearch1_32 {
-    fn name(&self) -> &str { "getmeili/meilisearch" }
-    fn tag(&self) -> &str { "v1.32" }
-    fn ready_conditions(&self) -> Vec<WaitFor> {
-        vec![WaitFor::http(
-            HttpWaitStrategy::new("/health")
-                .with_expected_status_code(200_u16)
-                .with_body(r#"{ "status": "available" }"#.as_bytes()),
-        )]
     }
 }
