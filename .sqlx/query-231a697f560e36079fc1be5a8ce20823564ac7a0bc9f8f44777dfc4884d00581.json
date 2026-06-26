@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE users SET follower_count = COALESCE(follower_count, 0) + $1 WHERE id = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "231a697f560e36079fc1be5a8ce20823564ac7a0bc9f8f44777dfc4884d00581"
+}

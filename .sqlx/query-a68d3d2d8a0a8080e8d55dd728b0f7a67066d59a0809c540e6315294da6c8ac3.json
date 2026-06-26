@@ -57,6 +57,16 @@
         "ordinal": 10,
         "name": "update_time",
         "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 11,
+        "name": "follower_count",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "following_count",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -76,7 +86,9 @@
       false,
       true,
       false,
-      false
+      false,
+      true,
+      true
     ]
   },
   "hash": "a68d3d2d8a0a8080e8d55dd728b0f7a67066d59a0809c540e6315294da6c8ac3"
