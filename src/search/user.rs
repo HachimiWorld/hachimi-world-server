@@ -1,3 +1,4 @@
+use crate::search::song::SearchResultHitsInfo;
 use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
@@ -5,9 +6,6 @@ use metrics::counter;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{error, info, info_span, Instrument};
-use crate::db::CrudDao;
-use crate::db::user::UserDao;
-use crate::search::song::SearchResultHitsInfo;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDocument {
@@ -121,7 +119,12 @@ async fn fully_index_users(
     pool: &PgPool,
 ) -> anyhow::Result<()> {
     counter!("full_index_user_count").increment(1);
-    let users = UserDao::list(pool).await?;
+    // Use a custom query that includes COALESCE for follower_count
+    let users = sqlx::query!(
+        r#"SELECT id, username, avatar_url, COALESCE(follower_count, 0) as "follower_count!: i64" FROM users"#
+    )
+    .fetch_all(pool)
+    .await?;
     let time = chrono::Utc::now();
     let new_index_name = format!("users_{}", time.format("%Y%m%d%H%M%S"));
     let new_index = setup_search_index_with_name(client, &new_index_name).await?;
@@ -134,7 +137,7 @@ async fn fully_index_users(
             id: x.id,
             name: x.username.clone(),
             avatar_url: x.avatar_url.clone(),
-            follower_count: 0, // TODO: Count follower count
+            follower_count: x.follower_count,
         }).collect::<Vec<_>>();
 
         info!("syncing chunk {} to MeiliSearch: {:?}", index, documents.len());

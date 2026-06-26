@@ -12,3 +12,4 @@ pub mod user;
 pub mod playlist;
 pub mod contributor;
 pub mod connection_account;
+pub mod follow;

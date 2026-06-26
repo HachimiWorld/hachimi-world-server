@@ -13,6 +13,7 @@ pub mod creator;
 pub mod post;
 pub mod user_play_history;
 pub mod user_connection_accounts;
+pub mod follow;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {

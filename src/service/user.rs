@@ -51,6 +51,10 @@ pub async fn get_public_profile(
                 id: c.id,
                 name: c.name
             }).collect_vec(),
+            follower_count: u.follower_count.unwrap_or(0),
+            following_count: u.following_count.unwrap_or(0),
+            is_following: None,
+            is_followed_by: None,
         })
         .into_iter()
         .map(|x| (x.uid, x))

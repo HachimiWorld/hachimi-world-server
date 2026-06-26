@@ -1,29 +1,29 @@
 use crate::db::refresh_token::{IRefreshTokenDao, RefreshToken, RefreshTokenDao};
 use crate::db::user::{IUserDao, User, UserDao};
 use crate::db::CrudDao;
+use crate::search::user::UserDocument;
+use crate::service::captcha::verify_captcha;
+use crate::service::mailer::EmailConfig;
 use crate::service::{mailer, verification_code};
 use crate::web::extractors::XRealIP;
 use crate::web::jwt::Claims;
-use crate::web::result::{WebResult};
+use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::web::{jwt};
+use crate::web::jwt;
 use crate::{err, ok, search, service};
-use axum::http::{StatusCode};
-use axum::response::{Html};
+use axum::extract::Query;
+use axum::http::StatusCode;
+use axum::response::Html;
 use axum::routing::get;
 use axum::{debug_handler, extract::State, routing::post, Json, Router};
+use axum_extra::headers::UserAgent;
+use axum_extra::TypedHeader;
 use chrono::{DateTime, Duration, Utc};
+use jsonwebtoken::errors::ErrorKind;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use axum::extract::Query;
-use axum_extra::headers::UserAgent;
-use axum_extra::TypedHeader;
-use jsonwebtoken::errors::ErrorKind;
-use tracing::{error};
-use crate::search::user::{UserDocument};
-use crate::service::captcha::verify_captcha;
-use crate::service::mailer::EmailConfig;
+use tracing::error;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -109,6 +109,8 @@ async fn email_register(
             last_login_time: None,
             create_time: Utc::now(),
             update_time: Utc::now(),
+            follower_count: Some(0),
+            following_count: Some(0),
         };
         let uid = UserDao::insert(&state.sql_pool, &mut entity).await?;
 

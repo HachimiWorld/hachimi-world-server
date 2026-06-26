@@ -79,6 +79,10 @@ pub async fn page(
                     gender: None,
                     is_banned: false,
                     connected_accounts: vec![],
+                    follower_count: 0,
+                    following_count: 0,
+                    is_following: None,
+                    is_followed_by: None,
                 }).clone(),
             title: p.title,
             content: "".to_string(),
@@ -113,6 +117,10 @@ pub async fn detail(
                 gender: None,
                 is_banned: false,
                 connected_accounts: vec![],
+                follower_count: 0,
+                following_count: 0,
+                is_following: None,
+                is_followed_by: None,
             });
         let item = PostItem {
             id: p.id,

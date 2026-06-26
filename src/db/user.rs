@@ -16,6 +16,8 @@ pub struct User {
     pub last_login_time: Option<DateTime<Utc>>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
+    pub follower_count: Option<i64>,
+    pub following_count: Option<i64>,
 }
 
 pub struct UserDao;
@@ -51,7 +53,7 @@ where E: PgExecutor<'e> {
 
     async fn insert(executor: E, value: &User) -> Result<i64> {
         let result = sqlx::query!(
-            "INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
+            "INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time, follower_count, following_count) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
             value.username,
             value.email,
             value.password_hash,
@@ -62,6 +64,8 @@ where E: PgExecutor<'e> {
             value.last_login_time,
             value.create_time,
             value.update_time,
+            value.follower_count,
+            value.following_count,
         ).fetch_one(executor).await?;
 
         Ok(result.id)

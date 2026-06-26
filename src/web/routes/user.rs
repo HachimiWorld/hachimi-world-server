@@ -2,9 +2,11 @@ use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::search::user::UserDocument;
 use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
+use crate::service::errors::ServiceError;
+use crate::service::follow::FollowError;
 use crate::service::upload::ResizeType;
-use crate::web::jwt::Claims;
-use crate::web::result::WebResult;
+use crate::web::jwt::{Claims, OptionalClaims};
+use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
 use anyhow::Context;
@@ -32,6 +34,14 @@ pub fn router() -> Router<AppState> {
             .route("/generate_challenge", post(connection_generate_challenge))
             .route("/verify_challenge", post(connection_verify_challenge)),
         )
+        // @since 260626 @experimental
+        .route("/following", get(get_following))
+        // @since 260626 @experimental
+        .route("/followers", get(get_followers))
+        // @since 260626 @experimental
+        .route("/follow", post(follow))
+        // @since 260626 @experimental
+        .route("/unfollow", post(unfollow))
 }
 
 async fn greet() -> WebResult<&'static str> {
@@ -53,6 +63,14 @@ pub struct PublicUserProfile {
     pub is_banned: bool,
     /// @since 260402
     pub connected_accounts: Vec<ConnectedAccountItem>,
+    /// @since 260619
+    pub follower_count: i64,
+    /// @since 260619
+    pub following_count: i64,
+    /// @since 260619 — None when viewing own profile or unauthenticated
+    pub is_following: Option<bool>,
+    /// @since 260619 — None when viewing own profile or unauthenticated
+    pub is_followed_by: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,8 +80,10 @@ pub struct ConnectedAccountItem {
     pub name: String,
 }
 
+#[axum::debug_handler]
 async fn get_profile(
     state: State<AppState>,
+    claims: OptionalClaims,
     req: Query<GetProfileReq>,
 ) -> WebResult<PublicUserProfile> {
     // Fetch user from db
@@ -78,6 +98,14 @@ async fn get_profile(
         req.uid, true,
     ).await?;
 
+    let viewer_uid = claims.0.as_ref().map(|c| c.uid());
+    let (is_following, is_followed_by) = match viewer_uid {
+        Some(uid) if uid != req.uid => {
+            service::follow::check_follow_relationship(&state.sql_pool, uid, req.uid).await?
+        }
+        _ => (false, false),
+    };
+
     let mapped = PublicUserProfile {
         uid: user.id,
         username: user.username,
@@ -90,6 +118,10 @@ async fn get_profile(
             id: c.id,
             name: c.name,
         }).collect_vec(),
+        follower_count: user.follower_count.unwrap_or(0),
+        following_count: user.following_count.unwrap_or(0),
+        is_following: if viewer_uid.is_some() && viewer_uid.unwrap() != req.uid { Some(is_following) } else { None },
+        is_followed_by: if viewer_uid.is_some() && viewer_uid.unwrap() != req.uid { Some(is_followed_by) } else { None },
     };
 
     ok!(mapped)
@@ -148,11 +180,12 @@ async fn update_profile(
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
     UserDao::update_by_id(&state.sql_pool, &user).await?;
+
     search::user::update_user_document(&state.meilisearch, UserDocument {
         id: user.id,
         avatar_url: user.avatar_url,
         name: user.username,
-        follower_count: 0,
+        follower_count: user.follower_count.unwrap_or(0),
     }).await?;
 
     ok!(())
@@ -201,7 +234,7 @@ async fn set_avatar(
         id: user.id,
         avatar_url: user.avatar_url,
         name: user.username,
-        follower_count: 0,
+        follower_count: user.follower_count.unwrap_or(0),
     }).await?;
 
     ok!(())
@@ -407,4 +440,130 @@ async fn connection_sync(
         &req.r#type
     ).await?;
     ok!(())
+}
+
+// ─── Follow / Unfollow ───────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowReq {
+    pub target_uid: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowResp {
+    pub follower_count: i64,
+}
+
+async fn follow(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<FollowReq>,
+) -> WebResult<FollowResp> {
+    let my_uid = claims.uid();
+    // Check that current user is not banned
+    let me = UserDao::get_by_id(&state.sql_pool, my_uid).await?
+        .ok_or_else(|| common!("not_found", "User not found"))?;
+    if me.is_banned {
+        err!("user_banned", "You are banned and cannot follow users");
+    }
+
+    let follower_count = service::follow::follow_user(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        my_uid,
+        req.target_uid,
+    ).await?;
+
+    ok!(FollowResp { follower_count })
+}
+
+async fn unfollow(
+    claims: Claims,
+    state: State<AppState>,
+    req: Json<FollowReq>,
+) -> WebResult<FollowResp> {
+    let my_uid = claims.uid();
+
+    let follower_count = service::follow::unfollow_user(
+        state.redis_conn.clone(),
+        &state.sql_pool,
+        my_uid,
+        req.target_uid,
+    ).await?;
+
+    ok!(FollowResp { follower_count })
+}
+
+impl From<ServiceError<FollowError>> for WebError<CommonError> {
+    fn from(err: ServiceError<FollowError>) -> Self {
+        match err {
+            ServiceError::BusinessError(fe) => {
+                let (code, msg) = match fe {
+                    FollowError::CannotFollowYourself => ("cannot_follow_self", "Cannot follow yourself"),
+                    FollowError::CannotUnfollowYourself => ("cannot_unfollow_self", "Cannot unfollow yourself"),
+                    FollowError::TargetUserNotFound => ("not_found", "User not found"),
+                    FollowError::TargetUserBanned => ("user_banned", "Target user is banned"),
+                };
+                common!(code, "{}", msg)
+            }
+            ServiceError::Other(e) => WebError::Internal(e),
+        }
+    }
+}
+
+// ─── Following / Followers Lists ─────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowingListReq {
+    pub after: Option<String>,
+    #[serde(default = "default_limit")]
+    pub limit: i64,
+}
+
+fn default_limit() -> i64 { 20 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowingListResp {
+    pub items: Vec<service::follow::FollowingItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+async fn get_following(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<FollowingListReq>,
+) -> WebResult<FollowingListResp> {
+    let limit = req.limit.min(50).max(1);
+    let (items, next_cursor) = service::follow::get_following(
+        &state.sql_pool,
+        claims.uid(),
+        req.after.as_deref(),
+        limit,
+    ).await?;
+
+    ok!(FollowingListResp { items, next_cursor })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FollowersListResp {
+    pub items: Vec<service::follow::FollowerItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+async fn get_followers(
+    claims: Claims,
+    state: State<AppState>,
+    req: Query<FollowingListReq>,
+) -> WebResult<FollowersListResp> {
+    let limit = req.limit.min(50).max(1);
+    let (items, next_cursor) = service::follow::get_followers(
+        &state.sql_pool,
+        claims.uid(),
+        req.after.as_deref(),
+        limit,
+    ).await?;
+
+    ok!(FollowersListResp { items, next_cursor })
 }
