@@ -102,6 +102,24 @@ pub struct Claims {
     pub jti: String,
 }
 
+/// An optional JWT claims extractor — None if no auth header is present.
+/// In axum 0.8, `Option<Claims>` doesn't work with custom state directly.
+#[derive(Debug, Clone)]
+pub struct OptionalClaims(pub Option<Claims>);
+
+impl FromRequestParts<AppState> for OptionalClaims {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        // Try to extract Claims; if it fails, return None
+        let claims = Claims::from_request_parts(parts, state).await.ok();
+        Ok(OptionalClaims(claims))
+    }
+}
+
 impl Claims {
     pub fn uid(&self) -> i64 {
         self.sub.parse().unwrap()
