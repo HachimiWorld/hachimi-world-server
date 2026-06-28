@@ -3,7 +3,8 @@ mod common;
 use crate::common::res_utils::generate_test_image;
 use crate::common::{assert_is_ok, auth, CommonParse};
 use common::with_test_environment;
-use hachimi_world_server::web::routes::user::{GetProfileReq, PublicUserProfile, SearchReq, SearchResp, UpdateProfileReq};
+use hachimi_world_server::service::user::PublicUserProfile;
+use hachimi_world_server::web::routes::user::{GetProfileReq, SearchReq, SearchResp, UpdateProfileReq};
 use image::ImageFormat;
 use reqwest::multipart::{Form, Part};
 

@@ -1,14 +1,69 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::service::connection_account;
 use crate::service::connection_account::ConnectionAccount;
-use crate::web::routes::user::{ConnectedAccountItem, PublicUserProfile};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
 use redis::{AsyncTypedCommands, MSetOptions, SetExpiry};
+use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
+/// Shared user profile model — returned by all APIs that include user info.
+/// `is_following` / `is_followed_by` are `None` unless enriched via `get_user_profile`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicUserProfile {
+    pub uid: i64,
+    pub username: String,
+    pub avatar_url: Option<String>,
+    pub bio: Option<String>,
+    pub gender: Option<i32>,
+    pub is_banned: bool,
+    /// @since 260402
+    pub connected_accounts: Vec<ConnectedAccountItem>,
+    /// @since 260619
+    pub follower_count: i64,
+    /// @since 260619
+    pub following_count: i64,
+    /// @since 260619 — None when viewing own profile or unauthenticated, or when caller uses `get_common_user_profile`
+    pub is_following: Option<bool>,
+    /// @since 260619 — None when viewing own profile or unauthenticated, or when caller uses `get_common_user_profile`
+    pub is_followed_by: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectedAccountItem {
+    pub r#type: String,
+    pub id: String,
+    pub name: String,
+}
+
+/// Get user profiles from DB + Redis cache.  Follow-relationship fields (`is_following`,
+/// `is_followed_by`) are left `None` unless `viewer_uid` is provided.
 pub async fn get_public_profile(
+    redis: ConnectionManager,
+    sql_pool: &PgPool,
+    user_ids: &[i64],
+    viewer_uid: Option<i64>,
+) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+    let mut profiles = get_common_user_profile(redis, sql_pool, user_ids).await?;
+
+    if let Some(vid) = viewer_uid {
+        for (&uid, profile) in profiles.iter_mut() {
+            if uid == vid {
+                continue;
+            }
+            let (is_following, is_followed_by) =
+                crate::service::follow::check_follow_relationship(sql_pool, vid, uid).await?;
+            profile.is_following = Some(is_following);
+            profile.is_followed_by = Some(is_followed_by);
+        }
+    }
+
+    Ok(profiles)
+}
+
+/// Internal: fetch profiles from DB + Redis cache, without enrichments.
+pub(crate) async fn get_common_user_profile(
     redis: ConnectionManager,
     sql_pool: &PgPool,
     user_ids: &[i64],

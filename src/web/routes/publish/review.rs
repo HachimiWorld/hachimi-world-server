@@ -9,13 +9,13 @@ use crate::db::{song_publishing_review, song_publishing_review_history, CrudDao}
 use crate::service::contributor::{check_contributor, ensure_contributor, CommunityCfg};
 use crate::service::mailer::EmailConfig;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
+use crate::service::user::PublicUserProfile;
 use crate::service::{mailer, user};
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::routes::publish::{build_image_temp_key, build_internal_review_data, build_temp_key, parse_jmid, CreationInfo, InternalSongPublishReviewData, PageReq, PageResp, ProductionItem, SongPublishReviewBrief, SongTempData};
 use crate::web::routes::song::TagItem;
-use crate::web::routes::user::PublicUserProfile;
 use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
 use anyhow::Context;
@@ -499,7 +499,7 @@ pub async fn review_comment_list(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids).await?;
+    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids, Some(claims.uid())).await?;
 
     for comment in comments {
         data.push(ReviewCommentItem {
@@ -592,7 +592,7 @@ pub async fn review_history_list(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids).await?;
+    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &uids, Some(claims.uid())).await?;
 
     let mut data = Vec::with_capacity(histories.len());
     for x in histories {

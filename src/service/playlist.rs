@@ -45,7 +45,7 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
 
     // Hydrate songs and creator user info
     let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, &song_ids).await?;
-    let creator_user = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[playlist.user_id]).await?
+    let creator_user = user::get_common_user_profile(state.redis_conn.clone(), &state.sql_pool, &[playlist.user_id]).await?
         .remove(&playlist.user_id)
         .ok_or_else(|| CreatorUserNotFound { playlist_id })?; // This should never happen
 
@@ -119,7 +119,7 @@ pub async fn list_playlist_metadata(
     let user_ids = rows.iter().map(|x| x.user_id).collect_vec();
     let counts = PlaylistDao::count_songs(sql_pool, &playlist_ids).await?;
     let playlists: HashMap<i64, Playlist> = rows.into_iter().map(|p| (p.id, p)).collect();
-    let users = user::get_public_profile(redis, sql_pool, &user_ids).await?;
+    let users = user::get_common_user_profile(redis, sql_pool, &user_ids).await?;
 
     let result: HashMap<i64, _> = playlist_ids
         .into_iter()

@@ -2,9 +2,10 @@ mod common;
 
 use crate::common::{assert_is_err, auth, CommonParse, TestEnvironment};
 use common::with_test_environment;
+use hachimi_world_server::service::user::PublicUserProfile;
 use hachimi_world_server::web::routes::user::{
     FollowReq, FollowResp, FollowersListResp, FollowingListReq, FollowingListResp,
-    GetProfileReq, PublicUserProfile,
+    GetProfileReq,
 };
 
 /// Helper: follow user and assert success, returning follower_count.

@@ -1,10 +1,10 @@
 use crate::db::post::{Post, PostDao};
 use crate::db::CrudDao;
 use crate::service::upload::{upload_cover_image_as_temp_id, ImageProcessOptions, ResizeType};
+use crate::service::user::PublicUserProfile;
 use crate::service::{contributor, upload, user};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
-use crate::web::routes::user::PublicUserProfile;
 use crate::web::state::AppState;
 use crate::{err, ok};
 use async_backtrace::framed;
@@ -64,7 +64,7 @@ pub async fn page(
 
     let posts = PostDao::page(&state.sql_pool, page_index as i64, page_size as i64).await?;
     let user_ids = posts.iter().map(|p| p.author_uid).collect_vec();
-    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids).await?;
+    let users = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids, None).await?;
 
     let items = posts
         .into_iter()
@@ -107,7 +107,7 @@ pub async fn detail(
     req: Query<PostIdReq>,
 ) -> WebResult<PostItem> {
     if let Some(p) = PostDao::get_by_id(&state.sql_pool, req.post_id).await? {
-        let user = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[p.author_uid]).await?
+        let user = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[p.author_uid], None).await?
             .remove(&p.author_uid)
             .unwrap_or_else(|| PublicUserProfile {
                 uid: 0,

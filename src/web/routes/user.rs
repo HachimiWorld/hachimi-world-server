@@ -53,78 +53,18 @@ pub struct GetProfileReq {
     pub uid: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PublicUserProfile {
-    pub uid: i64,
-    pub username: String,
-    pub avatar_url: Option<String>,
-    pub bio: Option<String>,
-    pub gender: Option<i32>,
-    pub is_banned: bool,
-    /// @since 260402
-    pub connected_accounts: Vec<ConnectedAccountItem>,
-    /// @since 260619
-    pub follower_count: i64,
-    /// @since 260619
-    pub following_count: i64,
-    /// @since 260619 — None when viewing own profile or unauthenticated
-    pub is_following: Option<bool>,
-    /// @since 260619 — None when viewing own profile or unauthenticated
-    pub is_followed_by: Option<bool>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ConnectedAccountItem {
-    pub r#type: String,
-    pub id: String,
-    pub name: String,
-}
-
 #[axum::debug_handler]
 async fn get_profile(
     state: State<AppState>,
     claims: OptionalClaims,
     req: Query<GetProfileReq>,
-) -> WebResult<PublicUserProfile> {
-    // Fetch user from db
-    let user = if let Some(x) = UserDao::get_by_id(&state.sql_pool, req.uid).await? {
-        x
-    } else {
-        err!("not_found", "User not found")
-    };
-
-    let connected_accounts = service::connection_account::list_connections(
-        &state.sql_pool, state.redis_conn.clone(),
-        req.uid, true,
-    ).await?;
-
+) -> WebResult<service::user::PublicUserProfile> {
     let viewer_uid = claims.0.as_ref().map(|c| c.uid());
-    let (is_following, is_followed_by) = match viewer_uid {
-        Some(uid) if uid != req.uid => {
-            service::follow::check_follow_relationship(&state.sql_pool, uid, req.uid).await?
-        }
-        _ => (false, false),
-    };
+    let mut profiles = service::user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[req.uid], viewer_uid).await?;
 
-    let mapped = PublicUserProfile {
-        uid: user.id,
-        username: user.username,
-        avatar_url: user.avatar_url,
-        bio: user.bio,
-        gender: user.gender,
-        is_banned: user.is_banned,
-        connected_accounts: connected_accounts.into_iter().map(|c| ConnectedAccountItem {
-            r#type: c.r#type,
-            id: c.id,
-            name: c.name,
-        }).collect_vec(),
-        follower_count: user.follower_count.unwrap_or(0),
-        following_count: user.following_count.unwrap_or(0),
-        is_following: if viewer_uid.is_some() && viewer_uid.unwrap() != req.uid { Some(is_following) } else { None },
-        is_followed_by: if viewer_uid.is_some() && viewer_uid.unwrap() != req.uid { Some(is_followed_by) } else { None },
-    };
-
-    ok!(mapped)
+    let profile = profiles.remove(&req.uid)
+        .ok_or_else(|| WebError::common("not_found", "User not found"))?;
+    ok!(profile)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,7 +192,7 @@ fn default_search_size() -> u32 { 20 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchResp {
-    pub hits: Vec<PublicUserProfile>,
+    pub hits: Vec<service::user::PublicUserProfile>,
     pub query: String,
     pub processing_time_ms: u64,
     pub total_hits: Option<usize>,
@@ -275,7 +215,7 @@ async fn search(
     ).await?;
 
     let user_ids: Vec<i64> = result.hits.iter().map(|u| u.id).collect();
-    let users = service::user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids).await?
+    let users = service::user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids, None).await?
         .into_iter().map(|(_, v)| v)
         .collect_vec();
 
