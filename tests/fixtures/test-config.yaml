@@ -29,6 +29,7 @@ meilisearch:
   host: http://localhost:7700
   api_key: 12345678
 turnstile:
+  mock: true
   captcha_page_url: "http://localhost:8080/api/auth/captcha"
   api_base_url: "http://localhost:8080/api"
   site_key: "1x00000000000000000000AA"

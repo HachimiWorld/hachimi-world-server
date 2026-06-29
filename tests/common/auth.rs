@@ -1,6 +1,6 @@
-use crate::common::{assert_is_ok, ApiClient, CommonParse, TestEnvironment};
+use crate::common::{ApiClient, CommonParse, TestEnvironment};
 use hachimi_world_server::service;
-use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, SubmitCaptchaReq, TokenPair};
+use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, TokenPair};
 use redis::aio::ConnectionManager;
 use tracing::info;
 
@@ -57,12 +57,13 @@ pub async fn with_test_contributor_user(env: &mut TestEnvironment) -> TestUser {
 pub async fn generate_pass_captcha_key(api: &ApiClient) -> String {
     let captcha_key = api.get("/auth/captcha/generate").await.parse_resp::<GenerateCaptchaResp>().await.unwrap();
 
+    // Since we set `mock` flag to true, the captcha will always pass, so we don't need to submit it
     // Submit the test token, see cloudflare turnstile doc [Testing](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)
-    let r = api.post("/auth/captcha/submit", &SubmitCaptchaReq {
-        captcha_key: captcha_key.captcha_key.clone(),
-        token: "XXXX.DUMMY.TOKEN.XXXX".to_string()
-    }).await;
-    assert_is_ok(r).await;
+    // let r = api.post("/auth/captcha/submit", &SubmitCaptchaReq {
+    //     captcha_key: captcha_key.captcha_key.clone(),
+    //     token: "XXXX.DUMMY.TOKEN.XXXX".to_string()
+    // }).await;
+    // assert_is_ok(r).await;
     captcha_key.captcha_key
 }
 

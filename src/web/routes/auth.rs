@@ -6,10 +6,10 @@ use crate::service::captcha::verify_captcha;
 use crate::service::mailer::EmailConfig;
 use crate::service::{mailer, verification_code};
 use crate::web::extractors::XRealIP;
+use crate::web::jwt;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
-use crate::web::jwt;
 use crate::{err, ok, search, service};
 use axum::extract::Query;
 use axum::http::StatusCode;
@@ -509,6 +509,9 @@ pub struct TurnstileCfg {
     pub api_base_url: String,
     pub site_key: String,
     pub secret_key: String,
+    /// Skip Cloudflare API calls — captcha always passes.  For dev / test environments.
+    #[serde(default)]
+    pub mock: bool,
 }
 
 #[debug_handler]
@@ -516,7 +519,7 @@ async fn generate_captcha(
     mut state: State<AppState>,
 ) -> WebResult<GenerateCaptchaResp> {
     let cfg = state.config.get_and_parse::<TurnstileCfg>("turnstile")?;
-    let key = service::captcha::generate_new_captcha(&mut state.redis_conn).await?;
+    let key = service::captcha::generate_new_captcha(&mut state.redis_conn, &cfg).await?;
 
     ok!(GenerateCaptchaResp {
         captcha_key: key.clone(), url: format!("{}?captcha_key={}", cfg.captcha_page_url, key)

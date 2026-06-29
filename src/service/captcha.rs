@@ -1,14 +1,15 @@
+use crate::web::routes::auth::TurnstileCfg;
 use redis::AsyncCommands;
 use serde_json::json;
-use crate::web::routes::auth::TurnstileCfg;
 
 const STATUS_INIT: &str = "0";
 const STATUS_SUCCESS: &str = "1";
 const STATUS_FAILURE: &str = "2";
 
-pub async fn generate_new_captcha(redis: &mut redis::aio::ConnectionManager) -> anyhow::Result<String> {
+pub async fn generate_new_captcha(redis: &mut redis::aio::ConnectionManager, cfg: &TurnstileCfg) -> anyhow::Result<String> {
     let key = uuid::Uuid::new_v4().to_string();
-    let _: () = redis.set_ex(build_captcha_redis_key(&key), STATUS_INIT, 300).await?;
+    let initial_status = if cfg.mock { STATUS_SUCCESS } else { STATUS_INIT };
+    let _: () = redis.set_ex(build_captcha_redis_key(&key), initial_status, 300).await?;
     Ok(key)
 }
 
