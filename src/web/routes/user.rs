@@ -476,6 +476,7 @@ async fn get_following(
 ) -> WebResult<FollowingListResp> {
     let limit = req.limit.min(50).max(1);
     let (items, next_cursor) = service::follow::get_following(
+        state.redis_conn.clone(),
         &state.sql_pool,
         claims.uid(),
         req.after.as_deref(),
@@ -499,6 +500,7 @@ async fn get_followers(
 ) -> WebResult<FollowersListResp> {
     let limit = req.limit.min(50).max(1);
     let (items, next_cursor) = service::follow::get_followers(
+        state.redis_conn.clone(),
         &state.sql_pool,
         claims.uid(),
         req.after.as_deref(),

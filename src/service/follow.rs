@@ -2,6 +2,7 @@ use crate::db::follow::FollowDao;
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::errors::{ServiceError, ServiceResult};
+use crate::service::user::PublicUserProfile;
 use redis::aio::ConnectionManager;
 use redis::AsyncTypedCommands;
 use sqlx::PgPool;
@@ -113,6 +114,7 @@ pub async fn unfollow_user(
 
 /// Get the following list with cursor pagination.
 pub async fn get_following(
+    redis: ConnectionManager,
     pool: &PgPool,
     my_uid: i64,
     cursor: Option<&str>,
@@ -129,18 +131,25 @@ pub async fn get_following(
     }
 
     let followed_ids: Vec<i64> = rows.iter().map(|r| r.uid).collect();
-
-    // Hydrate mutual status
     let mutual_ids_set: HashSet<i64> = FollowDao::filter_following_back(pool, my_uid, &followed_ids).await?;
+    let profiles = crate::service::user::get_common_user_profile(redis, pool, &followed_ids).await?;
 
     let items: Vec<FollowingItem> = rows
         .into_iter()
         .map(|r| FollowingItem {
-            uid: r.uid,
-            username: r.username,
-            avatar_url: r.avatar_url,
-            bio: r.bio,
-            is_unavailable: r.is_banned,
+            user: profiles.get(&r.uid).cloned().unwrap_or_else(|| PublicUserProfile {
+                uid: r.uid,
+                username: r.username,
+                avatar_url: r.avatar_url,
+                bio: r.bio,
+                gender: None,
+                is_banned: r.is_banned,
+                connected_accounts: vec![],
+                follower_count: 0,
+                following_count: 0,
+                is_following: None,
+                is_followed_by: None,
+            }),
             is_mutual: mutual_ids_set.contains(&r.uid),
             followed_at: r.followed_at.to_rfc3339(),
         })
@@ -157,6 +166,7 @@ pub async fn get_following(
 
 /// Get the followers list with cursor pagination.
 pub async fn get_followers(
+    redis: ConnectionManager,
     pool: &PgPool,
     my_uid: i64,
     cursor: Option<&str>,
@@ -173,18 +183,26 @@ pub async fn get_followers(
     }
 
     let follower_ids: Vec<i64> = rows.iter().map(|r| r.uid).collect();
-
     let mutual_ids = FollowDao::filter_following_back(pool, my_uid, &follower_ids).await?;
     let mutual_ids_set: HashSet<i64> = mutual_ids.into_iter().collect();
+    let profiles = crate::service::user::get_common_user_profile(redis, pool, &follower_ids).await?;
 
     let items: Vec<FollowerItem> = rows
         .into_iter()
         .map(|r| FollowerItem {
-            uid: r.uid,
-            username: r.username,
-            avatar_url: r.avatar_url,
-            bio: r.bio,
-            is_unavailable: r.is_banned,
+            user: profiles.get(&r.uid).cloned().unwrap_or_else(|| PublicUserProfile {
+                uid: r.uid,
+                username: r.username,
+                avatar_url: r.avatar_url,
+                bio: r.bio,
+                gender: None,
+                is_banned: r.is_banned,
+                connected_accounts: vec![],
+                follower_count: 0,
+                following_count: 0,
+                is_following: None,
+                is_followed_by: None,
+            }),
             is_mutual: mutual_ids_set.contains(&r.uid),
             followed_at: r.followed_at.to_rfc3339(),
         })
@@ -201,22 +219,14 @@ pub async fn get_followers(
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FollowingItem {
-    pub uid: i64,
-    pub username: String,
-    pub avatar_url: Option<String>,
-    pub bio: Option<String>,
-    pub is_unavailable: bool,
+    pub user: PublicUserProfile,
     pub is_mutual: bool,
     pub followed_at: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FollowerItem {
-    pub uid: i64,
-    pub username: String,
-    pub avatar_url: Option<String>,
-    pub bio: Option<String>,
-    pub is_unavailable: bool,
+    pub user: PublicUserProfile,
     pub is_mutual: bool,
     pub followed_at: String,
 }

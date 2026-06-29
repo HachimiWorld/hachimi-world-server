@@ -269,7 +269,7 @@ async fn test_following_list() {
             .unwrap();
 
         assert_eq!(resp.items.len(), 2);
-        let uids: Vec<i64> = resp.items.iter().map(|i| i.uid).collect();
+        let uids: Vec<i64> = resp.items.iter().map(|i| i.user.uid).collect();
         assert!(uids.contains(&user_b.uid));
         assert!(uids.contains(&user_c.uid));
     })
@@ -347,7 +347,7 @@ async fn test_followers_list() {
             .unwrap();
 
         assert_eq!(resp.items.len(), 2);
-        let uids: Vec<i64> = resp.items.iter().map(|i| i.uid).collect();
+        let uids: Vec<i64> = resp.items.iter().map(|i| i.user.uid).collect();
         assert!(uids.contains(&user_b.uid));
         assert!(uids.contains(&user_c.uid));
     })
@@ -394,7 +394,7 @@ async fn test_following_pagination() {
             .unwrap();
 
         assert_eq!(resp2.items.len(), 1);
-        assert_ne!(resp.items[0].uid, resp2.items[0].uid);
+        assert_ne!(resp.items[0].user.uid, resp2.items[0].user.uid);
     })
     .await
 }
