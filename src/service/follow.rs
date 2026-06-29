@@ -47,36 +47,17 @@ pub async fn follow_user(
         return Err(ServiceError::BusinessError(FollowError::TargetUserBanned));
     }
 
-    // Check if already following (idempotent)
-    if FollowDao::exists(pool, my_uid, target_uid).await? {
-        let updated_target = UserDao::get_by_id(pool, target_uid).await?
-            .ok_or_else(|| ServiceError::BusinessError(FollowError::TargetUserNotFound))?;
-        return Ok(updated_target.follower_count.unwrap_or(0));
-    }
-
     let mut tx = pool.begin().await?;
 
-    match FollowDao::insert(&mut *tx, my_uid, target_uid).await {
-        Ok(_) => {}
-        Err(e) => {
-            if let Some(db_err) = e.as_database_error() {
-                if db_err.constraint() == Some("idx_follows_follower_followed") {
-                    tx.rollback().await?;
-                    let updated_target = UserDao::get_by_id(pool, target_uid).await?
-                        .ok_or_else(|| ServiceError::BusinessError(FollowError::TargetUserNotFound))?;
-                    return Ok(updated_target.follower_count.unwrap_or(0));
-                }
-            }
-            tx.rollback().await?;
-            return Err(e.into());
-        }
+    let inserted = FollowDao::insert_ignore(&mut *tx, my_uid, target_uid).await?;
+    if inserted {
+        FollowDao::increase_follower_count(&mut *tx, target_uid, 1).await?;
+        FollowDao::increase_following_count(&mut *tx, my_uid, 1).await?;
     }
-
-    FollowDao::increase_follower_count(&mut *tx, target_uid, 1).await?;
-    FollowDao::increase_following_count(&mut *tx, my_uid, 1).await?;
 
     tx.commit().await?;
 
+    // Clear cached profiles
     let cache_keys: Vec<String> = vec![gen_profile_cache_key(my_uid), gen_profile_cache_key(target_uid)];
     let _ = redis.del(&cache_keys).await?;
     let _: () = redis.set_ex(gen_follow_cache_key(my_uid, target_uid), true, 600).await?;
@@ -85,8 +66,10 @@ pub async fn follow_user(
         .ok_or_else(|| ServiceError::BusinessError(FollowError::TargetUserNotFound))?;
     let follower_count = updated_target.follower_count.unwrap_or(0);
 
-    metrics::counter!("follow_total").increment(1);
-    info!(follower_id = my_uid, followed_id = target_uid, "user followed");
+    if inserted {
+        metrics::counter!("follow_total").increment(1);
+        info!(follower_id = my_uid, followed_id = target_uid, "user followed");
+    }
 
     Ok(follower_count)
 }

@@ -35,18 +35,20 @@ pub struct FollowerRow {
 pub struct FollowDao;
 
 impl FollowDao {
-    pub async fn insert<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<Follow>
+    /// Insert a follow relationship.  Returns true if a new row was inserted,
+    /// false if the relationship already existed.
+    pub async fn insert_ignore<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<bool>
     where
         E: PgExecutor<'e>,
     {
-        sqlx::query_as!(
-            Follow,
-            r#"INSERT INTO follows (follower_id, followed_id) VALUES ($1, $2) RETURNING follower_id, followed_id, create_time"#,
+        let result = sqlx::query!(
+            r#"INSERT INTO follows (follower_id, followed_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
             follower_id,
             followed_id
         )
-            .fetch_one(executor)
-            .await
+            .execute(executor)
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     pub async fn delete<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<()>
