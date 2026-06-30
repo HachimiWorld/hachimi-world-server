@@ -19,6 +19,7 @@ use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use axum_extra::headers::UserAgent;
 use axum_extra::TypedHeader;
 use chrono::{DateTime, Duration, Utc};
+use itertools::Itertools;
 use jsonwebtoken::errors::ErrorKind;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -346,21 +347,27 @@ pub struct DeviceItem {
     pub ip_address: Option<String>,
     pub last_used_time: Option<DateTime<Utc>>,
     pub create_time: DateTime<Utc>,
+    /// @since 260630
+    pub token_id: String
 }
 
 async fn device_list(
     State(state): State<AppState>,
     claims: Claims,
 ) -> WebResult<DeviceListResp> {
+    let now = Utc::now();
     let devices = RefreshTokenDao::list_by_uid(&state.sql_pool, claims.uid()).await?
         .into_iter()
+        .filter(|x| now < x.expires_time)
         .map(|x| DeviceItem {
             id: x.id, // Should we use device id instead?
             device_info: x.device_info,
             ip_address: x.ip_address,
             last_used_time: x.last_used_time,
             create_time: x.create_time,
+            token_id: x.token_id,
         })
+        .sorted_by(|a, b| b.create_time.cmp(&a.create_time))
         .collect();
     ok!(DeviceListResp {devices})
 }
