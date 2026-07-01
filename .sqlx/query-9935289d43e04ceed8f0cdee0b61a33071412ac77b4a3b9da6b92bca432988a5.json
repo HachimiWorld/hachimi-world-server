@@ -6,57 +6,123 @@
       {
         "ordinal": 0,
         "name": "id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "user_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "user_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "song_display_id",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "song_display_id"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "data",
-        "type_info": "Jsonb"
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "data"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "submit_time",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "submit_time"
+          }
+        }
       },
       {
         "ordinal": 5,
         "name": "update_time",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "update_time"
+          }
+        }
       },
       {
         "ordinal": 6,
         "name": "review_time",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "review_time"
+          }
+        }
       },
       {
         "ordinal": 7,
         "name": "review_comment",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "review_comment"
+          }
+        }
       },
       {
         "ordinal": 8,
         "name": "status",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "status"
+          }
+        }
       },
       {
         "ordinal": 9,
         "name": "type",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "type"
+          }
+        }
       },
       {
         "ordinal": 10,
         "name": "comment",
-        "type_info": "Text"
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "song_publishing_review",
+            "name": "comment"
+          }
+        }
       }
     ],
     "parameters": {

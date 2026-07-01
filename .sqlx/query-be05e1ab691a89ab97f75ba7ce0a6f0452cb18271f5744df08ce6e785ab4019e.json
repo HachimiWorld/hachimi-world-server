@@ -6,22 +6,46 @@
       {
         "ordinal": 0,
         "name": "playlist_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "playlist_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "song_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "song_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "order_index",
-        "type_info": "Int4"
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "order_index"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "add_time",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "add_time"
+          }
+        }
       }
     ],
     "parameters": {

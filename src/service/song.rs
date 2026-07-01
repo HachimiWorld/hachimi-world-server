@@ -6,7 +6,7 @@ use crate::service::song_like;
 use crate::web::routes::song::TagItem;
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
-use rand::Rng;
+use rand::RngExt;
 use redis::aio::ConnectionManager;
 use redis::{AsyncTypedCommands, MSetOptions, SetExpiry};
 use serde::{Deserialize, Serialize};

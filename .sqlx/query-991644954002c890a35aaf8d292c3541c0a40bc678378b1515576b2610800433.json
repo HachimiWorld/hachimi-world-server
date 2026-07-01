@@ -6,27 +6,57 @@
       {
         "ordinal": 0,
         "name": "song_id!",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "song_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "internal_username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "users",
+            "name": "username"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "uid",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "uid"
+          }
+        }
       },
       {
         "ordinal": 3,
         "name": "external_username",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "person_name"
+          }
+        }
       },
       {
         "ordinal": 4,
         "name": "role",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "role"
+          }
+        }
       }
     ],
     "parameters": {

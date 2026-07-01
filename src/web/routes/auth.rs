@@ -21,7 +21,7 @@ use axum_extra::TypedHeader;
 use chrono::{DateTime, Duration, Utc};
 use itertools::Itertools;
 use jsonwebtoken::errors::ErrorKind;
-use rand::Rng;
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::error;

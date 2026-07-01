@@ -1,4 +1,4 @@
-use rand::Rng;
+use rand::RngExt;
 use redis::aio::ConnectionManager;
 use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 

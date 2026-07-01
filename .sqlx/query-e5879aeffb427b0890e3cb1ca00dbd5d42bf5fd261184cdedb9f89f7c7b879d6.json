@@ -6,17 +6,35 @@
       {
         "ordinal": 0,
         "name": "user_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_play_history",
+            "name": "user_id"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "song_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_play_history",
+            "name": "song_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "create_time",
-        "type_info": "Timestamptz"
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_play_history",
+            "name": "create_time"
+          }
+        }
       }
     ],
     "parameters": {

@@ -6,17 +6,30 @@
       {
         "ordinal": 0,
         "name": "title",
-        "type_info": "Varchar"
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "title"
+          }
+        }
       },
       {
         "ordinal": 1,
         "name": "song_id",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "song_id"
+          }
+        }
       },
       {
         "ordinal": 2,
         "name": "play_count",
-        "type_info": "Int8"
+        "type_info": "Int8",
+        "origin": "Expression"
       }
     ],
     "parameters": {
