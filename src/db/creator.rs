@@ -3,6 +3,38 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 
+macro_rules! query_creators {
+    () => {
+        sqlx::query_as!(
+            Creator, r#"
+            SELECT
+                id,
+                user_id,
+                jmid_prefix,
+                active,
+                create_time,
+                update_time
+            FROM creators
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            Creator, r#"
+            SELECT
+                id,
+                user_id,
+                jmid_prefix,
+                active,
+                create_time,
+                update_time
+            FROM creators
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Creator {
     pub id: i64,
@@ -30,7 +62,7 @@ where
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Creator>> {
-        sqlx::query_as!(Creator, "SELECT * FROM creators WHERE id = $1", id)
+        query_creators!("WHERE id = $1", id)
             .fetch_optional(executor)
             .await
     }
@@ -77,13 +109,13 @@ where
 impl<'e> CreatorDao {
 
     pub async fn get_by_user_id(executor: impl PgExecutor<'e>, user_id: i64) -> sqlx::Result<Option<Creator>> {
-        sqlx::query_as!(Creator, "SELECT * FROM creators WHERE user_id = $1", user_id)
+        query_creators!("WHERE user_id = $1", user_id)
             .fetch_optional(executor)
             .await
     }
 
     pub async fn get_by_jmid_prefix(executor: impl PgExecutor<'e>, jmid_prefix: &str) -> sqlx::Result<Option<Creator>> {
-        sqlx::query_as!(Creator, "SELECT * FROM creators WHERE jmid_prefix = $1", jmid_prefix)
+        query_creators!("WHERE jmid_prefix = $1", jmid_prefix)
             .fetch_optional(executor)
             .await
     }

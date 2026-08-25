@@ -3,6 +3,38 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
+macro_rules! query_song_publishing_review_comments {
+    () => {
+        sqlx::query_as!(
+            SongPublishingReviewComment, r#"
+            SELECT
+                id,
+                review_id,
+                user_id,
+                content,
+                create_time,
+                update_time
+            FROM song_publishing_review_comment
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongPublishingReviewComment, r#"
+            SELECT
+                id,
+                review_id,
+                user_id,
+                content,
+                create_time,
+                update_time
+            FROM song_publishing_review_comment
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongPublishingReviewComment {
     pub id: i64,
@@ -37,16 +69,13 @@ where
     type Entity = SongPublishingReviewComment;
 
     async fn list(executor: E) -> Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review_comment ORDER BY create_time"
-        ).fetch_all(executor).await
+        query_song_publishing_review_comments!("ORDER BY create_time")
+            .fetch_all(executor).await
     }
 
     async fn page(executor: E, page_index: i64, page_size: i64) -> Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review_comment ORDER BY create_time DESC LIMIT $1 OFFSET $2",
+        query_song_publishing_review_comments!(
+            "ORDER BY create_time DESC LIMIT $1 OFFSET $2",
             page_size, page_index * page_size
         )
         .fetch_all(executor)
@@ -54,11 +83,8 @@ where
     }
 
     async fn get_by_id(executor: E, id: i64) -> Result<Option<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review_comment WHERE id = $1",
-            id
-        ).fetch_optional(executor).await
+        query_song_publishing_review_comments!("WHERE id = $1", id)
+            .fetch_optional(executor).await
     }
 
     async fn update_by_id(executor: E, value: &Self::Entity) -> Result<()> {
@@ -109,9 +135,8 @@ where
         page_index: i64,
         page_size: i64,
     ) -> Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review_comment WHERE review_id = $1 ORDER BY create_time ASC LIMIT $2 OFFSET $3",
+        query_song_publishing_review_comments!(
+            "WHERE review_id = $1 ORDER BY create_time ASC LIMIT $2 OFFSET $3",
             review_id,
             page_size,
             page_index * page_size

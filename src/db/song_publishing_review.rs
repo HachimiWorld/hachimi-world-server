@@ -2,7 +2,49 @@ use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::{query, query_as, FromRow, PgExecutor};
+use sqlx::{query, FromRow, PgExecutor};
+
+macro_rules! query_song_publishing_reviews {
+    () => {
+        sqlx::query_as!(
+            SongPublishingReview, r#"
+            SELECT
+                id,
+                user_id,
+                song_display_id,
+                data,
+                submit_time,
+                update_time,
+                review_time,
+                review_comment,
+                status,
+                type,
+                comment
+            FROM song_publishing_review
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongPublishingReview, r#"
+            SELECT
+                id,
+                user_id,
+                song_display_id,
+                data,
+                submit_time,
+                update_time,
+                review_time,
+                review_comment,
+                status,
+                type,
+                comment
+            FROM song_publishing_review
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongPublishingReview {
@@ -51,17 +93,17 @@ where
     type Entity = SongPublishingReview;
 
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
-        query_as!(Self::Entity, "SELECT * FROM song_publishing_review")
+        query_song_publishing_reviews!()
             .fetch_all(executor).await
     }
 
     async fn page(executor: E, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        query_as!(Self::Entity, "SELECT * FROM song_publishing_review ORDER BY id DESC LIMIT $1 OFFSET $2", size, page * size)
+        query_song_publishing_reviews!("ORDER BY id DESC LIMIT $1 OFFSET $2", size, page * size)
             .fetch_all(executor).await
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
-        query_as!(Self::Entity, "SELECT * FROM song_publishing_review WHERE id = $1", id)
+        query_song_publishing_reviews!("WHERE id = $1", id)
             .fetch_optional(executor).await
     }
 
@@ -119,9 +161,8 @@ where
     }
 
     async fn page_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
+        query_song_publishing_reviews!(
+            "WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
             user_id, page_size, page_index * page_size
         ).fetch_all(executor).await
     }
@@ -139,11 +180,8 @@ where
     }
 
     async fn list_by_jmid(executor: E, jmid: &str) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM song_publishing_review WHERE song_display_id = $1",
-            jmid
-        ).fetch_all(executor).await
+        query_song_publishing_reviews!("WHERE song_display_id = $1", jmid)
+            .fetch_all(executor).await
     }
 
     async fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> sqlx::Result<u64> {

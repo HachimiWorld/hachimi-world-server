@@ -3,6 +3,42 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
+macro_rules! query_posts {
+    () => {
+        sqlx::query_as!(
+            Post, r#"
+            SELECT
+                id,
+                author_uid,
+                title,
+                content,
+                content_type,
+                cover_url,
+                create_time,
+                update_time
+            FROM posts
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            Post, r#"
+            SELECT
+                id,
+                author_uid,
+                title,
+                content,
+                content_type,
+                cover_url,
+                create_time,
+                update_time
+            FROM posts
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Post {
     pub id: i64,
@@ -24,19 +60,19 @@ where
     type Entity = Post;
 
     async fn list(executor: E) -> Result<Vec<Self::Entity>> {
-        sqlx::query_as!(Self::Entity, "SELECT * FROM posts")
+        query_posts!()
             .fetch_all(executor)
             .await
     }
 
     async fn page(executor: E, page_index: i64, page_size: i64) -> Result<Vec<Self::Entity>> {
-        Ok(sqlx::query_as!(Self::Entity, "SELECT * FROM posts ORDER BY create_time DESC LIMIT $1 OFFSET $2", page_size, page_index * page_size)
+        Ok(query_posts!("ORDER BY create_time DESC LIMIT $1 OFFSET $2", page_size, page_index * page_size)
             .fetch_all(executor)
             .await?)
     }
 
     async fn get_by_id(executor: E, id: i64) -> Result<Option<Self::Entity>> {
-        Ok(sqlx::query_as!(Self::Entity, "SELECT * FROM posts WHERE id = $1", id)
+        Ok(query_posts!("WHERE id = $1", id)
             .fetch_optional(executor)
             .await?)
     }

@@ -5,6 +5,216 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
 use std::collections::HashMap;
 
+macro_rules! query_songs {
+    () => {
+        sqlx::query_as!(
+            Song, r#"
+            SELECT
+                id,
+                display_id,
+                title,
+                subtitle,
+                description,
+                artist,
+                file_url,
+                cover_art_url,
+                lyrics,
+                duration_seconds,
+                uploader_uid,
+                creation_type,
+                play_count,
+                like_count,
+                is_private,
+                release_time,
+                create_time,
+                update_time,
+                explicit,
+                gain
+            FROM songs
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            Song, r#"
+            SELECT
+                id,
+                display_id,
+                title,
+                subtitle,
+                description,
+                artist,
+                file_url,
+                cover_art_url,
+                lyrics,
+                duration_seconds,
+                uploader_uid,
+                creation_type,
+                play_count,
+                like_count,
+                is_private,
+                release_time,
+                create_time,
+                update_time,
+                explicit,
+                gain
+            FROM songs
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_song_origin_info {
+    () => {
+        sqlx::query_as!(
+            SongOriginInfo, r#"
+            SELECT
+                id,
+                song_id,
+                origin_type,
+                origin_song_id,
+                origin_title,
+                origin_artist,
+                origin_url
+            FROM song_origin_info
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongOriginInfo, r#"
+            SELECT
+                id,
+                song_id,
+                origin_type,
+                origin_song_id,
+                origin_title,
+                origin_artist,
+                origin_url
+            FROM song_origin_info
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_song_production_crew {
+    () => {
+        sqlx::query_as!(
+            SongProductionCrew, r#"
+            SELECT
+                id,
+                song_id,
+                role,
+                uid,
+                person_name
+            FROM song_production_crew
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongProductionCrew, r#"
+            SELECT
+                id,
+                song_id,
+                role,
+                uid,
+                person_name
+            FROM song_production_crew
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_song_likes {
+    () => {
+        sqlx::query_as!(
+            SongLike, r#"
+            SELECT
+                song_id,
+                user_id,
+                playback_position_secs,
+                create_time
+            FROM song_likes
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongLike, r#"
+            SELECT
+                song_id,
+                user_id,
+                playback_position_secs,
+                create_time
+            FROM song_likes
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_song_plays {
+    () => {
+        sqlx::query_as!(
+            SongPlay, r#"
+            SELECT
+                id,
+                song_id,
+                user_id,
+                anonymous_uid,
+                create_time
+            FROM song_plays
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongPlay, r#"
+            SELECT
+                id,
+                song_id,
+                user_id,
+                anonymous_uid,
+                create_time
+            FROM song_plays
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_song_external_links {
+    () => {
+        sqlx::query_as!(
+            SongExternalLink, r#"
+            SELECT
+                id,
+                song_id,
+                platform,
+                url
+            FROM song_external_links
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            SongExternalLink, r#"
+            SELECT
+                id,
+                song_id,
+                platform,
+                url
+            FROM song_external_links
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Song {
     pub id: i64,
@@ -124,7 +334,7 @@ where
     type Entity = Song;
 
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(Song, "SELECT * FROM songs")
+        query_songs!()
             .fetch_all(executor)
             .await
     }
@@ -134,7 +344,7 @@ where
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
-        sqlx::query_as!(Song, "SELECT * FROM songs WHERE id = $1", id)
+        query_songs!("WHERE id = $1", id)
             .fetch_optional(executor)
             .await
     }
@@ -246,11 +456,7 @@ where
     E: PgExecutor<'e>,
 {
     async fn get_by_display_id(executor: E, display_id: &str) -> sqlx::Result<Option<Song>> {
-        sqlx::query_as!(
-            Song,
-            "SELECT * FROM songs WHERE display_id = $1",
-            display_id
-        )
+        query_songs!("WHERE display_id = $1", display_id)
             .fetch_optional(executor)
             .await
     }
@@ -263,54 +469,52 @@ where
     }
 
     async fn list_origin_info_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongOriginInfo>> {
-        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = $1", song_id)
+        query_song_origin_info!("WHERE song_id = $1", song_id)
             .fetch_all(executor).await
     }
 
     async fn list_origin_info_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongOriginInfo>> {
         if song_ids.is_empty() { return Ok(vec![]); }
-        sqlx::query_as!(SongOriginInfo, "SELECT * FROM song_origin_info WHERE song_id = ANY($1)", song_ids)
+        query_song_origin_info!("WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
 
 
     async fn list_production_crew_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongProductionCrew>> {
-        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = $1", song_id)
+        query_song_production_crew!("WHERE song_id = $1", song_id)
             .fetch_all(executor).await
     }
 
     async fn list_production_crew_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongProductionCrew>> {
         if song_ids.is_empty() { return Ok(vec![]); }
-        sqlx::query_as!(SongProductionCrew, "SELECT * FROM song_production_crew WHERE song_id = ANY($1)", song_ids)
+        query_song_production_crew!("WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
 
     async fn list_external_link_by_song_id(executor: E, song_id: i64) -> sqlx::Result<Vec<SongExternalLink>> {
-        sqlx::query_as!(SongExternalLink, "SELECT * FROM song_external_links WHERE song_id = $1", song_id)
+        query_song_external_links!("WHERE song_id = $1", song_id)
             .fetch_all(executor).await
     }
 
     async fn list_external_link_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<Vec<SongExternalLink>> {
         if song_ids.is_empty() { return Ok(vec![]); }
-        sqlx::query_as!(SongExternalLink, "SELECT * FROM song_external_links WHERE song_id = ANY($1)", song_ids)
+        query_song_external_links!("WHERE song_id = ANY($1)", song_ids)
             .fetch_all(executor).await
     }
 
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Self::Entity>> {
         if ids.is_empty() { return Ok(vec![]); }
-        sqlx::query_as!(
-            Song, "SELECT * FROM songs WHERE id = ANY($1)",
-            ids
-        ).fetch_all(executor).await
+        query_songs!("WHERE id = ANY($1)", ids)
+            .fetch_all(executor).await
     }
 
     async fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(Song, "SELECT * FROM songs WHERE create_time > $1 ORDER BY create_time ASC LIMIT $2", create_time, limit)
+        query_songs!("WHERE create_time > $1 ORDER BY create_time ASC LIMIT $2", create_time, limit)
             .fetch_all(executor).await
     }
 
     async fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(Song, "SELECT * FROM songs WHERE create_time < $1 ORDER BY create_time DESC LIMIT $2", create_time, limit)
+        query_songs!("WHERE create_time < $1 ORDER BY create_time DESC LIMIT $2", create_time, limit)
             .fetch_all(executor).await
     }
 
@@ -322,13 +526,8 @@ where
     }
 
     async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(
-            Song,
-            "SELECT * FROM songs WHERE uploader_uid = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
-            user_id,
-            size,
-            page * size
-        ).fetch_all(executor).await
+        query_songs!("WHERE uploader_uid = $1 ORDER BY id DESC LIMIT $2 OFFSET $3", user_id, size, page * size)
+            .fetch_all(executor).await
     }
 
     async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
@@ -407,13 +606,8 @@ where
     }
 
     async fn page_likes_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<SongLike>> {
-        sqlx::query_as!(
-            SongLike,
-            "SELECT * FROM song_likes WHERE user_id = $1 ORDER BY create_time DESC LIMIT $2 OFFSET $3",
-            user_id,
-            page_size,
-            page_index * page_size
-        ).fetch_all(executor).await
+        query_song_likes!("WHERE user_id = $1 ORDER BY create_time DESC LIMIT $2 OFFSET $3", user_id, page_size, page_index * page_size)
+            .fetch_all(executor).await
     }
 
     async fn insert_plays(executor: E, values: &[SongPlay]) -> sqlx::Result<()> {
@@ -429,11 +623,8 @@ where
         Ok(())
     }
     async fn cursor_plays(executor: E, user_id: i64, create_before: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<SongPlay>> {
-        sqlx::query_as!(
-            SongPlay,
-            "SELECT * FROM song_plays WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
-            user_id, create_before, size as i64
-        ).fetch_all(executor).await
+        query_song_plays!("WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3", user_id, create_before, size as i64)
+            .fetch_all(executor).await
     }
 
     /// Very heavy SQL

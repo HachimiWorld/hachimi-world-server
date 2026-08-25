@@ -3,6 +3,48 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 
+macro_rules! query_refresh_tokens {
+    () => {
+        sqlx::query_as!(
+            RefreshToken, r#"
+            SELECT
+                id,
+                user_id,
+                token_id,
+                token_value,
+                expires_time,
+                create_time,
+                last_used_time,
+                device_info,
+                ip_address,
+                is_revoked,
+                user_agent
+            FROM refresh_tokens
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            RefreshToken, r#"
+            SELECT
+                id,
+                user_id,
+                token_id,
+                token_value,
+                expires_time,
+                create_time,
+                last_used_time,
+                device_info,
+                ip_address,
+                is_revoked,
+                user_agent
+            FROM refresh_tokens
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct RefreshToken {
     pub id: i64,
@@ -40,13 +82,9 @@ where E: PgExecutor<'e> {
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
-        sqlx::query_as!(
-            Self::Entity,
-            "SELECT * FROM refresh_tokens WHERE id = $1",
-            id
-        )
-        .fetch_optional(executor)
-        .await
+        query_refresh_tokens!("WHERE id = $1", id)
+            .fetch_optional(executor)
+            .await
     }
 
     async fn update_by_id(executor: E, value: &Self::Entity) -> sqlx::Result<()> {
@@ -96,22 +134,14 @@ where E: PgExecutor<'e> {
 impl <'e, E> IRefreshTokenDao<'e, E> for RefreshTokenDao 
 where E: PgExecutor<'e> {
     async fn get_by_token_id(executor: E, token_id: &str) -> sqlx::Result<Option<RefreshToken>> {
-        sqlx::query_as!(
-            RefreshToken,
-            "SELECT * FROM refresh_tokens WHERE token_id = $1",
-            token_id
-        )
-        .fetch_optional(executor)
-        .await
+        query_refresh_tokens!("WHERE token_id = $1", token_id)
+            .fetch_optional(executor)
+            .await
     }
     async fn list_by_uid(executor: E, uid: i64) -> sqlx::Result<Vec<RefreshToken>> {
-        sqlx::query_as!(
-            RefreshToken,
-            "SELECT * FROM refresh_tokens WHERE user_id = $1",
-            uid
-        )
-        .fetch_all(executor)
-        .await
+        query_refresh_tokens!("WHERE user_id = $1", uid)
+            .fetch_all(executor)
+            .await
     }
     async fn delete_all_by_uid(executor: E, uid: i64) -> sqlx::Result<u64> {
         let rows = sqlx::query!("DELETE FROM refresh_tokens WHERE user_id = $1", uid)
