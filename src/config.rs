@@ -1,10 +1,10 @@
 use anyhow::Context;
 use serde::de::DeserializeOwned;
-use serde_yaml::Value;
 use std::fs;
 use std::ops::Deref;
 use std::path::Path;
 use std::sync::Arc;
+use yaml_serde::Value;
 
 #[derive(Clone)]
 pub struct Config {
@@ -18,7 +18,7 @@ impl Config {
     }
 
     pub fn parse_by_str(str: &str) -> anyhow::Result<Self> {
-        let value = serde_yaml::from_str::<Value>(str)?;
+        let value = yaml_serde::from_str::<Value>(str)?;
         Ok(Config { value: Arc::new(value) })
     }
 
@@ -41,7 +41,7 @@ impl Config {
             .get(key)?
             .cloned()
             .with_context(|| format!("Config [{key}] does not exists"))?;
-        let config: T = serde_yaml::from_value(value)
+        let config: T = yaml_serde::from_value(value)
             .with_context(|| format!("Failed to parse config with key: {key}"))?;
         Ok(config)
     }
