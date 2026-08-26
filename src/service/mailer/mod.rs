@@ -154,8 +154,8 @@ mod tests {
     async fn test() {
         // Not testable without a real server, ignore this
         let content = fs::read_to_string("../../../.local/config.yaml").unwrap();
-        let value = serde_yaml::from_str::<serde_yaml::Value>(content.as_str()).unwrap();
-        let cfg: EmailConfig = serde_yaml::from_value(value["email"].clone()).unwrap();
+        let value = yaml_serde::from_str::<yaml_serde::Value>(content.as_str()).unwrap();
+        let cfg: EmailConfig = yaml_serde::from_value(value["email"].clone()).unwrap();
         send_verification_code(&cfg, "mail@example.com", "114514").await.unwrap();
         send_review_approved_notification(&cfg, "mail@example.com", "JM-1111", "哈基哈基2", "我不是神人", Some("非常好听")).await.unwrap();
         send_review_rejected_notification(&cfg, "mail@example.com", "JM-1111", "哈基哈基", "我不是神人", "请修改标题").await.unwrap();
