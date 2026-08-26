@@ -1,11 +1,22 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT o.song_id AS \"song_id!\",\n                s.title AS \"internal_title?\",\n                s.artist AS \"internal_artist?\",\n                o.origin_type,\n                o.origin_song_id,\n                o.origin_title,\n                o.origin_artist,\n                o.origin_url\n            FROM song_origin_info o\n                 LEFT JOIN songs s ON s.id = o.origin_song_id\n            WHERE o.song_id = ANY($1)",
+  "query": "\n            SELECT\n                id,\n                song_id,\n                origin_type,\n                origin_song_id,\n                origin_title,\n                origin_artist,\n                origin_url\n            FROM song_origin_info\n            WHERE song_id = ANY($1)",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "song_id!",
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_origin_info",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
         "type_info": "Int8",
         "origin": {
           "Table": {
@@ -15,29 +26,7 @@
         }
       },
       {
-        "ordinal": 1,
-        "name": "internal_title?",
-        "type_info": "Varchar",
-        "origin": {
-          "Table": {
-            "table": "songs",
-            "name": "title"
-          }
-        }
-      },
-      {
         "ordinal": 2,
-        "name": "internal_artist?",
-        "type_info": "Varchar",
-        "origin": {
-          "Table": {
-            "table": "songs",
-            "name": "artist"
-          }
-        }
-      },
-      {
-        "ordinal": 3,
         "name": "origin_type",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +37,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 3,
         "name": "origin_song_id",
         "type_info": "Int8",
         "origin": {
@@ -59,7 +48,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 4,
         "name": "origin_title",
         "type_info": "Varchar",
         "origin": {
@@ -70,7 +59,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 5,
         "name": "origin_artist",
         "type_info": "Varchar",
         "origin": {
@@ -81,7 +70,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 6,
         "name": "origin_url",
         "type_info": "Varchar",
         "origin": {
@@ -99,8 +88,7 @@
     },
     "nullable": [
       false,
-      true,
-      true,
+      false,
       false,
       true,
       true,
@@ -108,5 +96,5 @@
       true
     ]
   },
-  "hash": "867b289aba056ec385f93dc0abcb4440102d998b27e35e0eb259b32bd1c339d3"
+  "hash": "2bf5ae2a731dbbfde0354ed8fd571e72ff553453552e4f3306526485e3cce29f"
 }

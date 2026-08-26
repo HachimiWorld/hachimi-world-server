@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                song_id,\n                role,\n                uid,\n                person_name\n            FROM song_production_crew\n            WHERE song_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "role",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "role"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "uid"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "person_name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_production_crew",
+            "name": "person_name"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "d6e63f744cffb7ad00d33b693ef2df54f08c2c04a9ad89f454d41753e8dc3fe2"
+}

@@ -1,0 +1,257 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                display_id,\n                title,\n                subtitle,\n                description,\n                artist,\n                file_url,\n                cover_art_url,\n                lyrics,\n                duration_seconds,\n                uploader_uid,\n                creation_type,\n                play_count,\n                like_count,\n                is_private,\n                release_time,\n                create_time,\n                update_time,\n                explicit,\n                gain\n            FROM songs\n            WHERE create_time < $1 ORDER BY create_time DESC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_id",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "display_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subtitle",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "artist",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "artist"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "file_url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "file_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_art_url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "cover_art_url"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "lyrics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "lyrics"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "duration_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "uploader_uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "uploader_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "creation_type",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "creation_type"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "play_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "play_count"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "like_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "like_count"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "is_private",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "is_private"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "release_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "release_time"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "update_time"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "explicit",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "explicit"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "gain",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "gain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "143d81903dd8edd040e003c6748ec24457de0eb6238f51771e2c962f1f858806"
+}
