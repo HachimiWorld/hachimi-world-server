@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                song_id,\n                platform,\n                url\n            FROM song_external_links\n            WHERE song_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_external_links",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_external_links",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "platform",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_external_links",
+            "name": "platform"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_external_links",
+            "name": "url"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "64458fa87df38023ddc5858baf4b205072e898bd5e76dde5662fce9b15b7caa5"
+}

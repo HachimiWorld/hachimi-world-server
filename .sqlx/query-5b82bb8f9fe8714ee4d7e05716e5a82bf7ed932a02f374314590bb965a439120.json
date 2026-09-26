@@ -1,0 +1,148 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                user_id,\n                token_id,\n                token_value,\n                expires_time,\n                create_time,\n                last_used_time,\n                device_info,\n                ip_address,\n                is_revoked,\n                user_agent\n            FROM refresh_tokens\n            WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "token_id",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "token_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "token_value",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "token_value"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "expires_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "expires_time"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_used_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "last_used_time"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "device_info",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "device_info"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "ip_address",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "ip_address"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_revoked",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "is_revoked"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "user_agent",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "refresh_tokens",
+            "name": "user_agent"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "5b82bb8f9fe8714ee4d7e05716e5a82bf7ed932a02f374314590bb965a439120"
+}

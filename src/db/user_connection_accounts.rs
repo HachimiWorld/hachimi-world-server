@@ -2,6 +2,40 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 
+macro_rules! query_user_connection_accounts {
+    () => {
+        sqlx::query_as!(
+            UserConnectionAccount, r#"
+            SELECT
+                user_id,
+                provider_type,
+                provider_account_id,
+                provider_account_name,
+                public,
+                create_time,
+                update_time
+            FROM user_connection_accounts
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            UserConnectionAccount, r#"
+            SELECT
+                user_id,
+                provider_type,
+                provider_account_id,
+                provider_account_name,
+                public,
+                create_time,
+                update_time
+            FROM user_connection_accounts
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct UserConnectionAccount {
     pub user_id: i64,
@@ -69,33 +103,20 @@ where E: PgExecutor<'e> {
     }
 
     async fn list_by_user_id(executor: E, user_id: i64) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        sqlx::query_as!(
-            UserConnectionAccount,
-            "SELECT * FROM user_connection_accounts WHERE user_id = $1",
-            user_id
-        )
-        .fetch_all(executor)
-        .await
+        query_user_connection_accounts!("WHERE user_id = $1", user_id)
+            .fetch_all(executor)
+            .await
     }
 
     async fn list_public_by_user_id(executor: E, user_id: i64) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        sqlx::query_as!(
-            UserConnectionAccount,
-            "SELECT * FROM user_connection_accounts WHERE user_id = $1 AND public = true",
-            user_id
-        )
-        .fetch_all(executor)
-        .await
+        query_user_connection_accounts!("WHERE user_id = $1 AND public = true", user_id)
+            .fetch_all(executor)
+            .await
     }
 
     async fn get_by_user_id(executor: E, user_id: i64, provider_type: &str) -> sqlx::Result<Option<UserConnectionAccount>> {
-        sqlx::query_as!(
-            UserConnectionAccount,
-            "SELECT * FROM user_connection_accounts WHERE user_id = $1 AND provider_type = $2",
-            user_id,
-            provider_type
-        )
-        .fetch_optional(executor)
-        .await
+        query_user_connection_accounts!("WHERE user_id = $1 AND provider_type = $2", user_id, provider_type)
+            .fetch_optional(executor)
+            .await
     }
 }

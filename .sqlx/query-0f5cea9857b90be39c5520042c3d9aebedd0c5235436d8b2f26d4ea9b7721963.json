@@ -1,0 +1,88 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                name,\n                description,\n                is_active,\n                create_time,\n                update_time\n            FROM song_tags\n            WHERE name LIKE $1 LIMIT 20",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "is_active",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "is_active"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_tags",
+            "name": "update_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "0f5cea9857b90be39c5520042c3d9aebedd0c5235436d8b2f26d4ea9b7721963"
+}

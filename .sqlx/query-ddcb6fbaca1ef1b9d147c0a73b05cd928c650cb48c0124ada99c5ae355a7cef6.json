@@ -1,0 +1,78 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                song_id,\n                user_id,\n                anonymous_uid,\n                create_time\n            FROM song_plays\n            WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "anonymous_uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "anonymous_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "ddcb6fbaca1ef1b9d147c0a73b05cd928c650cb48c0124ada99c5ae355a7cef6"
+}

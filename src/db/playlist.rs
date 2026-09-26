@@ -4,6 +4,98 @@ use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
 use std::collections::HashMap;
 
+macro_rules! query_playlists {
+    () => {
+        sqlx::query_as!(
+            Playlist, r#"
+            SELECT
+                id,
+                name,
+                description,
+                user_id,
+                cover_url,
+                is_public,
+                create_time,
+                update_time
+            FROM playlists
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            Playlist, r#"
+            SELECT
+                id,
+                name,
+                description,
+                user_id,
+                cover_url,
+                is_public,
+                create_time,
+                update_time
+            FROM playlists
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_playlist_songs {
+    () => {
+        sqlx::query_as!(
+            PlaylistSong, r#"
+            SELECT
+                playlist_id,
+                song_id,
+                order_index,
+                add_time
+            FROM playlist_songs
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            PlaylistSong, r#"
+            SELECT
+                playlist_id,
+                song_id,
+                order_index,
+                add_time
+            FROM playlist_songs
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
+macro_rules! query_favorite_playlists {
+    () => {
+        sqlx::query_as!(
+            FavoritePlaylist, r#"
+            SELECT
+                user_id,
+                playlist_id,
+                order_index,
+                add_time
+            FROM favorite_playlists
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            FavoritePlaylist, r#"
+            SELECT
+                user_id,
+                playlist_id,
+                order_index,
+                add_time
+            FROM favorite_playlists
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Playlist {
     pub id: i64,
@@ -68,7 +160,7 @@ where
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
-        sqlx::query_as!(Self::Entity, "SELECT * FROM playlists WHERE id = $1", id)
+        query_playlists!("WHERE id = $1", id)
             .fetch_optional(executor)
             .await
     }
@@ -146,7 +238,7 @@ where
         Ok(())
     }
     async fn list_songs(executor: E, playlist_id: i64) -> sqlx::Result<Vec<PlaylistSong>> {
-        sqlx::query_as!(PlaylistSong, "SELECT * FROM playlist_songs WHERE playlist_id = $1 ORDER BY order_index", playlist_id)
+        query_playlist_songs!("WHERE playlist_id = $1 ORDER BY order_index", playlist_id)
             .fetch_all(executor)
             .await
     }
@@ -164,23 +256,24 @@ where
     }
 
     async fn list_by_user(executor: E, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
-        sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE user_id = $1", user_id)
+        query_playlists!("WHERE user_id = $1", user_id)
             .fetch_all(executor)
             .await
     }
 
     async fn list_by_ids(executor: E, ids: &[i64]) -> sqlx::Result<Vec<Playlist>> {
         if ids.is_empty() { return Ok(vec![]); }
-        sqlx::query_as!(Playlist, "SELECT * FROM playlists WHERE id = ANY($1)", ids)
+        query_playlists!("WHERE id = ANY($1)", ids)
             .fetch_all(executor)
             .await
     }
 
     async fn list_containing(executor: E, song_id: i64, user_id: i64) -> sqlx::Result<Vec<Playlist>> {
-        sqlx::query_as!(Playlist, "SELECT p.*
-FROM playlists p
-    JOIN playlist_songs ps ON ps.playlist_id = p.id
-WHERE ps.song_id = $1 AND p.user_id = $2;", song_id, user_id)
+        query_playlists!(
+            "p JOIN playlist_songs ps ON ps.playlist_id = p.id WHERE ps.song_id = $1 AND p.user_id = $2",
+            song_id,
+            user_id
+        )
             .fetch_all(executor)
             .await
     }
@@ -194,10 +287,8 @@ WHERE ps.song_id = $1 AND p.user_id = $2;", song_id, user_id)
 
     async fn page_favorites(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<FavoritePlaylist>> {
         let offset = page_index * page_size;
-        sqlx::query_as!(
-            FavoritePlaylist,
-            "SELECT * FROM favorite_playlists
-            WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
+        query_favorite_playlists!(
+            "WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
             user_id, page_size, offset
         ).fetch_all(executor).await
     }
@@ -232,9 +323,8 @@ WHERE ps.song_id = $1 AND p.user_id = $2;", song_id, user_id)
     }
 
     async fn get_favorite(executor: E, user_id: i64, playlist_id: i64) -> sqlx::Result<Option<FavoritePlaylist>> {
-        sqlx::query_as!(
-            FavoritePlaylist,
-            "SELECT * FROM favorite_playlists WHERE user_id = $1 AND playlist_id = $2",
+        query_favorite_playlists!(
+            "WHERE user_id = $1 AND playlist_id = $2",
             user_id,
             playlist_id
         )

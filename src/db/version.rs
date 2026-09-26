@@ -3,6 +3,44 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
+macro_rules! query_versions {
+    () => {
+        sqlx::query_as!(
+            Version, r#"
+            SELECT
+                id,
+                version_name,
+                version_number,
+                changelog,
+                variant,
+                url,
+                release_time,
+                create_time,
+                update_time
+            FROM version
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            Version, r#"
+            SELECT
+                id,
+                version_name,
+                version_number,
+                changelog,
+                variant,
+                url,
+                release_time,
+                create_time,
+                update_time
+            FROM version
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(sqlx::FromRow)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Version {
@@ -30,13 +68,13 @@ where
     }
 
     async fn page(executor: E, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        sqlx::query_as!(Self::Entity, "SELECT * FROM version ORDER BY release_time DESC LIMIT $1 OFFSET $2", page_size, page_index * page_size)
+        query_versions!("ORDER BY release_time DESC LIMIT $1 OFFSET $2", page_size, page_index * page_size)
             .fetch_all(executor)
             .await
     }
 
     async fn get_by_id(executor: E, id: i64) -> sqlx::Result<Option<Self::Entity>> {
-        sqlx::query_as!(Self::Entity, "SELECT * FROM version WHERE id = $1", id)
+        query_versions!("WHERE id = $1", id)
             .fetch_optional(executor).await
     }
 
@@ -93,7 +131,7 @@ where
 
 impl<'e> VersionDao {
     pub async fn get_latest_version(executor: impl PgExecutor<'e>, variant: &str, end_time: DateTime<Utc>) -> sqlx::Result<Option<Version>> {
-        sqlx::query_as!(Version, "SELECT * FROM version WHERE variant = $1 AND release_time <= $2 ORDER BY release_time DESC LIMIT 1", variant, end_time)
+        query_versions!("WHERE variant = $1 AND release_time <= $2 ORDER BY release_time DESC LIMIT 1", variant, end_time)
             .fetch_optional(executor)
             .await
     }
@@ -113,7 +151,7 @@ impl<'e> VersionDao {
     }
 
     pub async fn page_by_variant(executor: impl PgExecutor<'e>, variant: &str, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Version>> {
-        sqlx::query_as!(Version, "SELECT * FROM version WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3", variant, page_size, page_index * page_size)
+        query_versions!("WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3", variant, page_size, page_index * page_size)
             .fetch_all(executor)
             .await
     }

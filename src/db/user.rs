@@ -3,6 +3,50 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
+macro_rules! query_users {
+    () => {
+        sqlx::query_as!(
+            User, r#"
+            SELECT id,
+                username,
+                email,
+                password_hash,
+                avatar_url,
+                bio,
+                gender,
+                is_banned,
+                last_login_time,
+                create_time,
+                update_time,
+                follower_count,
+                following_count
+            FROM users
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            User, r#"
+            SELECT id,
+                username,
+                email,
+                password_hash,
+                avatar_url,
+                bio,
+                gender,
+                is_banned,
+                last_login_time,
+                create_time,
+                update_time,
+                follower_count,
+                following_count
+            FROM users
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct User {
     pub id: i64,
@@ -34,19 +78,19 @@ where E: PgExecutor<'e> {
     type Entity = User;
 
     async fn list(executor: E) -> Result<Vec<User>> {
-        sqlx::query_as!(User, "SELECT * FROM users")
+        query_users!()
             .fetch_all(executor)
             .await
     }
 
     async fn page(executor: E, page: i64, size: i64) -> Result<Vec<User>> {
-        Ok(sqlx::query_as!(User, "SELECT * FROM users LIMIT $1 OFFSET $2", size, (page - 1) * size)
+        Ok(query_users!("LIMIT $1 OFFSET $2", size, (page - 1) * size)
             .fetch_all(executor)
             .await?)
     }
 
     async fn get_by_id(executor: E, id: i64) -> Result<Option<User>> {
-        Ok(sqlx::query_as!(User, "SELECT * FROM users WHERE id = $1", id)
+        Ok(query_users!("WHERE id = $1", id)
             .fetch_optional(executor)
             .await?)
     }
@@ -101,18 +145,18 @@ impl <'e, E> IUserDao<'e, E> for UserDao
 where E: PgExecutor<'e> {
     async fn list_by_ids(executor: E, ids: &[i64]) -> Result<Vec<User>> {
         if ids.is_empty() { return Ok(vec![]) }
-        sqlx::query_as!(User, "SELECT * FROM users WHERE id = ANY($1)", ids)
+        query_users!("WHERE id = ANY($1)", ids)
             .fetch_all(executor)
             .await
     }
     async fn get_by_email(executor: E, email: &str) -> Result<Option<User>> {
-        sqlx::query_as!(User, "SELECT * FROM users WHERE email = $1", email)
+        query_users!("WHERE email = $1", email)
             .fetch_optional(executor)
             .await
     }
 
     async fn get_by_username(executor: E, username: &str) -> Result<Option<User>> {
-        sqlx::query_as!(User, "SELECT * FROM users WHERE username = $1", username)
+        query_users!("WHERE username = $1", username)
             .fetch_optional(executor)
             .await
     }

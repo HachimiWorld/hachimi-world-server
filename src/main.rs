@@ -33,8 +33,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let (cancel_token, cancel_handle) = gracefully_shutdown::gen_cancel_token();
-    let config = Config::parse(&std::env::var("CONFIG_PATH").unwrap_or_else(|_| String::from("config.yaml")))?;
-
+    let config_path = &std::env::var("CONFIG_PATH").unwrap_or_else(|_| String::from("config.yaml"));
+    info!("Loading config from {}", config_path);
+    let config = Config::parse(config_path)?;
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
     let sql_pool = get_database_pool(config.clone()).await?;
     let all = async {

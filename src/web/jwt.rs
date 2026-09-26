@@ -11,6 +11,7 @@ use jsonwebtoken::{encode, DecodingKey, EncodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::OnceLock;
+use tracing::warn;
 use uuid::Uuid;
 
 static JWT_KEYS: OnceLock<Keys> = OnceLock::new();
@@ -19,7 +20,7 @@ pub fn initialize_jwt_key(keys: Keys) {
     match JWT_KEYS.set(keys) {
         Ok(_) => {}
         Err(_) => {
-            panic!("JWT keys already initialized");
+            warn!("JWT keys already initialized");
         }
     };
 }
@@ -156,7 +157,7 @@ pub fn initialize_version_token(token: String) {
     match PUBLISH_VERSION_ACCESS_TOKEN.set(token) {
         Ok(_) => {}
         Err(_) => {
-            panic!("Version token already initialized");
+            warn!("Version token already initialized");
         }
     };
 }

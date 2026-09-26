@@ -2,6 +2,32 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, PgTransaction};
 
+macro_rules! query_user_play_history {
+    () => {
+        sqlx::query_as!(
+            UserPlayHistory, r#"
+            SELECT
+                user_id,
+                song_id,
+                create_time
+            FROM user_play_history
+            "#
+        )
+    };
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
+        sqlx::query_as!(
+            UserPlayHistory, r#"
+            SELECT
+                user_id,
+                song_id,
+                create_time
+            FROM user_play_history
+            "# + $extra,
+            $($arg),*
+        )
+    };
+}
+
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct UserPlayHistory {
     pub user_id: i64,
@@ -25,9 +51,8 @@ impl<'e, E> IUserPlayHistory<'e, E> for UserPlayHistoryDao
 where
     E: PgExecutor<'e> {
     async fn cursor_by_user_id(executor: E, user_id: i64, before_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<UserPlayHistory>> {
-        sqlx::query_as!(
-            UserPlayHistory,
-            "SELECT * FROM user_play_history WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
+        query_user_play_history!(
+            "WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
             user_id,
             before_time,
             size as i64

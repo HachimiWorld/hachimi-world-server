@@ -1,0 +1,126 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                release_time,\n                create_time,\n                update_time\n            FROM version\n            WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "version_name",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "version_name"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "version_number",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "version_number"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "changelog",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "changelog"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "variant",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "variant"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "url",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "url"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "release_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "release_time"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "update_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8da2cf8ff601e8bd0ff4612e926fa8de68dbc7e162e2e0e2945384e2b8425bad"
+}

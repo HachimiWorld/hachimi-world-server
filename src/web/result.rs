@@ -1,10 +1,108 @@
+//! This module defines the unified response structure for web handlers, including success responses and error responses.
+//!
+//! ## Handler
+//!
+//! ### Return type for handler
+//!
+//! For all axum handlers, we use `Result<Json<WebResponse<T>>, WebError<E>>>` as the return type, where `T` is the success data type, and `E` is the error data type.
+//!
+//! ```rust
+//! async fn greet_handler() -> Result<Json<WebResponse<String>>, WebError<CommonError>> {
+//!     return Ok(Json(WebResponse::ok(format!("Hello, world!"))));
+//! }
+//! ```
+//!
+//! For convenience, we define a type alias `WebResult<T, E = CommonError>` for it. Where `CommonError` is the most common error data type used in business errors.
+//!
+//! ```rust
+//! async fn greet_handler() -> WebResult<String> {
+//!     return Ok(Json(WebResponse::ok(format!("Hello, world!"))));
+//! }
+//! ```
+//!
+//! ### Return a success response
+//!
+//! We can return `Ok(Json(WebResponse::ok(data)))` to indicate a successful response.
+//!
+//!
+//! ```rust
+//! async fn greet_handler() -> WebResult<String> {
+//!     return Ok(Json(WebResponse::ok(format!("Hello, world!"))));
+//! }
+//! ```
+//!
+//! For convenience, we can use macro `ok!(data)` to return a success response, which is equivalent to `return Ok(Json(WebResponse::ok(data)))`
+//!
+//! ```rust
+//! async fn greet_handler() -> WebResult<String> {
+//!    ok!(format!("Hello, world!"))
+//! }
+//! ```
+//!
+//! ### Return a error response
+//!
+//! Error responses are separated to Business errors and Internal errors.
+//!
+//! Business errors are known errors for business logics, for example: user not found, permission denied, etc... They are represented as `WebError::Business<E>` type, and will be converted to a `WebResponse::err` JSON response with HTTP 200 status code.
+//!
+//! There is also a convenience macro `err!(code, msg)` to return a business error, which is equivalent to `return Err(WebError::Business(CommonError { code: code.to_string(), msg: msg.to_string() }))`
+//!
+//! ```rust
+//! use hachimi_world_server::web::result::WebError;
+//!
+//!  async fn greet_handler(uid: Query<i32>) -> WebResult<String> {
+//!     if uid == 255 {
+//!         ok!(format!("Hello, world!"));
+//!     } else {
+//!         return Err(WebError::Business(CommonError {
+//!            code: "user_not_found".to_string(),
+//!            msg: "User not found".to_string(),
+//!         }));
+//!         // Or
+//!         // err!("user_not_found", "User not found");
+//!     }
+//! }
+//! ```
+//!
+//! ### Throw an 500 internal error
+//!
+//!
+//! For any unhandled errors, such as network timeout, database connection error, disk full, etc...
+//! They are represented as `WebError::Internal(anyhow::Error)` type, and will be converted to a
+//! HTTP 500 status code with a generic error message, and the error will be logged.
+//!
+//! ```rust
+//! use anyhow::bail;
+//!
+//! async fn greet_handler(uid: Query<String>) -> WebResult<String> {
+//!     match do_something() {
+//!         Ok(_) => ok!("Success"),
+//!         Err(e) => Err(WebError::Internal(e.into())),
+//!     }
+//! }
+//!
+//! fn do_something() -> anyhow::Result<()> {
+//!     bail!("You can't do this");
+//! }
+//! ```
+//!
+//! Since we implemented trait `From<Into<anyhow::Error>>` for `WebError<E>`, we can use the `?` operator in the handler to directly throw an `Into<anyhow::Error>`, and get the 500 http response.
+//!
+//! ```rust
+//! async fn greet_handler() -> WebResult<String> {
+//!    do_something()?; // This will return a `WebError::Internal(anyhow::Error)` if `do_something()` returns an error
+//!    ok!("Success")
+//! }
+//! ```
+//!
+
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 
-/// Build a `WebError::common` error, just like `anyhow!()`
+/// Build a `WebError::Business<CommonError>` error, just like `anyhow!()`
 #[macro_export]
 macro_rules! common {
     ($code:expr, $($arg:tt)*) => {
@@ -12,7 +110,7 @@ macro_rules! common {
     };
 }
 
-/// Build and return a `WebError::common` error, just like `bail!()`
+/// Build and return a `WebError::Business<CommonError>` error, just like `bail!()`
 #[macro_export]
 macro_rules! err {
     ($code:expr, $($arg:tt)*) => {
@@ -195,6 +293,12 @@ impl WebError<CommonError> {
     }
 }
 
+/// This is used for handling the `WebError` return type in axum handlers, and convert it to a proper HTTP response.
+/// Then we can use `Result<T, WebError<E>>` as the return type for axum handlers.
+///
+/// - The `WebError::Business` variant will be converted to a `WebResponse::err` JSON response with HTTP 200 status code.
+/// - The `WebError::Internal` variant will be converted to a HTTP 500 status code with a generic error message, and the error will be logged.
+///
 impl<E: Serialize + 'static> IntoResponse for WebError<E> {
     fn into_response(self) -> axum::response::Response {
         match self {
@@ -215,8 +319,8 @@ impl<E: Serialize + 'static> IntoResponse for WebError<E> {
             }
             WebError::Internal(err) => {
                 tracing::error!("Internal error occurs in handlers. \n{:?}", err);
-                // 可以选择不使用 `err.to_string()`
                 // let error_message = format!("Something went wrong: {}", err.to_string());
+                // We choose not to expose the internal error message to the client, for security reasons.
                 let error_message = "Something went wrong";
                 (StatusCode::INTERNAL_SERVER_ERROR, error_message).into_response()
             }

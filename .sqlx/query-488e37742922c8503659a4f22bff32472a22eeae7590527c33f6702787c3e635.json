@@ -1,0 +1,101 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                user_id,\n                provider_type,\n                provider_account_id,\n                provider_account_name,\n                public,\n                create_time,\n                update_time\n            FROM user_connection_accounts\n            WHERE user_id = $1 AND provider_type = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "provider_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "provider_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "provider_account_id",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "provider_account_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "provider_account_name",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "provider_account_name"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "public",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "public"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "user_connection_accounts",
+            "name": "update_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "488e37742922c8503659a4f22bff32472a22eeae7590527c33f6702787c3e635"
+}
