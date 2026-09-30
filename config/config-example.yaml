@@ -4,6 +4,7 @@ server:
   jwt_secret: 12345678
   allow_origins:
     - "http://localhost"
+    # - "https://*.hachimi-world-client.pages.dev"  # single-level subdomain wildcard
   publish_version_token: 12345678
 db:
   address: postgresql:5432
