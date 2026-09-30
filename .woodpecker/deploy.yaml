@@ -5,23 +5,26 @@ when:
     - push
     - manual
 steps:
+  # Build with the host Docker daemon so the layer cache (incl. cargo-chef deps) persists between deploys.
+  # Prune it on the host occasionally: docker builder prune -f --filter until=168h
   - name: build-and-push
-    image: woodpeckerci/plugin-docker-buildx
-    settings:
-      repo:
-        from_secret: registry_repo
-      tags:
-        - latest
-        - ${CI_COMMIT_SHA}
-      dockerfile: Dockerfile
-      registry:
+    image: docker:cli
+    environment:
+      REGISTRY:
         from_secret: registry_server
-      username:
+      REPO:
+        from_secret: registry_repo
+      REGISTRY_USERNAME:
         from_secret: registry_username
-      password:
+      REGISTRY_PASSWORD:
         from_secret: registry_password
-      auto_tag: false
-    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    commands:
+      - echo "$${REGISTRY_PASSWORD}" | docker login "$${REGISTRY}" -u "$${REGISTRY_USERNAME}" --password-stdin
+      - docker build -t "$${REPO}:${CI_COMMIT_SHA}" -t "$${REPO}:latest" .
+      - docker push "$${REPO}:${CI_COMMIT_SHA}"
+      - docker push "$${REPO}:latest"
   - name: deploy-production
     image: appleboy/drone-ssh
     settings:
