@@ -19,10 +19,15 @@ steps:
       - /var/run/docker.sock:/var/run/docker.sock
       - woodpecker-hachimi-world-cache:/cache
     commands:
+      # Diagnostic: "unescaped" differs from "escaped" if Woodpecker pre-substitutes $VAR in commands
+      - echo "CARGO_HOME unescaped=[$CARGO_HOME] escaped=[$${CARGO_HOME}]"
       - mkdir -p "$CARGO_HOME/bin" "$CARGO_TARGET_DIR"
       - export PATH="$CARGO_HOME/bin:$PATH"
       - |
         if ! command -v cargo-nextest >/dev/null; then
+          echo "cargo-nextest not found, downloading"
           curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C "$CARGO_HOME/bin"
+        else
+          echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
       - cargo nextest run --no-fail-fast --tests -j 4
