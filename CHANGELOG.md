@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- `/version/publish`
+  - New optional request fields:
+    - `size: Option<i64>` package size in bytes, must be positive
+    - `sha256: Option<String>` 64 hex characters, stored lowercase
+- `/version/latest`, `/version/latest_batch`, `/version/page`
+  - New response fields:
+    - `size: Option<i64>`
+    - `sha256: Option<String>`
+- `/version/page`
+  - Versions whose `release_time` is in the future are no longer returned, and `total` no longer counts them, matching `/version/latest`
+
 ## 260701
 
 ### New

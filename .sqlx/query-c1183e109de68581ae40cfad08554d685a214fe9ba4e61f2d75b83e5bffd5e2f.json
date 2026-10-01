@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO version(\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                release_time,\n                create_time,\n                update_time\n            ) VALUES($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+  "query": "INSERT INTO version(\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                size,\n                sha256,\n                release_time,\n                create_time,\n                update_time\n            ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,8 @@
         "Text",
         "Varchar",
         "Text",
+        "Int8",
+        "Bpchar",
         "Timestamptz",
         "Timestamptz",
         "Timestamptz"
@@ -31,5 +33,5 @@
       false
     ]
   },
-  "hash": "ad7d082ff8cfc3b6c2b5f565ef5e56835adfef8c974f2b54e5cdb11344fd36b9"
+  "hash": "c1183e109de68581ae40cfad08554d685a214fe9ba4e61f2d75b83e5bffd5e2f"
 }

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                release_time,\n                create_time,\n                update_time\n            FROM version\n            ORDER BY release_time DESC LIMIT $1 OFFSET $2",
+  "query": "\n            SELECT\n                id,\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                size,\n                sha256,\n                release_time,\n                create_time,\n                update_time\n            FROM version\n            WHERE ($1::TEXT IS NULL OR variant = $1) AND release_time <= $2 ORDER BY release_time DESC LIMIT $3 OFFSET $4",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,28 @@
       },
       {
         "ordinal": 6,
+        "name": "size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "size"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sha256",
+        "type_info": "Bpchar",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "release_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -105,6 +127,8 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
+        "Timestamptz",
         "Int8",
         "Int8"
       ]
@@ -116,10 +140,12 @@
       false,
       false,
       false,
+      true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "daaae324e73871c387a9bdc9182349308dfaaa22412fe8a33eb9401ddf3ffad5"
+  "hash": "8f373902de2bdea1dca23bf0634b260ce540168dc87598d10f8ad75a8637d0d0"
 }

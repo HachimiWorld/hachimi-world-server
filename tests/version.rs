@@ -27,6 +27,8 @@ async fn test_publish_version() {
             changelog: "test".to_string(),
             variant: "test-android".to_string(),
             url: "https://test.example.com/android/latest.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: now,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         let resp = env.api.get_query("/version/latest", &LatestVersionReq {
@@ -51,6 +53,8 @@ async fn test_publish_version_without_token_should_fail() {
             changelog: "test".to_string(),
             variant: "test-android".to_string(),
             url: "https://test.example.com/android/latest.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: now,
         }).await;
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED)
@@ -70,6 +74,8 @@ async fn test_get_version_batch() {
                 changelog: "".to_string(),
                 variant: variant.clone(),
                 url: "".to_string(),
+                size: None,
+                sha256: None,
                 release_time: now,
             }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         }
@@ -117,6 +123,8 @@ async fn test_get_latest_version_returns_latest_released_version_for_same_varian
             changelog: "first".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v1.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -126,6 +134,8 @@ async fn test_get_latest_version_returns_latest_released_version_for_same_varian
             changelog: "latest".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v2.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: latest_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -154,6 +164,8 @@ async fn test_get_latest_version_skips_future_release() {
             changelog: "released".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v1.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: released_at,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -163,6 +175,8 @@ async fn test_get_latest_version_skips_future_release() {
             changelog: "future".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v2.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: future_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -189,6 +203,8 @@ async fn test_publish_version_clears_latest_cache() {
             changelog: "first".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v1.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -203,6 +219,8 @@ async fn test_publish_version_clears_latest_cache() {
             changelog: "latest".to_string(),
             variant: "release-android".to_string(),
             url: "https://test.example.com/android/v2.apk".to_string(),
+            size: None,
+            sha256: None,
             release_time: latest_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -227,6 +245,8 @@ async fn test_get_version_batch_ignores_missing_variants() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: now,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -265,6 +285,8 @@ async fn test_get_version_batch_applies_latest_selection_rules() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: old_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -273,6 +295,8 @@ async fn test_get_version_batch_applies_latest_selection_rules() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: future_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -281,6 +305,8 @@ async fn test_get_version_batch_applies_latest_selection_rules() {
             changelog: "".to_string(),
             variant: "release-macos".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: old_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -289,6 +315,8 @@ async fn test_get_version_batch_applies_latest_selection_rules() {
             changelog: "".to_string(),
             variant: "release-macos".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: latest_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -316,6 +344,8 @@ async fn test_page_versions_returns_desc_order_and_total() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -324,6 +354,8 @@ async fn test_page_versions_returns_desc_order_and_total() {
             changelog: "".to_string(),
             variant: "release-ios".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: second_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -332,6 +364,8 @@ async fn test_page_versions_returns_desc_order_and_total() {
             changelog: "".to_string(),
             variant: "release-macos".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: third_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -363,6 +397,8 @@ async fn test_page_versions_filters_by_variant() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -371,6 +407,8 @@ async fn test_page_versions_filters_by_variant() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: third_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -379,6 +417,8 @@ async fn test_page_versions_filters_by_variant() {
             changelog: "".to_string(),
             variant: "release-ios".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: second_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -409,6 +449,8 @@ async fn test_page_versions_clamps_page_index_and_page_size() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         env.api.post("/version/publish", &PublishVersionReq {
@@ -417,6 +459,8 @@ async fn test_page_versions_clamps_page_index_and_page_size() {
             changelog: "".to_string(),
             variant: "release-ios".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: second_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -451,6 +495,8 @@ async fn test_delete_version_without_token_should_fail() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: Utc::now() - Duration::hours(1),
         }).await.parse_resp::<PublishVersionResp>().await.unwrap().id;
 
@@ -473,6 +519,8 @@ async fn test_delete_version_removes_data_from_latest_batch_and_page() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: first_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap().id;
         env.api.post("/version/publish", &PublishVersionReq {
@@ -481,6 +529,8 @@ async fn test_delete_version_removes_data_from_latest_batch_and_page() {
             changelog: "".to_string(),
             variant: "release-ios".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: second_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
 
@@ -523,6 +573,8 @@ async fn test_delete_version_clears_latest_cache_and_falls_back() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: old_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap();
         let latest_id = env.api.post("/version/publish", &PublishVersionReq {
@@ -531,6 +583,8 @@ async fn test_delete_version_clears_latest_cache_and_falls_back() {
             changelog: "".to_string(),
             variant: "release-android".to_string(),
             url: "".to_string(),
+            size: None,
+            sha256: None,
             release_time: latest_release,
         }).await.parse_resp::<PublishVersionResp>().await.unwrap().id;
 
@@ -549,5 +603,118 @@ async fn test_delete_version_clears_latest_cache_and_falls_back() {
         assert_eq!(fallback.version_name, "v1.0.0");
         assert_eq!(fallback.version_number, 1);
         assert_eq!(fallback.release_time, truncate_to_micros(old_release));
+    }).await
+}
+
+#[tokio::test]
+async fn test_publish_version_with_package_metadata() {
+    with_test_environment(|mut env| async move {
+        env.api.set_token("12345678".to_string());
+        let hash = "ABCDEF0123456789abcdef0123456789ABCDEF0123456789abcdef0123456789";
+
+        env.api.post("/version/publish", &PublishVersionReq {
+            version_name: "v1.0.0".to_string(),
+            version_number: 1,
+            changelog: "".to_string(),
+            variant: "release-windows".to_string(),
+            url: "https://test.example.com/windows/v1.msi".to_string(),
+            size: Some(123_456_789),
+            sha256: Some(hash.to_string()),
+            release_time: Utc::now() - Duration::hours(1),
+        }).await.parse_resp::<PublishVersionResp>().await.unwrap();
+
+        let latest = env.api.get_query("/version/latest", &LatestVersionReq {
+            variant: "release-windows".to_string(),
+        }).await.parse_resp::<Option<LatestVersionResp>>().await.unwrap().unwrap();
+        assert_eq!(latest.size, Some(123_456_789));
+        assert_eq!(latest.sha256.as_deref(), Some(hash.to_ascii_lowercase().as_str()));
+
+        let page = env.api.get_query("/version/page", &PageVersionsReq {
+            variant: Some("release-windows".to_string()),
+            page_index: 0,
+            page_size: 10,
+        }).await.parse_resp::<PageVersionsResp>().await.unwrap();
+        assert_eq!(page.data[0].size, Some(123_456_789));
+        assert_eq!(page.data[0].sha256.as_deref(), Some(hash.to_ascii_lowercase().as_str()));
+    }).await
+}
+
+#[tokio::test]
+async fn test_publish_version_without_package_metadata_returns_null() {
+    with_test_environment(|mut env| async move {
+        env.api.set_token("12345678".to_string());
+        // Old CI scripts omit the fields entirely
+        env.api.post("/version/publish", &serde_json::json!({
+            "version_name": "v1.0.0",
+            "version_number": 1,
+            "changelog": "",
+            "variant": "release-linux",
+            "url": "https://test.example.com/linux/v1.deb",
+            "release_time": Utc::now() - Duration::hours(1),
+        })).await.parse_resp::<PublishVersionResp>().await.unwrap();
+
+        let latest = env.api.get_query("/version/latest", &LatestVersionReq {
+            variant: "release-linux".to_string(),
+        }).await.parse_resp::<Value>().await.unwrap();
+        assert!(latest["size"].is_null());
+        assert!(latest["sha256"].is_null());
+    }).await
+}
+
+#[tokio::test]
+async fn test_publish_version_rejects_invalid_package_metadata() {
+    with_test_environment(|mut env| async move {
+        env.api.set_token("12345678".to_string());
+        let publish = |size: Option<i64>, sha256: Option<&str>| PublishVersionReq {
+            version_name: "v1.0.0".to_string(),
+            version_number: 1,
+            changelog: "".to_string(),
+            variant: "release-android".to_string(),
+            url: "".to_string(),
+            size,
+            sha256: sha256.map(|s| s.to_string()),
+            release_time: Utc::now(),
+        };
+
+        let err = env.api.post("/version/publish", &publish(Some(0), None))
+            .await.parse_resp::<PublishVersionResp>().await.unwrap_err();
+        assert_eq!(err.code, "invalid_size");
+
+        let err = env.api.post("/version/publish", &publish(None, Some("abc123")))
+            .await.parse_resp::<PublishVersionResp>().await.unwrap_err();
+        assert_eq!(err.code, "invalid_sha256");
+
+        let err = env.api.post("/version/publish", &publish(None, Some(&"g".repeat(64))))
+            .await.parse_resp::<PublishVersionResp>().await.unwrap_err();
+        assert_eq!(err.code, "invalid_sha256");
+    }).await
+}
+
+#[tokio::test]
+async fn test_page_versions_skips_future_release() {
+    with_test_environment(|mut env| async move {
+        env.api.set_token("12345678".to_string());
+        for (number, release_time) in [(1, Utc::now() - Duration::hours(1)), (2, Utc::now() + Duration::hours(1))] {
+            env.api.post("/version/publish", &PublishVersionReq {
+                version_name: format!("v{number}.0.0"),
+                version_number: number,
+                changelog: "".to_string(),
+                variant: "release-android".to_string(),
+                url: "".to_string(),
+                size: None,
+                sha256: None,
+                release_time,
+            }).await.parse_resp::<PublishVersionResp>().await.unwrap();
+        }
+
+        for variant in [Some("release-android".to_string()), None] {
+            let page = env.api.get_query("/version/page", &PageVersionsReq {
+                variant,
+                page_index: 0,
+                page_size: 10,
+            }).await.parse_resp::<PageVersionsResp>().await.unwrap();
+            assert_eq!(page.total, 1);
+            assert_eq!(page.data.iter().map(|v| v.version_number).collect_vec(), vec![1]);
+        }
     }).await
 }

@@ -14,6 +14,8 @@ macro_rules! query_versions {
                 changelog,
                 variant,
                 url,
+                size,
+                sha256,
                 release_time,
                 create_time,
                 update_time
@@ -31,6 +33,8 @@ macro_rules! query_versions {
                 changelog,
                 variant,
                 url,
+                size,
+                sha256,
                 release_time,
                 create_time,
                 update_time
@@ -50,6 +54,12 @@ pub struct Version {
     pub changelog: String,
     pub variant: String,
     pub url: String,
+    /// Package size in bytes. `None` for versions published before 261001.
+    /// @since 261001
+    pub size: Option<i64>,
+    /// Lowercase hex SHA-256 of the package. `None` for versions published before 261001.
+    /// @since 261001
+    pub sha256: Option<String>,
     pub release_time: DateTime<Utc>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
@@ -86,14 +96,18 @@ where
                 changelog = $3,
                 variant = $4,
                 url = $5,
-                release_time = $6,
-                update_time = $7
-            WHERE id = $8",
+                size = $6,
+                sha256 = $7,
+                release_time = $8,
+                update_time = $9
+            WHERE id = $10",
             value.version_name, 
             value.version_number, 
             value.changelog, 
             value.variant, 
             value.url, 
+            value.size,
+            value.sha256,
             value.release_time, 
             value.update_time, 
             value.id
@@ -108,15 +122,19 @@ where
                 changelog,
                 variant,
                 url,
+                size,
+                sha256,
                 release_time,
                 create_time,
                 update_time
-            ) VALUES($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+            ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
             value.version_name,
             value.version_number,
             value.changelog,
             value.variant,
             value.url,
+            value.size,
+            value.sha256,
             value.release_time,
             value.create_time,
             value.update_time
@@ -136,22 +154,29 @@ impl<'e> VersionDao {
             .await
     }
 
-    pub async fn count(executor: impl PgExecutor<'e>, variant: Option<&str>) -> sqlx::Result<i64> {
-        if let Some(variant) = variant {
-            sqlx::query!("SELECT COUNT(*) FROM version WHERE variant = $1", variant)
-                .fetch_one(executor)
-                .await
-                .map(|x| x.count.unwrap_or(0))
-        } else {
-            sqlx::query!("SELECT COUNT(*) FROM version")
-                .fetch_one(executor)
-                .await
-                .map(|x| x.count.unwrap_or(0))
-        }
+    /// Counts versions released at or before `end_time`, optionally filtered by variant.
+    pub async fn count_released(executor: impl PgExecutor<'e>, variant: Option<&str>, end_time: DateTime<Utc>) -> sqlx::Result<i64> {
+        sqlx::query!(
+            "SELECT COUNT(*) FROM version WHERE ($1::TEXT IS NULL OR variant = $1) AND release_time <= $2",
+            variant, end_time
+        )
+            .fetch_one(executor)
+            .await
+            .map(|x| x.count.unwrap_or(0))
     }
 
-    pub async fn page_by_variant(executor: impl PgExecutor<'e>, variant: &str, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Version>> {
-        query_versions!("WHERE variant = $1 ORDER BY release_time DESC LIMIT $2 OFFSET $3", variant, page_size, page_index * page_size)
+    /// Pages versions released at or before `end_time`, newest first, optionally filtered by variant.
+    pub async fn page_released(
+        executor: impl PgExecutor<'e>,
+        variant: Option<&str>,
+        end_time: DateTime<Utc>,
+        page_index: i64,
+        page_size: i64,
+    ) -> sqlx::Result<Vec<Version>> {
+        query_versions!(
+            "WHERE ($1::TEXT IS NULL OR variant = $1) AND release_time <= $2 ORDER BY release_time DESC LIMIT $3 OFFSET $4",
+            variant, end_time, page_size, page_index * page_size
+        )
             .fetch_all(executor)
             .await
     }
