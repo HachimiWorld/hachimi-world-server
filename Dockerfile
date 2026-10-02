@@ -17,7 +17,7 @@ RUN cargo build --release --bin hachimi-world-server
 # We do not need the Rust toolchain to run the binary!
 FROM debian:trixie-slim AS runtime
 RUN apt-get update -y \
-    && apt-get install -y --no-install-recommends openssl ca-certificates \
+    && apt-get install -y --no-install-recommends openssl ca-certificates curl \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/* # Clean up
 WORKDIR /app
 COPY --from=builder /app/target/release/hachimi-world-server .

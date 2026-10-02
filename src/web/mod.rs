@@ -60,11 +60,14 @@ pub async fn start_main_server(
     info!("HTTP Server started at {}", listener.local_addr()?);
 
     let allow_origins = allow_origins.iter().map(|x| x.as_str()).collect::<Vec<&str>>();
-    let app = Router::new()
+    // /health stays outside the rate limiter so health checks never get a 429.
+    let api = Router::new()
         .nest("/api", routes::router())
+        .layer(governor::governor_layer(burst_size));
+    let app = Router::new()
+        .merge(api)
         .route("/health", get(health))
         .with_state(app_state)
-        .layer(governor::governor_layer(burst_size))
         .layer(request_id::request_id_layer())
         .layer(cors::cors_layer(&allow_origins))
         .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));

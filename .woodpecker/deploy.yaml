@@ -36,7 +36,8 @@ steps:
         from_secret: deploy_ssh_username
       key:
         from_secret: deploy_ssh_key
-      command_timeout: 2m
+      # Pull + rollout (up to 300s healthcheck) + drain + up to 60s graceful shutdown.
+      command_timeout: 10m
       script_stop: true
       script:
-        - ./deploy_hachimi_world_server.sh
+        - ./deploy_hachimi_world_server.sh ${CI_COMMIT_SHA}
