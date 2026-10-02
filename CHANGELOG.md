@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+
+- Daily sitemap generation, enabled by the new optional `sitemap` config (`site_url`, `path_secret`). Uploads `sitemap/<path_secret>/index.xml` and `songs-<n>.xml` to s3; hachimi.world serves them under `/sitemap/<path_secret>/`.
+
 ### Changes
 
 - `/version/publish`

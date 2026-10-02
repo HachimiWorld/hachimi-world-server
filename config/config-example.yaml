@@ -33,6 +33,11 @@ turnstile:
   api_base_url: "http://localhost:8080/api"
   site_key: "1x00000000000000000000AA"
   secret_key: "1x0000000000000000000000000000000AA"
+# Optional. When present, the server regenerates the sitemap daily at 04:00 Beijing time and uploads it to s3 under
+# sitemap/<path_secret>/. Submit https://hachimi.world/sitemap/<path_secret>/index.xml in Search Console.
+sitemap:
+  site_url: https://hachimi.world
+  path_secret: change-me-to-a-random-string
 community:
   contributors:
     - "maintainer@example.com"

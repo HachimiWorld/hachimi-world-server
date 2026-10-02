@@ -1,6 +1,7 @@
 extern crate hachimi_world_server as app;
 
 use app::config::Config;
+use app::service::sitemap::{self, SitemapCfg};
 use app::file_hosting::{FileHost, S3FileHost};
 use app::util::bilibili::BilibiliClientImpl;
 use app::util::gracefully_shutdown;
@@ -66,6 +67,13 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Initialize auth service
+
+    // Only instances with `sitemap` configured publish sitemaps
+    if state.config.get("sitemap")?.is_some() {
+        let sitemap_cfg = state.config.get_and_parse::<SitemapCfg>("sitemap")?;
+        sitemap_cfg.validate()?;
+        sitemap::start_daily_job(state.clone(), sitemap_cfg, cancel_token.clone()).await?;
+    }
 
     info!("Starting web server at {}", server_cfg.listen);
     web::run_web_app(server_cfg, state, cancel_token).await?;

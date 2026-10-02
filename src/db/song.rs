@@ -651,7 +651,22 @@ where
     }
 }
 
+/// @since 261002
+#[derive(Debug, Clone, FromRow)]
+pub struct SongSitemapEntry {
+    pub display_id: String,
+    pub update_time: DateTime<Utc>,
+}
+
 impl<'e> SongDao {
+    /// Public songs for the sitemap, oldest first so sitemap file boundaries stay stable.
+    /// @since 261002
+    pub async fn list_sitemap_entries(executor: impl PgExecutor<'e>) -> sqlx::Result<Vec<SongSitemapEntry>> {
+        sqlx::query_as!(SongSitemapEntry, "SELECT display_id, update_time FROM songs WHERE is_private = false ORDER BY id")
+            .fetch_all(executor)
+            .await
+    }
+
     pub(crate) async fn update_song_production_crew(
         executor: &mut PgTransaction<'e>,
         song_id: i64,
