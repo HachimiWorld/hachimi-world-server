@@ -14,5 +14,8 @@ pub async fn setup_meilisearch_indexes(client: &meilisearch_sdk::client::Client,
         user::setup_search_index(&client, pool),
         playlist::setup_search_index(&client, pool)
     );
-    a.or(b).or(c).context("Failed to setup search index")
+    a.context("Failed to setup song search index")?;
+    b.context("Failed to setup user search index")?;
+    c.context("Failed to setup playlist search index")?;
+    Ok(())
 }
