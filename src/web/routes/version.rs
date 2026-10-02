@@ -49,24 +49,33 @@ pub struct LatestVersionResp {
     pub changelog: String,
     pub variant: String,
     pub url: String,
+    /// Package size in bytes. `None` for versions published without it.
+    /// @since 261001
+    pub size: Option<i64>,
+    /// Lowercase hex SHA-256 of the package. `None` for versions published without it.
+    /// @since 261001
+    pub sha256: Option<String>,
     pub release_time: DateTime<Utc>,
+}
+
+impl From<Version> for LatestVersionResp {
+    fn from(v: Version) -> Self {
+        Self {
+            version_name: v.version_name,
+            version_number: v.version_number,
+            changelog: v.changelog,
+            variant: v.variant,
+            url: v.url,
+            size: v.size,
+            sha256: v.sha256,
+            release_time: v.release_time,
+        }
+    }
 }
 
 async fn latest_version(state: State<AppState>, req: Query<LatestVersionReq>) -> WebResult<Option<LatestVersionResp>> {
     let version = get_from_cache_or_db(&state.sql_pool, state.redis_conn.clone(), &req.variant).await?;
-    if let Some(version) = version {
-        let result = LatestVersionResp {
-            variant: version.variant,
-            version_name: version.version_name,
-            version_number: version.version_number,
-            changelog: version.changelog,
-            url: version.url,
-            release_time: version.release_time,
-        };
-        ok!(Some(result))
-    } else {
-        ok!(None)
-    }
+    ok!(version.map(LatestVersionResp::from))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -81,14 +90,7 @@ async fn latest_version_batch(state: State<AppState>, req: Json<LatestVersionBat
     for x in req.variants.iter() {
         let version = get_from_cache_or_db(&state.sql_pool, state.redis_conn.clone(), x).await?;
         if let Some(version) = version {
-            result.push(LatestVersionResp {
-                variant: version.variant,
-                version_name: version.version_name,
-                version_number: version.version_number,
-                changelog: version.changelog,
-                url: version.url,
-                release_time: version.release_time,
-            })
+            result.push(version.into())
         }
     }
     ok!(result)
@@ -113,26 +115,15 @@ async fn page_versions(state: State<AppState>, req: Query<PageVersionsReq>) -> W
     let page_index = req.page_index.max(0);
     let page_size = req.page_size.clamp(1, 50);
 
-    let (versions, total) = if let Some(variant) = &req.variant {
-        let versions = VersionDao::page_by_variant(&state.sql_pool, variant, page_index, page_size).await?;
-        let total = VersionDao::count(&state.sql_pool, Some(variant.as_str())).await?;
-        (versions, total)
-    } else {
-        let versions = VersionDao::page(&state.sql_pool, page_index, page_size).await?;
-        let total = VersionDao::count(&state.sql_pool, None).await?;
-        (versions, total)
-    };
+    // Scheduled (future) releases stay hidden until their release time, same as `/latest`
+    let now = Utc::now();
+    let variant = req.variant.as_deref();
+    let versions = VersionDao::page_released(&state.sql_pool, variant, now, page_index, page_size).await?;
+    let total = VersionDao::count_released(&state.sql_pool, variant, now).await?;
 
     let data = versions
         .into_iter()
-        .map(|v| LatestVersionResp {
-            variant: v.variant,
-            version_name: v.version_name,
-            version_number: v.version_number,
-            changelog: v.changelog,
-            url: v.url,
-            release_time: v.release_time,
-        })
+        .map(LatestVersionResp::from)
         .collect();
 
     ok!(PageVersionsResp {
@@ -150,6 +141,14 @@ pub struct PublishVersionReq {
     pub changelog: String,
     pub variant: String,
     pub url: String,
+    /// Package size in bytes, must be positive.
+    /// @since 261001
+    #[serde(default)]
+    pub size: Option<i64>,
+    /// Hex SHA-256 of the package (64 characters, stored lowercase).
+    /// @since 261001
+    #[serde(default)]
+    pub sha256: Option<String>,
     pub release_time: DateTime<Utc>,
 }
 
@@ -163,6 +162,15 @@ async fn publish_version(
     state: State<AppState>,
     req: Json<PublishVersionReq>,
 ) -> WebResult<PublishVersionResp> {
+    if let Some(size) = req.size && size <= 0 {
+        err!("invalid_size", "Size must be positive")
+    }
+    let sha256 = match &req.sha256 {
+        Some(hash) if hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit()) => Some(hash.to_ascii_lowercase()),
+        Some(_) => err!("invalid_sha256", "SHA-256 must be 64 hex characters"),
+        None => None,
+    };
+
     let entity = Version {
         id: 0,
         version_name: req.version_name.clone(),
@@ -170,6 +178,8 @@ async fn publish_version(
         changelog: req.changelog.clone(),
         variant: req.variant.clone(),
         url: req.url.clone(),
+        size: req.size,
+        sha256,
         release_time: req.release_time,
         create_time: Utc::now(),
         update_time: Utc::now(),

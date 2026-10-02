@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                release_time,\n                create_time,\n                update_time\n            FROM version\n            WHERE variant = $1 AND release_time <= $2 ORDER BY release_time DESC LIMIT 1",
+  "query": "\n            SELECT\n                id,\n                version_name,\n                version_number,\n                changelog,\n                variant,\n                url,\n                size,\n                sha256,\n                release_time,\n                create_time,\n                update_time\n            FROM version\n            WHERE variant = $1 AND release_time <= $2 ORDER BY release_time DESC LIMIT 1",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,28 @@
       },
       {
         "ordinal": 6,
+        "name": "size",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "size"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "sha256",
+        "type_info": "Bpchar",
+        "origin": {
+          "Table": {
+            "table": "version",
+            "name": "sha256"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
         "name": "release_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -92,7 +114,7 @@
         }
       },
       {
-        "ordinal": 8,
+        "ordinal": 10,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -116,10 +138,12 @@
       false,
       false,
       false,
+      true,
+      true,
       false,
       false,
       false
     ]
   },
-  "hash": "e3b999a1ab5039ebfc820bc755e8c5fec6cef0410fc873a1ae180900b4063e2d"
+  "hash": "fd53245c2e957c105d507395cd1cc39c1831f33c47f2c036c685aa68d720ea3c"
 }
