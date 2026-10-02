@@ -29,3 +29,15 @@ steps:
           echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
       - cargo nextest run --no-fail-fast --tests -j 4
+  - name: notify
+    image: appleboy/drone-discord:1.5.1
+    settings:
+      webhook_url:
+        from_secret: discord_webhook_url
+      message: |
+        {{#success build.status}}Succeeded{{else}}Failed{{/success}}: {{repo.name}} · run-integration-tests · {{commit.branch}} @ {{truncate commit.sha 7}}
+        {{build.link}}
+    # A Discord outage should not mark the pipeline as failed
+    failure: ignore
+    when:
+      - status: [success, failure]
