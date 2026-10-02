@@ -19,3 +19,15 @@ steps:
     commands:
       - mkdir -p "$CARGO_HOME/bin" "$CARGO_TARGET_DIR"
       - cargo build --bin hachimi-world-server
+  - name: notify
+    image: appleboy/drone-discord:1.5.1
+    settings:
+      webhook_url:
+        from_secret: discord_webhook_url
+      message: |
+        {{#success build.status}}Succeeded{{else}}Failed{{/success}}: {{repo.name}} · build-check · {{commit.branch}} @ {{truncate commit.sha 7}}
+        {{build.link}}
+    # A Discord outage should not mark the pipeline as failed
+    failure: ignore
+    when:
+      - status: [success, failure]
