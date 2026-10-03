@@ -36,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
         None => SitemapCfg {
             site_url: String::from("https://hachimi.world"),
             path_secret: String::from("local-preview-secret"),
+            trigger_token: String::from("local-preview-token"),
         },
     };
     cfg.validate()?;

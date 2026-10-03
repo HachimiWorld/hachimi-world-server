@@ -38,6 +38,8 @@ turnstile:
 sitemap:
   site_url: https://hachimi.world
   path_secret: change-me-to-a-random-string
+  # Bearer token for POST /api/sitemap/generate and GET /api/sitemap/generation/list
+  trigger_token: change-me-to-another-random-string
 community:
   contributors:
     - "maintainer@example.com"

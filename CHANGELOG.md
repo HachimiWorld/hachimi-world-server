@@ -4,7 +4,13 @@
 
 ### New
 
-- Daily sitemap generation, enabled by the new optional `sitemap` config (`site_url`, `path_secret`). Uploads `sitemap/<path_secret>/index.xml` and `songs-<n>.xml` to s3; hachimi.world serves them under `/sitemap/<path_secret>/`.
+- Daily sitemap generation, enabled by the new optional `sitemap` config (`site_url`, `path_secret`, `trigger_token`). Uploads `sitemap/<path_secret>/index.xml` and `songs-<n>.xml` to s3; hachimi.world serves them under `/sitemap/<path_secret>/`.
+- `/sitemap/generate` (POST)
+  - Generates and uploads the sitemaps now; returns the generation record (`status` is `failure` if it failed). Errors with `generation_running` if one is in progress
+  - Requires `Authorization: Bearer <sitemap.trigger_token>`
+- `/sitemap/generation/list` (GET)
+  - Generation records, scheduled and manual, most recent first. Query: `page_index`, `page_size` (1..=50). Response: `data`, `page_index`, `page_size`, `total`
+  - Requires `Authorization: Bearer <sitemap.trigger_token>`
 
 ### Changes
 

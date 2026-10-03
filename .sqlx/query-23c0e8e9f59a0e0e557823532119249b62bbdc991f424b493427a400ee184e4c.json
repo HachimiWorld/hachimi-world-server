@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE sitemap_generations SET\n                trigger_type = $1,\n                status = $2,\n                song_count = $3,\n                file_count = $4,\n                error = $5,\n                start_time = $6,\n                finish_time = $7\n            WHERE id = $8",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "23c0e8e9f59a0e0e557823532119249b62bbdc991f424b493427a400ee184e4c"
+}
