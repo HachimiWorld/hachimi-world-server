@@ -7,6 +7,7 @@ pub mod play_history;
 pub mod publish;
 pub mod post;
 pub mod contributor;
+pub mod sitemap;
 
 use crate::web::state::AppState;
 use axum::Router;
@@ -22,4 +23,5 @@ pub fn router() -> Router<AppState> {
         .nest("/publish", publish::router())
         .nest("/post", post::router())
         .nest("/contributor", contributor::router())
+        .nest("/sitemap", sitemap::router())
 }

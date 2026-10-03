@@ -1,0 +1,34 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO sitemap_generations(\n                trigger_type,\n                status,\n                song_count,\n                file_count,\n                error,\n                start_time,\n                finish_time\n            ) VALUES($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int4",
+        "Int4",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "b56d975ae5bfb95ffa45546c9fbfa72c464833d84573c061876f2981d5ca82a8"
+}

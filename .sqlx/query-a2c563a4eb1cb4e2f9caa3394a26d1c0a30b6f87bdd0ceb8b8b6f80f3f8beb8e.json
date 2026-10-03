@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                trigger_type,\n                status,\n                song_count,\n                file_count,\n                error,\n                start_time,\n                finish_time\n            FROM sitemap_generations\n            ORDER BY start_time DESC, id DESC LIMIT $1 OFFSET $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "trigger_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "trigger_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "song_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "song_count"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "file_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "file_count"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "start_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "start_time"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "finish_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "sitemap_generations",
+            "name": "finish_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "a2c563a4eb1cb4e2f9caa3394a26d1c0a30b6f87bdd0ceb8b8b6f80f3f8beb8e"
+}

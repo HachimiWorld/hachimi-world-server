@@ -37,3 +37,7 @@ turnstile:
 community:
   contributors:
     - "maintainer@example.com"
+sitemap:
+  site_url: https://hachimi.world
+  path_secret: test-path-secret-0123
+  trigger_token: test-sitemap-trigger-token
