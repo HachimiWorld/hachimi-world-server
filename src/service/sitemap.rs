@@ -102,7 +102,8 @@ fn generate_chunked(entries: &[SongSitemapEntry], cfg: &SitemapCfg, urls_per_fil
     let mut sitemaps = Vec::new();
     for (i, chunk) in entries.chunks(urls_per_file).enumerate() {
         let urls = chunk.iter()
-            .map(|x| Url::builder(format!("{site_url}/song/{}", x.display_id))
+            // Song URLs are lowercase; the website redirects other casings there
+            .map(|x| Url::builder(format!("{site_url}/song/{}", x.display_id.to_lowercase()))
                 .last_modified(x.update_time.fixed_offset())
                 .build())
             .collect::<Result<Vec<_>, _>>()?;
@@ -166,11 +167,11 @@ mod tests {
         ]);
 
         let songs_0 = text(&files[0]);
-        assert!(songs_0.contains("<loc>https://hachimi.world/song/JM-AAA-1</loc>"));
-        assert!(songs_0.contains("<loc>https://hachimi.world/song/JM-AAA-2</loc>"));
-        assert!(!songs_0.contains("JM-BBB-1"));
+        assert!(songs_0.contains("<loc>https://hachimi.world/song/jm-aaa-1</loc>"));
+        assert!(songs_0.contains("<loc>https://hachimi.world/song/jm-aaa-2</loc>"));
+        assert!(!songs_0.contains("jm-bbb-1"));
         assert!(songs_0.contains("<lastmod>2026-09-01T00:00:00+00:00</lastmod>"));
-        assert!(text(&files[1]).contains("<loc>https://hachimi.world/song/JM-BBB-1</loc>"));
+        assert!(text(&files[1]).contains("<loc>https://hachimi.world/song/jm-bbb-1</loc>"));
 
         let index = text(&files[2]);
         assert!(index.contains("<loc>https://hachimi.world/sitemap/0123456789abcdef/songs-0.xml</loc>"));
