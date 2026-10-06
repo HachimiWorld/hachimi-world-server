@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE message_read_marks SET read_time = $3, update_time = $4 WHERE uid = $1 AND channel = $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "402ce2208a2b4d22c77ecf2b5c9233fb95621c6f5447a8b8778797b7eb7ed7a5"
+}
