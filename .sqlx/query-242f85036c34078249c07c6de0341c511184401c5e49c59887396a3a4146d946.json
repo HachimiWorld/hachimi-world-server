@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE email_outbox SET\n                available_time = $2,\n                attempt_count = $3,\n                sent_time = $4,\n                dead_time = $5,\n                last_error = $6\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid",
+        "Timestamptz",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "242f85036c34078249c07c6de0341c511184401c5e49c59887396a3a4146d946"
+}

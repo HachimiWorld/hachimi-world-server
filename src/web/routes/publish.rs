@@ -11,8 +11,8 @@ use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, CrudDao};
 use crate::service::contributor::CommunityCfg;
-use crate::service::mailer;
-use crate::service::mailer::EmailConfig;
+use crate::service::email_outbox;
+use crate::service::mailer::NotificationEmail;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::util::validate_platforms;
@@ -30,9 +30,9 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::io::Cursor;
-use tracing::info;
+use tracing::{error, info};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -240,13 +240,9 @@ pub async fn publish(
             update_time: now,
         }).await?;
     }
+    enqueue_maintainer_email(&mut tx, &state.config, &req.title, &user.username).await?;
     tx.commit().await?;
-
-    // TODO: Refactor with message queue
-    tokio::spawn(async move {
-        send_notification_to_maintainer(&state.config, &req.title, &user.username).await?;
-        Ok::<(), anyhow::Error>(())
-    });
+    email_outbox::wake_relay();
 
     ok!(PublishResp {
         review_id: review_id,
@@ -254,15 +250,19 @@ pub async fn publish(
     })
 }
 
-async fn send_notification_to_maintainer(
+/// Emails the first contributor about a new submission.
+async fn enqueue_maintainer_email(
+    tx: &mut Transaction<'_, Postgres>,
     config: &Config,
     title: &str,
     author: &str
 ) -> anyhow::Result<()> {
-    let email_cfg: EmailConfig = config.get_and_parse("email")?;
     let community_cfg: CommunityCfg = config.get_and_parse("community")?;
-    if let Some(email) = community_cfg.contributors.first() {
-        mailer::send_notification(&email_cfg, email, "有新的稿件待审核", &format!("{} - {}", title, author)).await?;
+    if let Some(to) = community_cfg.contributors.first() {
+        email_outbox::enqueue(tx, to, NotificationEmail {
+            subject: "有新的稿件待审核".to_string(),
+            body: format!("{} - {}", title, author),
+        }).await?;
     }
     Ok(())
 }
@@ -845,7 +845,18 @@ async fn change_jmid(
     tx.commit().await?;
 
     // 7. Update search index
-    search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song.id]).await?;
-    service::recommend_v2::notify_update(song.id, state.redis_conn.clone()).await?;
+    refresh_song_search_and_caches(&state, song.id).await;
     ok!(())
+}
+
+/// Updates the search index and clears the caches of a song after its change is committed.
+/// Failures are only logged: the change is already saved, so the request must not fail. A song
+/// whose index update failed stays out of date in search until it is indexed again.
+pub(crate) async fn refresh_song_search_and_caches(state: &AppState, song_id: i64) {
+    if let Err(e) = search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song_id]).await {
+        error!(song_id, "Failed to update the song search index: {e:?}");
+    }
+    if let Err(e) = service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await {
+        error!(song_id, "Failed to clear song caches: {e:?}");
+    }
 }
