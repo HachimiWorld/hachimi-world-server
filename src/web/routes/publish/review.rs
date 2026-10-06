@@ -8,6 +8,7 @@ use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, song_publishing_review_history, CrudDao};
 use crate::service::contributor::{check_contributor, ensure_contributor, CommunityCfg};
 use crate::service::mailer::EmailConfig;
+use crate::service::notification::{to_plain_text, ContentIntent, NewNotification};
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::user::PublicUserProfile;
 use crate::service::{mailer, user};
@@ -26,6 +27,7 @@ use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
+use uuid::Uuid;
 use tracing::warn;
 
 pub async fn page(
@@ -839,6 +841,7 @@ pub async fn review_approve(
         } else {
             // This pr might be the old data, do not create creator, just ignore
         }
+        service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
         tx.commit().await?;
 
         // Write behind, data consistence is not guaranteed.
@@ -849,15 +852,17 @@ pub async fn review_approve(
         ).await?;
         service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
 
-        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-        service::mailer::send_review_approved_notification(
-            &email_cfg,
-            &uploader.email,
-            &data.song_info.display_id,
-            &data.song_info.title,
-            &uploader.username,
-            review.review_comment.as_deref(),
-        ).await?;
+        let config = state.config.clone();
+        let (email, display_id, title, username, comment) = (
+            uploader.email.clone(), data.song_info.display_id.clone(), data.song_info.title.clone(),
+            uploader.username.clone(), review.review_comment.clone(),
+        );
+        spawn_email(async move {
+            let email_cfg: EmailConfig = config.get_and_parse("email")?;
+            service::mailer::send_review_approved_notification(
+                &email_cfg, &email, &display_id, &title, &username, comment.as_deref(),
+            ).await
+        });
     } else if review.r#type == song_publishing_review::TYPE_MODIFY {
         // Update existing song
         let song_id = data.song_info.id;
@@ -893,6 +898,7 @@ pub async fn review_approve(
         SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
         SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
         SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
+        service::notification::send_notification(&mut tx, review_result_notification(&review, &new_song.title)).await?;
         tx.commit().await?;
 
         search::song::add_or_replace_document(
@@ -902,14 +908,17 @@ pub async fn review_approve(
         ).await?;
         service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
 
-        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-        service::mailer::send_review_modify_approved_notification(
-            &email_cfg,
-            &uploader.email,
-            &data.song_info.display_id,
-            &uploader.username,
-            review.review_comment.as_deref(),
-        ).await?;
+        let config = state.config.clone();
+        let (email, display_id, username, comment) = (
+            uploader.email.clone(), data.song_info.display_id.clone(),
+            uploader.username.clone(), review.review_comment.clone(),
+        );
+        spawn_email(async move {
+            let email_cfg: EmailConfig = config.get_and_parse("email")?;
+            service::mailer::send_review_modify_approved_notification(
+                &email_cfg, &email, &display_id, &username, comment.as_deref(),
+            ).await
+        });
     }
     ok!(())
 }
@@ -967,28 +976,75 @@ pub async fn review_reject(
         } else {
             // This pr might be the old data, do not create creator, just ignore
         }
+        service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
         tx.commit().await?;
 
-        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-        service::mailer::send_review_rejected_notification(
-            &email_cfg,
-            &uploader.email,
-            &review.song_display_id,
-            &data.song_info.title,
-            &uploader.username,
-            &req.comment,
-        ).await?;
+        let config = state.config.clone();
+        let (email, display_id, title, username, comment) = (
+            uploader.email.clone(), review.song_display_id.clone(), data.song_info.title.clone(),
+            uploader.username.clone(), req.comment.clone(),
+        );
+        spawn_email(async move {
+            let email_cfg: EmailConfig = config.get_and_parse("email")?;
+            service::mailer::send_review_rejected_notification(
+                &email_cfg, &email, &display_id, &title, &username, &comment,
+            ).await
+        });
     } else if review.r#type == song_publishing_review::TYPE_MODIFY {
+        let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
+            .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
+        service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
         tx.commit().await?;
 
-        let email_cfg: EmailConfig = state.config.get_and_parse("email")?;
-        service::mailer::send_review_modify_rejected_notification(
-            &email_cfg,
-            &uploader.email,
-            &review.song_display_id,
-            &uploader.username,
-            &req.comment,
-        ).await?;
+        let config = state.config.clone();
+        let (email, display_id, username, comment) = (
+            uploader.email.clone(), review.song_display_id.clone(),
+            uploader.username.clone(), req.comment.clone(),
+        );
+        spawn_email(async move {
+            let email_cfg: EmailConfig = config.get_and_parse("email")?;
+            service::mailer::send_review_modify_rejected_notification(
+                &email_cfg, &email, &display_id, &username, &comment,
+            ).await
+        });
     }
     ok!(())
+}
+
+/// Emails are best effort: the review is already committed, so a mail failure is only logged.
+fn spawn_email(send: impl Future<Output = anyhow::Result<()>> + Send + 'static) {
+    tokio::spawn(async move {
+        if let Err(e) = send.await {
+            warn!("Failed to send review result email: {e:?}");
+        }
+    });
+}
+
+/// In-app notification telling the uploader the review result. `review` must already have its
+/// final status, comment and review time.
+fn review_result_notification(review: &SongPublishingReview, song_title: &str) -> NewNotification {
+    let approved = review.status == 1;
+    let is_create = review.r#type == song_publishing_review::TYPE_CREATE;
+    let song = format!("《{}》（{}）", to_plain_text(song_title), review.song_display_id);
+    let (notification_type, title, body) = match (is_create, approved) {
+        (true, true) => ("publish.review_approved", "作品已通过审核", format!("你投稿的{song}已通过审核并发布。")),
+        (true, false) => ("publish.review_rejected", "作品未通过审核", format!("你投稿的{song}未通过审核，已退回。")),
+        (false, true) => ("publish.modify_approved", "作品修改已通过", format!("你对{song}提交的修改已通过审核并生效。")),
+        (false, false) => ("publish.modify_rejected", "作品修改未通过", format!("你对{song}提交的修改未通过审核。")),
+    };
+    let body = match review.review_comment.as_deref().map(to_plain_text) {
+        Some(comment) if !comment.trim().is_empty() => format!("{body}\n\n审核留言：{}", comment.trim()),
+        _ => body,
+    };
+    let mut data = serde_json::Map::new();
+    data.insert("review_id".to_string(), review.id.into());
+    NewNotification {
+        id: Uuid::now_v7(),
+        recipient_uid: review.user_id,
+        notification_type,
+        title: title.to_string(),
+        body,
+        content_intent: Some(ContentIntent::new("creation.review.view", data)),
+        occurred_at: review.review_time.unwrap_or_else(Utc::now),
+    }
 }

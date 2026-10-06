@@ -19,9 +19,12 @@
   - `/notification/mark_read` (POST): body `notification_id`. Response: `notification_id`, `read_time` (the first read time), `unread_count`
   - `/notification/mark_all_read` (POST): response `marked_count`, `unread_count`
   - Errors: `invalid_notification_id`, `notification_unavailable` (not yours, doesn't exist or expired)
+- Review results now also send the uploader a system notification, in the same transaction as the review: `publish.review_approved`, `publish.review_rejected`, `publish.modify_approved`, `publish.modify_rejected`. `content_intent` is `{ action: "creation.review.view", data: { review_id } }`
 
 ### Changes
 
+- `/publish/review/approve`, `/publish/review/reject`
+  - The result email is sent in the background after the review is saved. A mail failure no longer makes the request fail after the review was already applied
 - `/version/publish`
   - New optional request fields:
     - `size: Option<i64>` package size in bytes, must be positive

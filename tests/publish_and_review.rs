@@ -7,7 +7,9 @@ use crate::common::{assert_is_err, ApiResult, CommonParse};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
 use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
-use hachimi_world_server::web::routes::publish::{review, CreationInfo, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::publish::{review, CreationInfo, ModifyReq, ModifyResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
+use hachimi_world_server::web::routes::notification::{ListReq as NotificationListReq, ListResp as NotificationListResp, NotificationItem};
+use hachimi_world_server::db::song::{ISongDao, SongDao};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
 use image::ImageFormat;
 use itertools::Itertools;
@@ -628,3 +630,111 @@ async fn test_modify_review_by_other_user_should_fail() {
     }).await;
 }
 
+
+#[tokio::test]
+async fn test_review_results_notify_uploader() {
+    with_test_environment(|mut env| async move {
+        let uploader = with_new_random_test_user(&mut env).await;
+        let contributor = with_test_contributor_user(&mut env).await;
+        let uploader_token = uploader.token.access_token.clone();
+        let contributor_token = contributor.token.access_token.clone();
+
+        // Approved, with a comment containing characters a notification body doesn't allow
+        env.api.set_token(uploader_token.clone());
+        let mut req = publish_template(&env).await;
+        req.title = "Notify Song".into();
+        let published: PublishResp = env.api.post("/publish/publish", &req).await.parse_resp().await.unwrap();
+        env.api.set_token(contributor_token.clone());
+        assert_is_ok(env.api.post("/publish/review/approve", &ApproveReviewReq {
+            review_id: published.review_id,
+            comment: Some("Line one\r\nLine\ttwo".into()),
+        }).await).await;
+
+        env.api.set_token(uploader_token.clone());
+        let items = notifications(&env.api).await;
+        assert_eq!(items.len(), 1);
+        let n = &items[0];
+        assert_eq!(n.notification_type, "publish.review_approved");
+        assert_eq!(n.title, "作品已通过审核");
+        assert_eq!(
+            n.body,
+            format!("你投稿的《Notify Song》（{}）已通过审核并发布。\n\n审核留言：Line one\nLine two", published.song_display_id),
+        );
+        let intent = n.content_intent.as_ref().unwrap();
+        assert_eq!(intent.action, "creation.review.view");
+        assert_eq!(intent.data.get("review_id"), Some(&serde_json::json!(published.review_id)));
+
+        // Modification rejected, then approved
+        let song = SongDao::get_by_display_id(&env.pool, &published.song_display_id).await.unwrap().unwrap();
+        for (approve, expected_type) in [(false, "publish.modify_rejected"), (true, "publish.modify_approved")] {
+            time::sleep(Duration::from_millis(100)).await;
+            env.api.set_token(uploader_token.clone());
+            let modified: ModifyResp = env.api.post("/publish/modify", &modify_request(song.id, &req)).await
+                .parse_resp().await.unwrap();
+            env.api.set_token(contributor_token.clone());
+            let resp = if approve {
+                env.api.post("/publish/review/approve", &ApproveReviewReq { review_id: modified.review_id, comment: None }).await
+            } else {
+                env.api.post("/publish/review/reject", &RejectReviewReq { review_id: modified.review_id, comment: "Needs work".into() }).await
+            };
+            assert_is_ok(resp).await;
+
+            env.api.set_token(uploader_token.clone());
+            let latest = notifications(&env.api).await.remove(0);
+            assert_eq!(latest.notification_type, expected_type);
+            assert_eq!(latest.content_intent.unwrap().data.get("review_id"), Some(&serde_json::json!(modified.review_id)));
+        }
+
+        // A new submission rejected
+        time::sleep(Duration::from_millis(100)).await;
+        env.api.set_token(uploader_token.clone());
+        let mut second = publish_template(&env).await;
+        second.jmid = Some(next_jmid(&published.song_display_id));
+        let published: PublishResp = env.api.post("/publish/publish", &second).await.parse_resp().await.unwrap();
+        env.api.set_token(contributor_token.clone());
+        assert_is_ok(env.api.post("/publish/review/reject", &RejectReviewReq {
+            review_id: published.review_id,
+            comment: "Rejected".into(),
+        }).await).await;
+
+        env.api.set_token(uploader_token.clone());
+        let items = notifications(&env.api).await;
+        assert_eq!(items.len(), 4);
+        assert_eq!(items[0].notification_type, "publish.review_rejected");
+        assert!(items[0].body.ends_with("未通过审核，已退回。\n\n审核留言：Rejected"));
+
+        // The contributor gets none of these
+        env.api.set_token(contributor_token);
+        assert!(notifications(&env.api).await.is_empty());
+    }).await
+}
+
+async fn notifications(api: &ApiClient) -> Vec<NotificationItem> {
+    api.get_query("/notification/list", &NotificationListReq { before_id: None, limit: None }).await
+        .parse_resp::<NotificationListResp>().await.unwrap()
+        .items
+}
+
+fn modify_request(song_id: i64, req: &PublishReq) -> ModifyReq {
+    ModifyReq {
+        song_id,
+        song_temp_id: None,
+        cover_temp_id: None,
+        title: req.title.clone(),
+        subtitle: "Modified subtitle".into(),
+        description: req.description.clone(),
+        lyrics: req.lyrics.clone(),
+        tag_ids: req.tag_ids.clone(),
+        creation_info: req.creation_info.clone(),
+        production_crew: req.production_crew.clone(),
+        external_links: req.external_links.clone(),
+        explicit: false,
+        comment: None,
+    }
+}
+
+/// `JM-ABCD-000` -> `JM-ABCD-001`
+fn next_jmid(jmid: &str) -> String {
+    let (prefix, number) = jmid.rsplit_once('-').unwrap();
+    format!("{prefix}-{:03}", number.parse::<u32>().unwrap() + 1)
+}
