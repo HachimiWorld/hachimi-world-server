@@ -1,6 +1,7 @@
 extern crate hachimi_world_server as app;
 
 use app::config::Config;
+use app::service::notification;
 use app::service::sitemap::{self, SitemapCfg};
 use app::file_hosting::{FileHost, S3FileHost};
 use app::util::bilibili::BilibiliClientImpl;
@@ -74,6 +75,8 @@ async fn main() -> anyhow::Result<()> {
         sitemap_cfg.validate()?;
         sitemap::start_daily_job(state.clone(), sitemap_cfg, cancel_token.clone()).await?;
     }
+
+    notification::start_cleanup_job(state.clone(), cancel_token.clone()).await?;
 
     info!("Starting web server at {}", server_cfg.listen);
     web::run_web_app(server_cfg, state, cancel_token).await?;

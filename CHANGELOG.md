@@ -11,6 +11,14 @@
 - `/sitemap/generation/list` (GET)
   - Generation records, scheduled and manual, most recent first. Query: `page_index`, `page_size` (1..=50). Response: `data`, `page_index`, `page_size`, `total`
   - Requires `Authorization: Bearer <sitemap.trigger_token>`
+- System notifications. Producers call `service::notification::send_notification` inside their own transaction. Notifications older than 180 days are hidden and deleted hourly. All endpoints require login, and `notification_id` is a UUIDv7 string
+  - Notification fields: `notification_id`, `type`, `title`, `body`, `content_intent` (`{ action, data }` or null), `read_time` (null if unread), `create_time`
+  - `/notification/list` (GET): newest first. Query: `before_id` (last id of the previous page), `limit` (1..=50, default 20). Response: `items`, `has_more`
+  - `/notification/detail` (GET): query `notification_id`. Doesn't mark it read
+  - `/notification/unread_count` (GET): `unread_count`
+  - `/notification/mark_read` (POST): body `notification_id`. Response: `notification_id`, `read_time` (the first read time), `unread_count`
+  - `/notification/mark_all_read` (POST): response `marked_count`, `unread_count`
+  - Errors: `invalid_notification_id`, `notification_unavailable` (not yours, doesn't exist or expired)
 
 ### Changes
 
