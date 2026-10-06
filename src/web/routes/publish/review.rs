@@ -4,10 +4,11 @@ use crate::db::song::{Song, SongDao, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_publishing_review_comment::{ISongPublishingReviewCommentDao, SongPublishingReviewComment, SongPublishingReviewCommentDao};
 use crate::db::song_publishing_review_history::{ISongPublishingReviewHistoryDao, SongPublishingReviewHistory, SongPublishingReviewHistoryDao};
-use crate::db::user::UserDao;
+use crate::db::user::{User, UserDao};
 use crate::db::{song_publishing_review, song_publishing_review_history, CrudDao};
 use crate::service::contributor::{check_contributor, ensure_contributor, CommunityCfg};
-use crate::service::mailer::EmailConfig;
+use crate::service::mailer::NotificationEmail;
+use crate::service::email_outbox;
 use crate::service::notification::{to_plain_text, ContentIntent, NewNotification};
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::user::PublicUserProfile;
@@ -25,7 +26,7 @@ use axum::Json;
 use chrono::{DateTime, Utc};
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use tracing::warn;
@@ -380,17 +381,11 @@ pub async fn review_modify(
         snapshot_data: serde_json::to_value(&review_data)?,
         create_time: now,
     }).await?;
+    let actor = UserDao::get_by_id(&mut *tx, claims.uid()).await?
+        .ok_or_else(|| common!("user_not_found", "User not found"))?;
+    enqueue_review_modified_emails(&mut tx, &state.config, &review, &actor, req.comment.as_deref()).await?;
     tx.commit().await?;
-
-    let config = state.config.clone();
-    let sql_pool = state.sql_pool.clone();
-    let actor_uid = claims.uid();
-    let review_id = review.id;
-    let note = req.comment.clone();
-    tokio::spawn(async move {
-        send_review_modified_notification(&config, &sql_pool, review_id, actor_uid, note.as_deref()).await?;
-        Ok::<(), anyhow::Error>(())
-    });
+    email_outbox::wake_relay();
 
     ok!(())
 }
@@ -430,20 +425,14 @@ pub async fn review_comment_create(
         create_time: now,
         update_time: now,
     };
-    SongPublishingReviewCommentDao::insert(&state.sql_pool, &comment).await?;
-
     let actor = UserDao::get_by_id(&state.sql_pool, claims.uid()).await?
         .ok_or_else(|| common!("user_not_found", "User not found"))?;
-    let config = state.config.clone();
-    let sql_pool = state.sql_pool.clone();
-    let review_id = review.id;
-    let actor_uid = actor.id;
-    let actor_name = actor.username;
-    let content = req.content.clone();
-    tokio::spawn(async move {
-        send_review_comment_notification(&config, &sql_pool, review_id, actor_uid, &actor_name, &content).await?;
-        Ok::<(), anyhow::Error>(())
-    });
+
+    let mut tx = state.sql_pool.begin().await?;
+    SongPublishingReviewCommentDao::insert(&mut *tx, &comment).await?;
+    enqueue_review_comment_emails(&mut tx, &state.config, &review, &actor, &req.content).await?;
+    tx.commit().await?;
+    email_outbox::wake_relay();
 
     ok!(())
 }
@@ -709,69 +698,58 @@ async fn ensure_review_comment_delete_permission(
     Ok(())
 }
 
-async fn send_review_comment_notification(
+/// Emails the uploader and the contributors, except the commenter, about a new comment.
+async fn enqueue_review_comment_emails(
+    tx: &mut Transaction<'_, Postgres>,
     config: &Config,
-    sql_pool: &PgPool,
-    review_id: i64,
-    actor_uid: i64,
-    actor_name: &str,
+    review: &SongPublishingReview,
+    actor: &User,
     content: &str,
 ) -> anyhow::Result<()> {
-    let email_cfg: EmailConfig = config.get_and_parse("email")?;
     let community_cfg: CommunityCfg = config.get_and_parse("community")?;
-    let review = SongPublishingReviewDao::get_by_id(sql_pool, review_id).await?
-        .with_context(|| format!("Review {} not found", review_id))?;
-    let actor = UserDao::get_by_id(sql_pool, actor_uid).await?
-        .with_context(|| format!("User {} not found", actor_uid))?;
-    let uploader = UserDao::get_by_id(sql_pool, review.user_id).await?
+    let uploader = UserDao::get_by_id(&mut **tx, review.user_id).await?
         .with_context(|| format!("User {} not found", review.user_id))?;
 
     let mut recipients = HashSet::new();
-    recipients.insert(uploader.email.clone());
+    recipients.insert(uploader.email);
     recipients.extend(community_cfg.contributors);
     recipients.remove(&actor.email);
 
-    let subject = format!("稿件评论更新：{}", review.song_display_id);
-    let body = format!(
-        "{actor_name} 在稿件 {} 下发表了新评论：\n\n{}",
-        review.song_display_id,
-        content,
-    );
-
-    for email in recipients {
-        mailer::send_notification(&email_cfg, &email, &subject, &body).await?;
+    let email = NotificationEmail {
+        subject: format!("稿件评论更新：{}", review.song_display_id),
+        body: format!("{} 在稿件 {} 下发表了新评论：\n\n{}", actor.username, review.song_display_id, content),
+    };
+    for to in recipients {
+        email_outbox::enqueue(tx, &to, email.clone()).await?;
     }
     Ok(())
 }
 
-async fn send_review_modified_notification(
+/// Emails the contributors, except the actor, that a submission was updated.
+async fn enqueue_review_modified_emails(
+    tx: &mut Transaction<'_, Postgres>,
     config: &Config,
-    sql_pool: &PgPool,
-    review_id: i64,
-    actor_uid: i64,
+    review: &SongPublishingReview,
+    actor: &User,
     note: Option<&str>,
 ) -> anyhow::Result<()> {
-    let email_cfg: EmailConfig = config.get_and_parse("email")?;
     let community_cfg: CommunityCfg = config.get_and_parse("community")?;
-    let review = SongPublishingReviewDao::get_by_id(sql_pool, review_id).await?
-        .with_context(|| format!("Review {} not found", review_id))?;
-    let actor = UserDao::get_by_id(sql_pool, actor_uid).await?
-        .with_context(|| format!("User {} not found", actor_uid))?;
 
     let mut recipients = HashSet::new();
     recipients.extend(community_cfg.contributors);
     recipients.remove(&actor.email);
 
-    let subject = format!("稿件已更新：{}", review.song_display_id);
-    let body = format!(
-        "{} 更新了稿件 {}。{}",
-        actor.username,
-        review.song_display_id,
-        note.map(|x| format!("\n\n备注：{x}")).unwrap_or_default(),
-    );
-
-    for email in recipients {
-        mailer::send_notification(&email_cfg, &email, &subject, &body).await?;
+    let email = NotificationEmail {
+        subject: format!("稿件已更新：{}", review.song_display_id),
+        body: format!(
+            "{} 更新了稿件 {}。{}",
+            actor.username,
+            review.song_display_id,
+            note.map(|x| format!("\n\n备注：{x}")).unwrap_or_default(),
+        ),
+    };
+    for to in recipients {
+        email_outbox::enqueue(tx, &to, email.clone()).await?;
     }
     Ok(())
 }
@@ -842,7 +820,11 @@ pub async fn review_approve(
             // This pr might be the old data, do not create creator, just ignore
         }
         service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
+        email_outbox::enqueue(&mut tx, &uploader.email, mailer::review_approved_email(
+            &data.song_info.display_id, &data.song_info.title, &uploader.username, review.review_comment.as_deref(),
+        )).await?;
         tx.commit().await?;
+        email_outbox::wake_relay();
 
         // Write behind, data consistence is not guaranteed.
         search::song::add_or_replace_document(
@@ -851,18 +833,6 @@ pub async fn review_approve(
             &[song_id],
         ).await?;
         service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
-
-        let config = state.config.clone();
-        let (email, display_id, title, username, comment) = (
-            uploader.email.clone(), data.song_info.display_id.clone(), data.song_info.title.clone(),
-            uploader.username.clone(), review.review_comment.clone(),
-        );
-        spawn_email(async move {
-            let email_cfg: EmailConfig = config.get_and_parse("email")?;
-            service::mailer::send_review_approved_notification(
-                &email_cfg, &email, &display_id, &title, &username, comment.as_deref(),
-            ).await
-        });
     } else if review.r#type == song_publishing_review::TYPE_MODIFY {
         // Update existing song
         let song_id = data.song_info.id;
@@ -899,7 +869,11 @@ pub async fn review_approve(
         SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
         SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
         service::notification::send_notification(&mut tx, review_result_notification(&review, &new_song.title)).await?;
+        email_outbox::enqueue(&mut tx, &uploader.email, mailer::review_modify_approved_email(
+            &data.song_info.display_id, &uploader.username, review.review_comment.as_deref(),
+        )).await?;
         tx.commit().await?;
+        email_outbox::wake_relay();
 
         search::song::add_or_replace_document(
             &state.meilisearch,
@@ -907,18 +881,6 @@ pub async fn review_approve(
             &[song_id],
         ).await?;
         service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
-
-        let config = state.config.clone();
-        let (email, display_id, username, comment) = (
-            uploader.email.clone(), data.song_info.display_id.clone(),
-            uploader.username.clone(), review.review_comment.clone(),
-        );
-        spawn_email(async move {
-            let email_cfg: EmailConfig = config.get_and_parse("email")?;
-            service::mailer::send_review_modify_approved_notification(
-                &email_cfg, &email, &display_id, &username, comment.as_deref(),
-            ).await
-        });
     }
     ok!(())
 }
@@ -977,47 +939,22 @@ pub async fn review_reject(
             // This pr might be the old data, do not create creator, just ignore
         }
         service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
+        email_outbox::enqueue(&mut tx, &uploader.email, mailer::review_rejected_email(
+            &review.song_display_id, &data.song_info.title, &uploader.username, &req.comment,
+        )).await?;
         tx.commit().await?;
-
-        let config = state.config.clone();
-        let (email, display_id, title, username, comment) = (
-            uploader.email.clone(), review.song_display_id.clone(), data.song_info.title.clone(),
-            uploader.username.clone(), req.comment.clone(),
-        );
-        spawn_email(async move {
-            let email_cfg: EmailConfig = config.get_and_parse("email")?;
-            service::mailer::send_review_rejected_notification(
-                &email_cfg, &email, &display_id, &title, &username, &comment,
-            ).await
-        });
+        email_outbox::wake_relay();
     } else if review.r#type == song_publishing_review::TYPE_MODIFY {
         let data: InternalSongPublishReviewData = serde_json::from_value(review.data.clone())
             .with_context(|| format!("Error during decoding song publish review({}) data", review.id))?;
         service::notification::send_notification(&mut tx, review_result_notification(&review, &data.song_info.title)).await?;
+        email_outbox::enqueue(&mut tx, &uploader.email, mailer::review_modify_rejected_email(
+            &review.song_display_id, &uploader.username, &req.comment,
+        )).await?;
         tx.commit().await?;
-
-        let config = state.config.clone();
-        let (email, display_id, username, comment) = (
-            uploader.email.clone(), review.song_display_id.clone(),
-            uploader.username.clone(), req.comment.clone(),
-        );
-        spawn_email(async move {
-            let email_cfg: EmailConfig = config.get_and_parse("email")?;
-            service::mailer::send_review_modify_rejected_notification(
-                &email_cfg, &email, &display_id, &username, &comment,
-            ).await
-        });
+        email_outbox::wake_relay();
     }
     ok!(())
-}
-
-/// Emails are best effort: the review is already committed, so a mail failure is only logged.
-fn spawn_email(send: impl Future<Output = anyhow::Result<()>> + Send + 'static) {
-    tokio::spawn(async move {
-        if let Err(e) = send.await {
-            warn!("Failed to send review result email: {e:?}");
-        }
-    });
 }
 
 /// In-app notification telling the uploader the review result. `review` must already have its

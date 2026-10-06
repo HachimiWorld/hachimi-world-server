@@ -23,8 +23,7 @@
 
 ### Changes
 
-- `/publish/review/approve`, `/publish/review/reject`
-  - The result email is sent in the background after the review is saved. A mail failure no longer makes the request fail after the review was already applied
+- Notification emails (review results, new submissions, review comments and submission updates) go through a transactional outbox: they are written in the same transaction as the change and sent by a background relay, with retries for up to 8 attempts. A mail failure no longer fails the request, and an email is never sent for a change that was rolled back. Verification code emails are still sent directly
 - `/version/publish`
   - New optional request fields:
     - `size: Option<i64>` package size in bytes, must be positive

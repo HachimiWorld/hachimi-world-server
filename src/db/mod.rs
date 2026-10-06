@@ -16,6 +16,7 @@ pub mod user_connection_accounts;
 pub mod follow;
 pub mod sitemap_generation;
 pub mod notification;
+pub mod email_outbox;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {

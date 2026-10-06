@@ -1,0 +1,137 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                to_address,\n                subject,\n                body,\n                available_time,\n                attempt_count,\n                sent_time,\n                dead_time,\n                last_error,\n                create_time\n            FROM email_outbox\n            WHERE sent_time IS NULL AND dead_time IS NULL AND available_time <= $1\n            ORDER BY available_time, id\n            LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "to_address",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "to_address"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "body",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "body"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "available_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "available_time"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "sent_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "sent_time"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "dead_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "dead_time"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "email_outbox",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "49b2adc5c474fd0652af12b7810a5613ab921db1507c8c05a5c82a4ef57104a9"
+}

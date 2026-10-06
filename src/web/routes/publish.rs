@@ -11,8 +11,8 @@ use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::user::UserDao;
 use crate::db::{song_publishing_review, CrudDao};
 use crate::service::contributor::CommunityCfg;
-use crate::service::mailer;
-use crate::service::mailer::EmailConfig;
+use crate::service::email_outbox;
+use crate::service::mailer::NotificationEmail;
 use crate::service::song::{CreationTypeInfo, ExternalLink};
 use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::util::validate_platforms;
@@ -30,7 +30,7 @@ use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use std::io::Cursor;
 use tracing::info;
 
@@ -240,13 +240,9 @@ pub async fn publish(
             update_time: now,
         }).await?;
     }
+    enqueue_maintainer_email(&mut tx, &state.config, &req.title, &user.username).await?;
     tx.commit().await?;
-
-    // TODO: Refactor with message queue
-    tokio::spawn(async move {
-        send_notification_to_maintainer(&state.config, &req.title, &user.username).await?;
-        Ok::<(), anyhow::Error>(())
-    });
+    email_outbox::wake_relay();
 
     ok!(PublishResp {
         review_id: review_id,
@@ -254,15 +250,19 @@ pub async fn publish(
     })
 }
 
-async fn send_notification_to_maintainer(
+/// Emails the first contributor about a new submission.
+async fn enqueue_maintainer_email(
+    tx: &mut Transaction<'_, Postgres>,
     config: &Config,
     title: &str,
     author: &str
 ) -> anyhow::Result<()> {
-    let email_cfg: EmailConfig = config.get_and_parse("email")?;
     let community_cfg: CommunityCfg = config.get_and_parse("community")?;
-    if let Some(email) = community_cfg.contributors.first() {
-        mailer::send_notification(&email_cfg, email, "有新的稿件待审核", &format!("{} - {}", title, author)).await?;
+    if let Some(to) = community_cfg.contributors.first() {
+        email_outbox::enqueue(tx, to, NotificationEmail {
+            subject: "有新的稿件待审核".to_string(),
+            body: format!("{} - {}", title, author),
+        }).await?;
     }
     Ok(())
 }

@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM email_outbox WHERE id IN (\n                SELECT id FROM email_outbox WHERE sent_time < $1 LIMIT $2\n            )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fb144dc2ffecab5604043d99dc1ed48a72a0a6f3b4ea80a84ef50f7be7d12f6f"
+}
