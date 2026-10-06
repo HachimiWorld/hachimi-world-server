@@ -8,7 +8,7 @@
 
 use crate::db::notification::{Notification, NotificationDao};
 use crate::web::state::AppState;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -227,7 +227,8 @@ pub async fn mark_read(pool: &PgPool, recipient_uid: i64, id: Uuid) -> sqlx::Res
     let read_time = match notification.read_time {
         Some(x) => x,
         None => {
-            let now = Utc::now();
+            // PostgreSQL keeps microseconds; return what is stored
+            let now = Utc::now().trunc_subsecs(6);
             if NotificationDao::set_read_time_if_unread(&mut *tx, recipient_uid, id, now).await? {
                 now
             } else {
