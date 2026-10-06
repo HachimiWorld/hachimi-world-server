@@ -23,6 +23,8 @@
 
 ### Changes
 
+- `/publish/review/approve`, `/publish/change_jmid`
+  - Failing to update the search index or clear song caches after the change is saved is logged instead of failing the request
 - Notification emails (review results, new submissions, review comments and submission updates) go through a transactional outbox: they are written in the same transaction as the change and sent by a background relay, with retries for up to 8 attempts. A mail failure no longer fails the request, and an email is never sent for a change that was rolled back. Verification code emails are still sent directly
 - `/version/publish`
   - New optional request fields:

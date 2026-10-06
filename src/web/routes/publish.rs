@@ -32,7 +32,7 @@ use redis::AsyncTypedCommands;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::io::Cursor;
-use tracing::info;
+use tracing::{error, info};
 
 pub(crate) fn router() -> Router<AppState> {
     Router::new()
@@ -845,7 +845,18 @@ async fn change_jmid(
     tx.commit().await?;
 
     // 7. Update search index
-    search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song.id]).await?;
-    service::recommend_v2::notify_update(song.id, state.redis_conn.clone()).await?;
+    refresh_song_search_and_caches(&state, song.id).await;
     ok!(())
+}
+
+/// Updates the search index and clears the caches of a song after its change is committed.
+/// Failures are only logged: the change is already saved, so the request must not fail. A song
+/// whose index update failed stays out of date in search until it is indexed again.
+pub(crate) async fn refresh_song_search_and_caches(state: &AppState, song_id: i64) {
+    if let Err(e) = search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song_id]).await {
+        error!(song_id, "Failed to update the song search index: {e:?}");
+    }
+    if let Err(e) = service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await {
+        error!(song_id, "Failed to clear song caches: {e:?}");
+    }
 }

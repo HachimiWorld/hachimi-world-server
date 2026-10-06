@@ -16,10 +16,10 @@ use crate::service::{mailer, user};
 use crate::util::IsBlank;
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
-use crate::web::routes::publish::{build_image_temp_key, build_internal_review_data, build_temp_key, parse_jmid, CreationInfo, InternalSongPublishReviewData, PageReq, PageResp, ProductionItem, SongPublishReviewBrief, SongTempData};
+use crate::web::routes::publish::{build_image_temp_key, build_internal_review_data, build_temp_key, parse_jmid, refresh_song_search_and_caches, CreationInfo, InternalSongPublishReviewData, PageReq, PageResp, ProductionItem, SongPublishReviewBrief, SongTempData};
 use crate::web::routes::song::TagItem;
 use crate::web::state::AppState;
-use crate::{common, err, ok, search, service};
+use crate::{common, err, ok, service};
 use anyhow::Context;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -826,13 +826,7 @@ pub async fn review_approve(
         tx.commit().await?;
         email_outbox::wake_relay();
 
-        // Write behind, data consistence is not guaranteed.
-        search::song::add_or_replace_document(
-            &state.meilisearch,
-            &state.sql_pool,
-            &[song_id],
-        ).await?;
-        service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
+        refresh_song_search_and_caches(&state, song_id).await;
     } else if review.r#type == song_publishing_review::TYPE_MODIFY {
         // Update existing song
         let song_id = data.song_info.id;
@@ -875,12 +869,7 @@ pub async fn review_approve(
         tx.commit().await?;
         email_outbox::wake_relay();
 
-        search::song::add_or_replace_document(
-            &state.meilisearch,
-            &state.sql_pool,
-            &[song_id],
-        ).await?;
-        service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await?;
+        refresh_song_search_and_caches(&state, song_id).await;
     }
     ok!(())
 }
