@@ -14,3 +14,5 @@ pub mod contributor;
 pub mod connection_account;
 pub mod follow;
 pub mod sitemap;
+pub mod notification;
+pub mod email_outbox;

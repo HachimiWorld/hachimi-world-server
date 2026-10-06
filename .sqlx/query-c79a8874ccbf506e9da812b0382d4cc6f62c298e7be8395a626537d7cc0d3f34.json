@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE notifications SET read_time = $3\n            WHERE recipient_uid = $1 AND read_time IS NULL AND create_time >= $2",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c79a8874ccbf506e9da812b0382d4cc6f62c298e7be8395a626537d7cc0d3f34"
+}
