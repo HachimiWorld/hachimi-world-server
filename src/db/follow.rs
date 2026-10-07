@@ -133,6 +133,18 @@ impl FollowDao {
             .await
     }
 
+    /// Followers of `followed_id` who followed after `after`.
+    /// @since 261006
+    pub async fn count_followers_after<'e, E>(executor: E, followed_id: i64, after: DateTime<Utc>) -> Result<i64>
+    where
+        E: PgExecutor<'e>,
+    {
+        sqlx::query!(
+            r#"SELECT COUNT(*) AS "count!" FROM follows WHERE followed_id = $1 AND create_time > $2"#,
+            followed_id, after
+        ).fetch_one(executor).await.map(|x| x.count)
+    }
+
     pub async fn increase_following_count<'e, E>(executor: E, uid: i64, delta: i64) -> Result<()>
     where
         E: PgExecutor<'e>,

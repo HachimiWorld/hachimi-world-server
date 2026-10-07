@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM song_likes l\n            JOIN songs s ON s.id = l.song_id\n            WHERE s.uploader_uid = $1 AND l.user_id <> s.uploader_uid AND l.create_time > $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "e6dc3dd356fa9bbe675e86299cb42db6932d1e11596b1a3b6cc42fe79162508e"
+}

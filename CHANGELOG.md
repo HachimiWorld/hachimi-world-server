@@ -19,6 +19,10 @@
   - `/notification/mark_read` (POST): body `notification_id`. Response: `notification_id`, `read_time` (the first read time), `unread_count`
   - `/notification/mark_all_read` (POST): response `marked_count`, `unread_count`
   - Errors: `invalid_notification_id`, `notification_unavailable` (not yours, doesn't exist or expired)
+- Message center for received likes and new followers. Each keeps one read time per user and kind; opening it marks everything up to now read. Before the first read, the last 30 days count as unread. All endpoints require login
+  - `/message/summary` (GET): `total_unread`, `system_unread`, `like_unread`, `follow_unread`, `like_read_time`, `follow_read_time`
+  - `/message/mark_read` (POST): body `channel` (`like` or `follow`). Response: `read_time`. Errors with `invalid_channel`
+  - `/message/received_likes` (GET): the user's songs liked by others, most recently liked first, with `like_count`, `latest_like_time` and up to 3 `latest_likers`. Query: `before_time` and `before_song_id` (from the previous page's last item), `limit` (1..=50, default 20). Response: `items`, `has_more`. Errors with `invalid_cursor`
 - Review results now also send the uploader a system notification, in the same transaction as the review: `publish.review_approved`, `publish.review_rejected`, `publish.modify_approved`, `publish.modify_rejected`. `content_intent` is `{ action: "creation.review.view", data: { review_id } }`
 
 ### Changes
