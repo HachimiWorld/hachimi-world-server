@@ -6,6 +6,7 @@
 use crate::db::follow::FollowDao;
 use crate::db::message_read_mark::{MessageReadMark, MessageReadMarkDao};
 use crate::db::received_like::ReceivedLikeDao;
+use crate::db::song::{ISongDao, Song, SongDao};
 use crate::db::user::{IUserDao, UserDao};
 use crate::service::notification;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
@@ -129,11 +130,15 @@ pub async fn received_likes(
     before: Option<(DateTime<Utc>, i64)>,
     limit: i64,
 ) -> sqlx::Result<(Vec<ReceivedLikeItem>, bool)> {
-    let mut groups = ReceivedLikeDao::list_groups(pool, uid, before, limit + 1).await?;
-    let has_more = groups.len() as i64 > limit;
-    groups.truncate(limit as usize);
+    let mut liked = ReceivedLikeDao::list_liked_songs(pool, uid, before, limit + 1).await?;
+    let has_more = liked.len() as i64 > limit;
+    liked.truncate(limit as usize);
 
-    let song_ids: Vec<i64> = groups.iter().map(|x| x.song_id).collect();
+    let song_ids: Vec<i64> = liked.iter().map(|x| x.song_id).collect();
+    let mut songs: HashMap<i64, Song> = SongDao::list_by_ids(pool, &song_ids).await?
+        .into_iter()
+        .map(|x| (x.id, x))
+        .collect();
     let latest = ReceivedLikeDao::list_latest_by_songs(pool, &song_ids, LATEST_LIKERS).await?;
     let user_ids: Vec<i64> = latest.iter().map(|x| x.user_id).collect();
     let users: HashMap<i64, Liker> = UserDao::list_by_ids(pool, &user_ids).await?
@@ -147,14 +152,17 @@ pub async fn received_likes(
         }
     }
 
-    let items = groups.into_iter().map(|x| ReceivedLikeItem {
-        latest_likers: likers.remove(&x.song_id).unwrap_or_default(),
-        song_id: x.song_id,
-        song_display_id: x.song_display_id,
-        song_title: x.song_title,
-        cover_url: x.cover_art_url,
-        like_count: x.like_count,
-        latest_like_time: x.latest_like_time,
+    let items = liked.into_iter().filter_map(|x| {
+        let song = songs.remove(&x.song_id)?;
+        Some(ReceivedLikeItem {
+            latest_likers: likers.remove(&x.song_id).unwrap_or_default(),
+            song_id: x.song_id,
+            song_display_id: song.display_id,
+            song_title: song.title,
+            cover_url: song.cover_art_url,
+            like_count: x.like_count,
+            latest_like_time: x.latest_like_time,
+        })
     }).collect();
     Ok((items, has_more))
 }

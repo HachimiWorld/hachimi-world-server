@@ -1,17 +1,15 @@
-//! Likes other users gave to a user's songs, read from `song_likes` and `songs`.
+//! Likes other users gave to a user's songs, read from `song_likes` and `songs`. Every query
+//! leaves out likes the uploader gave their own songs.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
-/// The likes one song received.
+/// Likes on one song, without the song itself.
 /// @since 261006
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReceivedLikeGroup {
+pub struct LikedSong {
     pub song_id: i64,
-    pub song_display_id: String,
-    pub song_title: String,
-    pub cover_art_url: String,
     pub like_count: i64,
     pub latest_like_time: DateTime<Utc>,
 }
@@ -27,46 +25,43 @@ pub struct ReceivedLike {
 pub struct ReceivedLikeDao;
 
 impl ReceivedLikeDao {
-    /// Likes on songs uploaded by `uploader_uid`, excluding their own, created after `after`.
+    /// Likes on songs uploaded by `uploader_uid` created after `after`.
     pub async fn count_after<'e>(executor: impl PgExecutor<'e>, uploader_uid: i64, after: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query!(
             r#"SELECT COUNT(*) AS "count!" FROM song_likes l
             JOIN songs s ON s.id = l.song_id
-            WHERE s.uploader_uid = $1 AND l.user_id <> $1 AND l.create_time > $2"#,
+            WHERE s.uploader_uid = $1 AND l.user_id <> s.uploader_uid AND l.create_time > $2"#,
             uploader_uid, after
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
-    /// Songs of `uploader_uid` with likes from others, most recently liked first. Pass the
-    /// latest like time and song id of the previous page's last group as `before`.
-    pub async fn list_groups<'e>(
+    /// Songs of `uploader_uid` that have likes, most recently liked first. Pass the latest like
+    /// time and song id of the previous page's last song as `before`.
+    pub async fn list_liked_songs<'e>(
         executor: impl PgExecutor<'e>,
         uploader_uid: i64,
         before: Option<(DateTime<Utc>, i64)>,
         limit: i64,
-    ) -> sqlx::Result<Vec<ReceivedLikeGroup>> {
+    ) -> sqlx::Result<Vec<LikedSong>> {
         let (before_time, before_song_id) = before.unzip();
         sqlx::query_as!(
-            ReceivedLikeGroup,
+            LikedSong,
             r#"SELECT
-                s.id AS song_id,
-                s.display_id AS song_display_id,
-                s.title AS song_title,
-                s.cover_art_url,
+                l.song_id,
                 COUNT(*) AS "like_count!",
                 MAX(l.create_time) AS "latest_like_time!"
-            FROM songs s
-            JOIN song_likes l ON l.song_id = s.id
-            WHERE s.uploader_uid = $1 AND l.user_id <> $1
-            GROUP BY s.id, s.display_id, s.title, s.cover_art_url
-            HAVING $2::timestamptz IS NULL OR (MAX(l.create_time), s.id) < ($2, $3::bigint)
-            ORDER BY MAX(l.create_time) DESC, s.id DESC
+            FROM song_likes l
+            JOIN songs s ON s.id = l.song_id
+            WHERE s.uploader_uid = $1 AND l.user_id <> s.uploader_uid
+            GROUP BY l.song_id
+            HAVING $2::timestamptz IS NULL OR (MAX(l.create_time), l.song_id) < ($2, $3::bigint)
+            ORDER BY MAX(l.create_time) DESC, l.song_id DESC
             LIMIT $4"#,
             uploader_uid, before_time, before_song_id, limit
         ).fetch_all(executor).await
     }
 
-    /// The latest `per_song` likes of each song, excluding the uploader's own.
+    /// The latest `per_song` likes of each song.
     pub async fn list_latest_by_songs<'e>(
         executor: impl PgExecutor<'e>,
         song_ids: &[i64],
