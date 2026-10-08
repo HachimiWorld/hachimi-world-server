@@ -19,6 +19,8 @@ pub mod notification;
 pub mod email_outbox;
 pub mod message_read_mark;
 pub mod received_like;
+pub mod report;
+pub mod committee_member;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {

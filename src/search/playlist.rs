@@ -215,7 +215,7 @@ async fn fully_index_playlists(
 async fn get_documents_batch(pool: &PgPool, playlist_ids: &[i64]) -> anyhow::Result<Vec<PlaylistDocument>> {
     let rows = PlaylistDao::list_by_ids(pool, playlist_ids).await?;
     let docs = rows.into_iter()
-        .filter(|x| x.is_public)
+        .filter(|x| x.is_public && !x.is_hidden)
         .map(|x| PlaylistDocument {
             id: x.id,
             user_id: x.user_id,

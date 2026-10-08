@@ -155,3 +155,66 @@ async fn save_to_cache(mut redis: ConnectionManager, profiles: &HashMap<i64, Pub
     }
     Ok(())
 }
+/// A random username such as `神人01234567`, as given at registration.
+pub fn generate_username() -> String {
+    use rand::RngExt;
+    format!("神人{:08}", rand::rng().random_range(0..100000000))
+}
+
+/// A part of a profile the platform can reset.
+/// @since 261008
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileField {
+    Avatar,
+    Bio,
+    Username,
+}
+
+/// Resets `fields` of a user's profile in the caller's transaction: the avatar and bio are cleared
+/// and the username is replaced with a random one. Returns the updated user if they exist. Call
+/// [refresh_after_profile_change] after committing.
+/// @since 261008
+pub async fn reset_profile(
+    tx: &mut sqlx::PgTransaction<'_>,
+    uid: i64,
+    fields: &[ProfileField],
+) -> anyhow::Result<Option<crate::db::user::User>> {
+    use crate::db::CrudDao;
+    let Some(mut user) = UserDao::get_by_id(&mut **tx, uid).await? else {
+        return Ok(None);
+    };
+    for field in fields {
+        match field {
+            ProfileField::Avatar => user.avatar_url = None,
+            ProfileField::Bio => user.bio = None,
+            ProfileField::Username => {
+                let mut name = generate_username();
+                while UserDao::get_by_username(&mut **tx, &name).await?.is_some() {
+                    name = generate_username();
+                }
+                user.username = name;
+            }
+        }
+    }
+    user.update_time = chrono::Utc::now();
+    UserDao::update_by_id(&mut **tx, &user).await?;
+    Ok(Some(user))
+}
+
+/// Updates the search index and the cached profile after [reset_profile] commits. Failures are
+/// logged.
+/// @since 261008
+pub async fn refresh_after_profile_change(state: &crate::web::state::AppState, user: &crate::db::user::User) {
+    if let Err(e) = crate::search::user::update_user_document(&state.meilisearch, crate::search::user::UserDocument {
+        id: user.id,
+        avatar_url: user.avatar_url.clone(),
+        name: user.username.clone(),
+        follower_count: user.follower_count.unwrap_or(0),
+    }).await {
+        tracing::warn!(uid = user.id, "Failed to update the user search index: {e:?}");
+    }
+    let mut redis = state.redis_conn.clone();
+    if let Err(e) = redis.del(gen_cache_key(user.id)).await {
+        tracing::warn!(uid = user.id, "Failed to clear the cached profile: {e:?}");
+    }
+}

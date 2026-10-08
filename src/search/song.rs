@@ -253,7 +253,9 @@ pub async fn get_documents_batch(
     song_ids: &[i64]
 ) -> anyhow::Result<Vec<SongDocument>> {
     let mut documents: Vec<SongDocument> = vec![];
+    // Hidden songs stay out of the index
     let songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &song_ids).await?.into_iter()
+        .filter(|x| !x.is_hidden)
         .map(|x| (x.id, x))
         .collect();
     let mut crews: HashMap<i64, _> = query!(
