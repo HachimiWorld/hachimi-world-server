@@ -1,12 +1,18 @@
 //! The kinds of user-generated content that can be reported, and what a decision can do to each.
-//! Adding a kind means a new variant here.
+//!
+//! [UgcKind] is the only place that matches on the kind: each method forwards to the kind's own
+//! adapter (`song.rs`, `playlist.rs`, `user.rs`), which knows that content and nothing else. The
+//! report flow only talks to [UgcKind]. Adding a kind means a new variant and a new adapter; the
+//! compiler lists every match left to fill in.
 
-use crate::db::playlist::{Playlist, PlaylistDao};
-use crate::db::song::{Song, SongDao};
-use crate::db::user::{User, UserDao};
-use crate::db::CrudDao;
-use crate::service::user::ProfileField;
-use crate::service::{playlist, song, user};
+mod playlist;
+mod song;
+mod user;
+
+use crate::db::playlist::Playlist;
+use crate::db::song::Song;
+use crate::db::user::User;
+use crate::service::notification::ContentIntent;
 use crate::web::state::AppState;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
@@ -18,7 +24,8 @@ pub enum UgcKind {
     User,
 }
 
-/// What a target looks like, shown in the report queue and kept as a snapshot with each action.
+/// A target in the shape the report flow needs, whatever its kind: shown in the report queue,
+/// used to check who may report it, and kept as a snapshot with each action.
 /// @since 261008
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UgcTarget {
@@ -77,6 +84,14 @@ impl ContentAction {
     }
 }
 
+/// What to tell the owner about a decision on their content.
+pub struct OwnerMessage {
+    pub notification_type: &'static str,
+    pub title: &'static str,
+    pub body: String,
+    pub intent: ContentIntent,
+}
+
 /// The content after a decision changed it, to refresh caches and the search index once the
 /// transaction commits.
 pub enum Changed {
@@ -103,41 +118,22 @@ impl UgcKind {
         }
     }
 
+    /// Reads the target from its own table and describes it as a [UgcTarget]. None if it doesn't
+    /// exist.
     pub async fn load(self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
-        Ok(match self {
-            Self::Song => SongDao::get_by_id(pool, id).await?.map(|x| UgcTarget {
-                owner_uid: x.uploader_uid,
-                title: x.title,
-                cover_url: Some(x.cover_art_url),
-                display_id: x.display_id,
-                is_public: !x.is_hidden,
-                is_hidden: x.is_hidden,
-            }),
-            Self::Playlist => PlaylistDao::get_by_id(pool, id).await?.map(|x| UgcTarget {
-                owner_uid: x.user_id,
-                title: x.name,
-                cover_url: x.cover_url,
-                display_id: String::new(),
-                is_public: x.is_public && !x.is_hidden,
-                is_hidden: x.is_hidden,
-            }),
-            Self::User => UserDao::get_by_id(pool, id).await?.map(|x| UgcTarget {
-                owner_uid: x.id,
-                title: x.username,
-                cover_url: x.avatar_url,
-                display_id: String::new(),
-                is_public: true,
-                is_hidden: false,
-            }),
-        })
+        match self {
+            Self::Song => song::load(pool, id).await,
+            Self::Playlist => playlist::load(pool, id).await,
+            Self::User => user::load(pool, id).await,
+        }
     }
 
     /// Content actions a decision can take on `target` now.
     pub fn content_actions(self, target: &UgcTarget) -> Vec<ContentAction> {
         match self {
-            Self::Song | Self::Playlist if target.is_hidden => vec![ContentAction::Restore],
-            Self::Song | Self::Playlist => vec![ContentAction::Hide],
-            Self::User => vec![ContentAction::ResetAvatar, ContentAction::ResetBio, ContentAction::ResetUsername],
+            Self::Song => song::content_actions(target),
+            Self::Playlist => playlist::content_actions(target),
+            Self::User => user::content_actions(target),
         }
     }
 
@@ -147,25 +143,33 @@ impl UgcKind {
         if actions.is_empty() {
             return Ok(None);
         }
-        Ok(match self {
-            Self::Song => {
-                let hidden = actions.contains(&ContentAction::Hide);
-                song::set_hidden(tx, id, hidden).await?.map(Changed::Song)
-            }
-            Self::Playlist => {
-                let hidden = actions.contains(&ContentAction::Hide);
-                playlist::set_hidden(tx, id, hidden).await?.map(Changed::Playlist)
-            }
-            Self::User => {
-                let fields: Vec<ProfileField> = actions.iter().filter_map(|x| match x {
-                    ContentAction::ResetAvatar => Some(ProfileField::Avatar),
-                    ContentAction::ResetBio => Some(ProfileField::Bio),
-                    ContentAction::ResetUsername => Some(ProfileField::Username),
-                    _ => None,
-                }).collect();
-                user::reset_profile(tx, id, &fields).await?.map(Changed::User)
-            }
-        })
+        match self {
+            Self::Song => song::apply(tx, id, actions).await,
+            Self::Playlist => playlist::apply(tx, id, actions).await,
+            Self::User => user::apply(tx, id, actions).await,
+        }
+    }
+}
+
+impl UgcKind {
+    /// How the target is named in user-facing text, such as 作品《X》, or just 作品 if it's gone.
+    pub fn mention(self, target: Option<&UgcTarget>) -> String {
+        let title = target.map(|x| x.title.as_str());
+        match self {
+            Self::Song => song::mention(title),
+            Self::Playlist => playlist::mention(title),
+            Self::User => user::mention(title),
+        }
+    }
+
+    /// Tells the owner what `actions` did to their content. None if they did nothing.
+    /// `reason_suffix` is appended to the body as is.
+    pub fn owner_message(self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
+        match self {
+            Self::Song => song::owner_message(id, target, actions, reason_suffix),
+            Self::Playlist => playlist::owner_message(id, target, actions, reason_suffix),
+            Self::User => user::owner_message(actions, reason_suffix),
+        }
     }
 }
 
@@ -173,9 +177,9 @@ impl Changed {
     /// Refreshes caches and the search index after the decision commits.
     pub async fn refresh(&self, state: &AppState) {
         match self {
-            Self::Song(x) => song::refresh_after_visibility_change(state, x).await,
-            Self::Playlist(x) => playlist::refresh_after_visibility_change(state, x).await,
-            Self::User(x) => user::refresh_after_profile_change(state, x).await,
+            Self::Song(x) => song::refresh(state, x).await,
+            Self::Playlist(x) => playlist::refresh(state, x).await,
+            Self::User(x) => user::refresh(state, x).await,
         }
     }
 }

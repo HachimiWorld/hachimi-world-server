@@ -6,7 +6,7 @@ use crate::db::report::{ModerationAction, ModerationActionDao, Report, ReportCas
 use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::errors::{ServiceError, ServiceResult};
-use crate::service::notification::{send_notification, to_plain_text, ContentIntent, NewNotification};
+use crate::service::notification::{send_notification, to_plain_text, NewNotification};
 use crate::service::ugc::{ContentAction, UgcKind, UgcTarget};
 use crate::web::state::AppState;
 use crate::util::redlock::{RedLock, RedLockGuard};
@@ -441,15 +441,7 @@ fn report_resolved_notification(
     verdict: Verdict,
     occurred_at: DateTime<Utc>,
 ) -> NewNotification {
-    let (noun, open, close) = match kind {
-        UgcKind::Song => ("作品", "《", "》"),
-        UgcKind::Playlist => ("歌单", "《", "》"),
-        UgcKind::User => ("用户", "「", "」"),
-    };
-    let target = match target {
-        Some(t) => format!("{noun}{open}{}{close}", to_plain_text(&t.title)),
-        None => noun.to_string(),
-    };
+    let target = kind.mention(target);
     let result = match verdict {
         Verdict::Agree => "已采取相应措施",
         Verdict::Disagree => "经审查未发现违规",
@@ -475,54 +467,15 @@ fn owner_notification(
     reason: Option<&str>,
     occurred_at: DateTime<Utc>,
 ) -> Option<NewNotification> {
-    let title = to_plain_text(&target.title);
-    let reason = reason.map(|x| format!("\n\n原因：{}", to_plain_text(x))).unwrap_or_default();
-    let mut data = serde_json::Map::new();
-    let (notification_type, title, body, intent) = if actions.contains(&ContentAction::Hide) {
-        match kind {
-            UgcKind::Song => {
-                data.insert("song_id".into(), target_id.into());
-                ("governance.content_hidden", "作品已被隐藏",
-                 format!("你的作品《{title}》已被隐藏，目前只有你自己能看到。修改后重新提交审核，通过后即恢复显示。{reason}"),
-                 "creation.artwork.view")
-            }
-            _ => {
-                data.insert("playlist_id".into(), target_id.into());
-                ("governance.content_hidden", "歌单已被隐藏",
-                 format!("你的歌单《{title}》已被隐藏，目前只有你自己能看到。{reason}"),
-                 "playlist.view")
-            }
-        }
-    } else if actions.contains(&ContentAction::Restore) {
-        match kind {
-            UgcKind::Song => {
-                data.insert("song_id".into(), target_id.into());
-                ("governance.content_restored", "作品已恢复显示", format!("你的作品《{title}》已恢复显示。{reason}"), "creation.artwork.view")
-            }
-            _ => {
-                data.insert("playlist_id".into(), target_id.into());
-                ("governance.content_restored", "歌单已恢复显示", format!("你的歌单《{title}》已恢复显示。{reason}"), "playlist.view")
-            }
-        }
-    } else {
-        let fields: Vec<&str> = actions.iter().filter_map(|x| match x {
-            ContentAction::ResetAvatar => Some("头像"),
-            ContentAction::ResetBio => Some("简介"),
-            ContentAction::ResetUsername => Some("昵称"),
-            _ => None,
-        }).collect();
-        if fields.is_empty() {
-            return None;
-        }
-        ("governance.profile_reset", "个人资料已被重置", format!("你的{}已被重置。{reason}", fields.join("、")), "profile.edit")
-    };
+    let reason_suffix = reason.map(|x| format!("\n\n原因：{}", to_plain_text(x))).unwrap_or_default();
+    let message = kind.owner_message(target_id, target, actions, &reason_suffix)?;
     Some(NewNotification {
         id: Uuid::now_v7(),
         recipient_uid: target.owner_uid,
-        notification_type,
-        title: title.to_string(),
-        body,
-        content_intent: Some(ContentIntent::new(intent, data)),
+        notification_type: message.notification_type,
+        title: message.title.to_string(),
+        body: message.body,
+        content_intent: Some(message.intent),
         occurred_at,
     })
 }
