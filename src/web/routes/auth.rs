@@ -21,7 +21,6 @@ use axum_extra::TypedHeader;
 use chrono::{DateTime, Duration, Utc};
 use itertools::Itertools;
 use jsonwebtoken::errors::ErrorKind;
-use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::error;
@@ -94,7 +93,7 @@ async fn email_register(
         }
 
         // 2. Generate username and hash password
-        let username = generate_username();
+        let username = crate::service::user::generate_username();
         let password_hash = bcrypt::hash(&req.password, bcrypt::DEFAULT_COST)?;
 
         // 3. Create user
@@ -441,9 +440,6 @@ async fn reset_password(
     }
 }
 
-fn generate_username() -> String {
-    format!("神人{:08}", rand::rng().random_range(0..100000000))
-}
 
 async fn generate_token_pairs_and_save(
     ip: String,

@@ -22,7 +22,7 @@ pub struct RecentSongRedisCache {
     pub create_time: DateTime<Utc>,
 }
 
-pub async fn get_recent_songs(
+async fn get_recent_songs_unfiltered(
     lock: RedLock,
     redis: ConnectionManager,
     pool: &PgPool,
@@ -149,7 +149,7 @@ pub async fn get_recommend_anonymous(
 }
 
 /// Return random 30 songs for a user in one day
-pub async fn get_recommend(
+async fn get_recommend_unfiltered(
     user_id: i64,
     lock: RedLock,
     redis: ConnectionManager,
@@ -244,7 +244,7 @@ pub struct HotWeeklyRedisCache {
     pub create_time: DateTime<Utc>,
 }
 
-pub async fn get_hot_songs(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
+async fn get_hot_songs_unfiltered(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
     let cache = get_from_cache_hot(redis.clone(), day_delta, limit).await?;
     if let Some(cache) = cache {
         return Ok(cache);
@@ -298,4 +298,31 @@ async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>
         .into_iter().map(|(_, v)| v)
         .collect();
     Ok(songs)
+}
+/// Songs hidden after a list was cached are dropped when it's read.
+async fn retain_visible(redis: &ConnectionManager, pool: &PgPool, mut songs: Vec<PublicSongDetail>) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let ids: Vec<i64> = songs.iter().map(|x| x.id).collect();
+    let visible = song::get_public_detail_with_cache(redis.clone(), pool, &ids).await?;
+    songs.retain(|x| visible.contains_key(&x.id));
+    Ok(songs)
+}
+
+pub async fn get_recent_songs(
+    lock: RedLock,
+    redis: ConnectionManager,
+    pool: &PgPool,
+    cursor: Option<DateTime<Utc>>, limit: i32, after: bool,
+) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let songs = get_recent_songs_unfiltered(lock, redis.clone(), pool, cursor, limit, after).await?;
+    retain_visible(&redis, pool, songs).await
+}
+
+pub async fn get_recommend(user_id: i64, lock: RedLock, redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let songs = get_recommend_unfiltered(user_id, lock, redis.clone(), pool).await?;
+    retain_visible(&redis, pool, songs).await
+}
+
+pub async fn get_hot_songs(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let songs = get_hot_songs_unfiltered(redis, pool, day_delta, limit).await?;
+    retain_visible(redis, pool, songs).await
 }

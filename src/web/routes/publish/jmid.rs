@@ -86,7 +86,7 @@ pub async fn jmid_get_next(
     }
 
     // Count all songs of the creator and add the pending PRs
-    let published_songs = SongDao::count_by_user(&state.sql_pool, claims.uid()).await?;
+    let published_songs = SongDao::count_by_user(&state.sql_pool, claims.uid(), true).await?;
     let pending_prs = SongPublishingReviewDao::count_by_user_and_status(&state.sql_pool, claims.uid(), song_publishing_review::STATUS_PENDING).await?;
 
     let next_no = published_songs + pending_prs + 1;

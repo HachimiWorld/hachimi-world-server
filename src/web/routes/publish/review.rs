@@ -338,6 +338,7 @@ pub async fn review_modify(
         play_count: current_data.song_info.play_count,
         like_count: current_data.song_info.like_count,
         is_private: current_data.song_info.is_private,
+        is_hidden: current_data.song_info.is_hidden,
         release_time: current_data.song_info.release_time,
         create_time: current_data.song_info.create_time,
         update_time: now,
@@ -832,6 +833,7 @@ pub async fn review_approve(
         let song_id = data.song_info.id;
         let orig_song = SongDao::get_by_id(&mut *tx, song_id).await?
             .ok_or_else(|| common!("not_found", "Song not found"))?;
+        let was_hidden = orig_song.is_hidden;
         let new_song = Song {
             id: orig_song.id,
             display_id: orig_song.display_id,
@@ -848,6 +850,7 @@ pub async fn review_approve(
             play_count: data.song_info.play_count,
             like_count: data.song_info.like_count,
             is_private: data.song_info.is_private,
+            is_hidden: orig_song.is_hidden,
             release_time: data.song_info.release_time,
             create_time: orig_song.create_time,
             update_time: Utc::now(), // Current time
@@ -862,7 +865,17 @@ pub async fn review_approve(
         SongDao::update_song_production_crew(&mut tx, song_id, &data.song_production_crew).await?;
         SongDao::update_song_external_links(&mut tx, song_id, &data.song_external_links).await?;
         SongDao::update_song_tags(&mut tx, song_id, tag_ids).await?;
-        service::notification::send_notification(&mut tx, review_result_notification(&review, &new_song.title)).await?;
+        // A modification that passes review lifts a hide
+        let unhidden = if was_hidden {
+            service::song::set_hidden(&mut tx, song_id, false).await?
+        } else {
+            None
+        };
+        let mut notification = review_result_notification(&review, &new_song.title);
+        if unhidden.is_some() {
+            notification.body.push_str("\n\n作品已恢复显示。");
+        }
+        service::notification::send_notification(&mut tx, notification).await?;
         email_outbox::enqueue(&mut tx, &uploader.email, mailer::review_modify_approved_email(
             &data.song_info.display_id, &uploader.username, review.review_comment.as_deref(),
         )).await?;
@@ -870,6 +883,9 @@ pub async fn review_approve(
         email_outbox::wake_relay();
 
         refresh_song_search_and_caches(&state, song_id).await;
+        if let Some(song) = unhidden {
+            service::song::refresh_after_visibility_change(&state, &song).await;
+        }
     }
     ok!(())
 }

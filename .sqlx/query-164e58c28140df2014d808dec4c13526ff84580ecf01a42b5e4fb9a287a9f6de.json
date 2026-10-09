@@ -1,0 +1,50 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                uid,\n                appointed_by_uid,\n                create_time\n            FROM committee_members\n            ORDER BY create_time, uid",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "committee_members",
+            "name": "uid"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "appointed_by_uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "committee_members",
+            "name": "appointed_by_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "committee_members",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "164e58c28140df2014d808dec4c13526ff84580ecf01a42b5e4fb9a287a9f6de"
+}

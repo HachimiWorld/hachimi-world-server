@@ -17,3 +17,6 @@ pub mod sitemap;
 pub mod notification;
 pub mod email_outbox;
 pub mod message_center;
+pub mod ugc;
+pub mod report;
+pub mod committee;

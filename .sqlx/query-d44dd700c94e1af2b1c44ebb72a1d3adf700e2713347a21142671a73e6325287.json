@@ -1,0 +1,30 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE reports SET action_id = $3 WHERE case_id = $1 AND id <= $2 AND action_id IS NULL RETURNING reporter_uid",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "reporter_uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "reports",
+            "name": "reporter_uid"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "d44dd700c94e1af2b1c44ebb72a1d3adf700e2713347a21142671a73e6325287"
+}

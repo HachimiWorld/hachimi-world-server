@@ -1,0 +1,149 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                case_id,\n                operator_uid,\n                verdict,\n                note,\n                ignore_reports,\n                up_to_report_id,\n                target_snapshot,\n                content_actions,\n                author_reason,\n                create_time\n            FROM moderation_actions\n            WHERE case_id = $1 ORDER BY id DESC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "case_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "case_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "operator_uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "operator_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "verdict",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "verdict"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "note",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "note"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "ignore_reports",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "ignore_reports"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "up_to_report_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "up_to_report_id"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "target_snapshot",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "target_snapshot"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "content_actions",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "content_actions"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "author_reason",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "author_reason"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "moderation_actions",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "eda39a60812d58e55f964420b1d8ebdc539271fcf1b6ad27367eb74cc9f9f057"
+}

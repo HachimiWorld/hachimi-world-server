@@ -182,6 +182,7 @@ pub async fn publish(
         play_count: 0,
         like_count: 0,
         is_private: false,
+        is_hidden: false,
         release_time: now,
         create_time: now,
         update_time: now, // Do we really need three time data?
@@ -531,6 +532,7 @@ pub async fn modify(
         play_count: orig_song.play_count,
         like_count: orig_song.like_count,
         is_private: orig_song.is_private,
+        is_hidden: orig_song.is_hidden,
         release_time: orig_song.release_time,
         create_time: orig_song.create_time,
         update_time: now,
