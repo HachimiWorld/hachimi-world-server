@@ -7,7 +7,7 @@ use crate::db::user::UserDao;
 use crate::db::CrudDao;
 use crate::service::errors::{ServiceError, ServiceResult};
 use crate::service::notification::{send_notification, to_plain_text, NewNotification};
-use crate::service::ugc::{ContentAction, UgcKind, UgcTarget};
+use crate::service::ugc::{ContentAction, UgcAdapter, UgcKind, UgcTarget};
 use crate::web::state::AppState;
 use crate::util::redlock::{RedLock, RedLockGuard};
 use anyhow::anyhow;
@@ -265,18 +265,17 @@ pub async fn get_case(pool: &PgPool, kind: UgcKind, target_id: i64) -> sqlx::Res
 /// What a contributor can decide on a case now.
 pub struct DecisionOptions {
     pub verdicts: Vec<Verdict>,
-    /// Content actions and the verdict each goes with: penalties with `agree`, restoring with
-    /// `disagree`.
+    /// Content actions and the verdict each goes with: penalties with `agree`, actions undoing an
+    /// earlier penalty with `disagree`.
     pub content_actions: Vec<(ContentAction, Verdict)>,
 }
 
-/// With pending reports, they can be upheld (when there's something to do about the content, or
-/// it's already hidden), rejected or ignored. Without, a hidden target can still be restored, and a
-/// case that ignores reports can take them again.
+/// With pending reports, they can be upheld (when there's a penalty to take or the target is
+/// already hidden), rejected or ignored. Without, an earlier penalty can still be undone, and a
+/// case that ignores reports can take them again. Which content actions exist is up to the kind.
 pub fn decision_options(kind: UgcKind, case: &ReportCase, target: Option<&UgcTarget>) -> DecisionOptions {
     let actions = target.map(|x| kind.content_actions(x)).unwrap_or_default();
-    let can_restore = actions.contains(&ContentAction::Restore);
-    let penalties: Vec<ContentAction> = actions.iter().copied().filter(|x| x.is_penalty()).collect();
+    let (penalties, reversals): (Vec<ContentAction>, Vec<ContentAction>) = actions.iter().partition(|x| x.penalty);
     let hidden = target.is_some_and(|x| x.is_hidden);
 
     let mut verdicts = vec![];
@@ -286,7 +285,7 @@ pub fn decision_options(kind: UgcKind, case: &ReportCase, target: Option<&UgcTar
         }
         verdicts.extend([Verdict::Disagree, Verdict::Ignore]);
     } else {
-        if can_restore {
+        if !reversals.is_empty() {
             verdicts.push(Verdict::Disagree);
         }
         if case.ignore_reports {
@@ -298,8 +297,8 @@ pub fn decision_options(kind: UgcKind, case: &ReportCase, target: Option<&UgcTar
     if verdicts.contains(&Verdict::Agree) {
         content_actions.extend(penalties.iter().map(|x| (*x, Verdict::Agree)));
     }
-    if verdicts.contains(&Verdict::Disagree) && can_restore {
-        content_actions.push((ContentAction::Restore, Verdict::Disagree));
+    if verdicts.contains(&Verdict::Disagree) {
+        content_actions.extend(reversals.iter().map(|x| (*x, Verdict::Disagree)));
     }
     DecisionOptions { verdicts, content_actions }
 }
@@ -307,7 +306,8 @@ pub fn decision_options(kind: UgcKind, case: &ReportCase, target: Option<&UgcTar
 /// A contributor's decision on a case.
 pub struct Decision<'a> {
     pub verdict: Verdict,
-    pub content_actions: Vec<ContentAction>,
+    /// Ids from [DecisionOptions::content_actions] for the verdict.
+    pub content_actions: Vec<String>,
     /// Shown to the owner when content actions are taken; required for penalties.
     pub author_reason: Option<&'a str>,
     /// Internal.
@@ -334,8 +334,6 @@ pub async fn resolve(
     if author_reason.is_some_and(|x| x.chars().count() > AUTHOR_REASON_MAX_CHARS) {
         return business(ReportError::AuthorReasonTooLong);
     }
-    let mut actions = decision.content_actions.clone();
-    actions.dedup();
     let verdict = decision.verdict;
 
     let pool = &state.sql_pool;
@@ -349,14 +347,20 @@ pub async fn resolve(
     if !options.verdicts.contains(&verdict) {
         return business(ReportError::InvalidVerdict);
     }
-    if actions.iter().any(|x| !options.content_actions.contains(&(*x, verdict))) {
-        return business(ReportError::InvalidContentAction);
+    let mut actions: Vec<ContentAction> = vec![];
+    for id in &decision.content_actions {
+        let Some((action, _)) = options.content_actions.iter().find(|(x, v)| x.id == id && *v == verdict) else {
+            return business(ReportError::InvalidContentAction);
+        };
+        if !actions.contains(action) {
+            actions.push(*action);
+        }
     }
     let already_hidden = target.as_ref().is_some_and(|x| x.is_hidden);
     if verdict == Verdict::Agree && actions.is_empty() && !already_hidden {
         return business(ReportError::ContentActionRequired);
     }
-    if actions.iter().any(|x| x.is_penalty()) && author_reason.is_none() {
+    if actions.iter().any(|x| x.penalty) && author_reason.is_none() {
         return business(ReportError::AuthorReasonRequired);
     }
 
@@ -370,11 +374,13 @@ pub async fn resolve(
         ignore_reports: decision.ignore_reports,
         up_to_report_id: decision.up_to_report_id,
         target_snapshot: serde_json::to_value(&target)?,
-        content_actions: actions.iter().map(|x| x.as_str().to_string()).collect(),
+        content_actions: actions.iter().map(|x| x.id.to_string()).collect(),
         author_reason: author_reason.map(str::to_string),
         create_time: now,
     }).await?;
-    let changed = kind.apply(&mut tx, target_id, &actions).await?;
+    if !actions.is_empty() {
+        kind.apply(&mut tx, target_id, &actions).await?;
+    }
     let reporters = ReportDao::resolve_up_to(&mut *tx, case.id, decision.up_to_report_id, action_id).await?;
 
     let pending_count = ReportDao::count_pending(&mut *tx, case.id).await? as i32;
@@ -397,8 +403,8 @@ pub async fn resolve(
     }
     tx.commit().await?;
 
-    if let Some(changed) = changed {
-        changed.refresh(state).await;
+    if !actions.is_empty() {
+        kind.refresh(state, target_id).await;
     }
     Ok(ResolveResult { action_id, status: case.status, pending_count })
 }
@@ -420,10 +426,11 @@ pub async fn owner_notice(pool: &PgPool, uid: i64, kind: UgcKind, target_id: i64
     let Some(case) = ReportCaseDao::get_by_target(pool, kind.as_str(), target_id).await? else {
         return Ok(None);
     };
-    let hide = ContentAction::Hide.as_str();
+    // The latest decision that penalized it
+    let is_penalty = |id: &String| kind.actions().iter().any(|x| x.id == id && x.penalty);
     Ok(ModerationActionDao::list_by_case(pool, case.id, ACTIONS_SHOWN).await?
         .into_iter()
-        .find(|x| x.content_actions.iter().any(|a| a == hide))
+        .find(|x| x.content_actions.iter().any(is_penalty))
         .map(|x| OwnerNotice { reason: x.author_reason, hide_time: x.create_time }))
 }
 
@@ -441,7 +448,7 @@ fn report_resolved_notification(
     verdict: Verdict,
     occurred_at: DateTime<Utc>,
 ) -> NewNotification {
-    let target = kind.mention(target);
+    let target = kind.mention(target.map(|x| x.title.as_str()));
     let result = match verdict {
         Verdict::Agree => "已采取相应措施",
         Verdict::Disagree => "经审查未发现违规",

@@ -3,7 +3,7 @@ use crate::db::user::{IUserDao, UserDao};
 use crate::service::committee;
 use crate::service::errors::ServiceError;
 use crate::service::report::{self, CaseSummary, Decision, ReportError, Verdict};
-use crate::service::ugc::{ContentAction, UgcKind, UgcTarget};
+use crate::service::ugc::{UgcKind, UgcTarget};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -164,10 +164,13 @@ pub struct CaseResp {
 /// @since 261008
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ContentActionOption {
-    /// `hide`, `restore`, `reset_avatar`, `reset_bio` or `reset_username`
+    /// Declared by the target's kind: `hide` and `restore` for songs and playlists, `reset_avatar`,
+    /// `reset_bio` and `reset_username` for users.
     pub action: String,
     /// The verdict it can be taken with.
     pub verdict: String,
+    /// Acts against the content, so the owner must be told why (`author_reason`).
+    pub penalty: bool,
 }
 
 /// @since 261008
@@ -216,7 +219,11 @@ async fn case(claims: Claims, state: State<AppState>, req: Query<CaseReq>) -> We
     let options = report::decision_options(kind, &detail.summary.case, detail.summary.target.as_ref());
     let verdicts = options.verdicts.iter().map(|x| x.as_str().to_string()).collect();
     let content_actions = options.content_actions.iter()
-        .map(|(action, verdict)| ContentActionOption { action: action.as_str().to_string(), verdict: verdict.as_str().to_string() })
+        .map(|(action, verdict)| ContentActionOption {
+            action: action.id.to_string(),
+            verdict: verdict.as_str().to_string(),
+            penalty: action.penalty,
+        })
         .collect();
     let pending_reports = detail.pending_reports.into_iter().map(|x| ReportItem {
         report_id: x.id,
@@ -287,16 +294,9 @@ async fn resolve(claims: Claims, state: State<AppState>, req: Json<ResolveReq>) 
     let Some(verdict) = Verdict::parse(&req.verdict) else {
         err!("invalid_verdict", "Unknown verdict")
     };
-    let mut content_actions = Vec::with_capacity(req.content_actions.len());
-    for x in &req.content_actions {
-        let Some(action) = ContentAction::parse(x) else {
-            err!("invalid_content_action", "Unknown content action")
-        };
-        content_actions.push(action);
-    }
     let result = report::resolve(&state, claims.uid(), kind, req.target_id, Decision {
         verdict,
-        content_actions,
+        content_actions: req.content_actions.clone(),
         author_reason: req.author_reason.as_deref(),
         note: req.note.as_deref(),
         ignore_reports: req.ignore_reports,
