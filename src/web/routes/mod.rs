@@ -9,6 +9,9 @@ pub mod post;
 pub mod contributor;
 pub mod sitemap;
 pub mod notification;
+pub mod message;
+pub mod report;
+pub mod committee;
 
 use crate::web::state::AppState;
 use axum::Router;
@@ -26,4 +29,7 @@ pub fn router() -> Router<AppState> {
         .nest("/contributor", contributor::router())
         .nest("/sitemap", sitemap::router())
         .nest("/notification", notification::router())
+        .nest("/message", message::router())
+        .nest("/report", report::router())
+        .nest("/committee", committee::router())
 }

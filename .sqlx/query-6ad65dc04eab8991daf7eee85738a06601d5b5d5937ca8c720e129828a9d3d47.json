@@ -1,0 +1,45 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT\n                l.song_id,\n                COUNT(*) AS \"like_count!\",\n                MAX(l.create_time) AS \"latest_like_time!\"\n            FROM song_likes l\n            JOIN songs s ON s.id = l.song_id\n            WHERE s.uploader_uid = $1 AND l.user_id <> s.uploader_uid\n            GROUP BY l.song_id\n            HAVING $2::timestamptz IS NULL OR (MAX(l.create_time), l.song_id) < ($2, $3::bigint)\n            ORDER BY MAX(l.create_time) DESC, l.song_id DESC\n            LIMIT $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "song_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_likes",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "like_count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      },
+      {
+        "ordinal": 2,
+        "name": "latest_like_time!",
+        "type_info": "Timestamptz",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      null
+    ]
+  },
+  "hash": "6ad65dc04eab8991daf7eee85738a06601d5b5d5937ca8c720e129828a9d3d47"
+}

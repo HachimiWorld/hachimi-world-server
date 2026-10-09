@@ -6,7 +6,7 @@ use crate::service::tag_recommend;
 use crate::service::{recommend_v2, song, song_like};
 use crate::util::IsBlank;
 use crate::web::extractors::XRealIP;
-use crate::web::jwt::Claims;
+use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::WebResult;
 use crate::web::routes::publish;
 use crate::web::state::AppState;
@@ -64,19 +64,25 @@ pub struct DetailReq {
 pub type DetailResp = PublicSongDetail;
 
 #[framed]
+/// A hidden song is only returned to its uploader.
 async fn detail(
     state: State<AppState>,
+    claims: OptionalClaims,
     params: Query<DetailReq>,
 ) -> WebResult<DetailResp> {
-    let data = song::get_public_detail_with_cache_by_display_id(
+    let data = song::get_detail_with_cache_by_display_id(
         state.redis_conn.clone(),
         &state.sql_pool,
         &params.id,
     ).await?;
-    match data {
+    match data.filter(|x| visible_to(x, &claims)) {
         Some(x) => ok!(x),
         None => err!("not_found", "Song not found")
     }
+}
+
+fn visible_to(song: &DetailResp, claims: &OptionalClaims) -> bool {
+    !song.is_hidden || claims.0.as_ref().is_some_and(|c| c.uid() == song.uploader_uid)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,16 +90,18 @@ pub struct DetailByIdReq {
     pub id: i64,
 }
 
+/// A hidden song is only returned to its uploader.
 async fn detail_by_id(
     state: State<AppState>,
+    claims: OptionalClaims,
     params: Query<DetailByIdReq>,
 ) -> WebResult<DetailResp> {
-    let mut data = song::get_public_detail_with_cache(
+    let mut data = song::get_detail_with_cache(
         state.redis_conn.clone(),
         &state.sql_pool,
         &[params.id],
     ).await?;
-    let data = data.remove(&params.id);
+    let data = data.remove(&params.id).filter(|x| visible_to(x, &claims));
     match data {
         Some(x) => ok!(x),
         None => err!("not_found", "Song not found")
@@ -141,9 +149,9 @@ async fn page_by_user(
         ok!(cached)
     }
 
-    let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, page, size).await?;
+    let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, false, page, size).await?;
     let song_ids = songs.iter().map(|x| x.id).collect::<Vec<i64>>();
-    let total = SongDao::count_by_user(&state.sql_pool, req.user_id).await?;
+    let total = SongDao::count_by_user(&state.sql_pool, req.user_id, false).await?;
 
     let songs = song::get_public_detail_with_cache(
         state.redis_conn.clone(),
@@ -445,10 +453,21 @@ pub struct MyLikesReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MyLikesResp {
+    /// Likes of songs that can be played.
     pub data: Vec<MyLikeItem>,
     pub page_size: i64,
     pub page_index: i64,
     pub total: i64,
+    /// Likes on this page of songs that were deleted or hidden, to show as unavailable.
+    /// @since 261008
+    pub unavailable: Vec<UnavailableLikeItem>,
+}
+
+/// @since 261008
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnavailableLikeItem {
+    pub song_id: i64,
+    pub liked_time: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -485,18 +504,17 @@ async fn page_my_likes(
         &state.sql_pool,
         &song_ids,
     ).await?;
-    let composed = songs.into_iter().filter_map(|like| {
-        let detail = song_details.get(&like.song_id).cloned();
-        match detail {
-            Some(x) => Some(MyLikeItem {
-                song_data: x,
-                liked_time: like.create_time,
-            }),
-            None => None
+    let mut composed = Vec::with_capacity(songs.len());
+    let mut unavailable = vec![];
+    for like in songs {
+        match song_details.get(&like.song_id).cloned() {
+            Some(x) => composed.push(MyLikeItem { song_data: x, liked_time: like.create_time }),
+            None => unavailable.push(UnavailableLikeItem { song_id: like.song_id, liked_time: like.create_time }),
         }
-    }).collect::<Vec<_>>();
+    }
     ok!(MyLikesResp {
         data: composed,
+        unavailable,
         page_size: req.page_size,
         page_index: req.page_index,
         total

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                name,\n                description,\n                user_id,\n                cover_url,\n                is_public,\n                create_time,\n                update_time\n            FROM playlists\n            WHERE id = ANY($1)",
+  "query": "\n            SELECT\n                id,\n                name,\n                description,\n                user_id,\n                cover_url,\n                is_public,\n                is_hidden,\n                create_time,\n                update_time\n            FROM playlists\n            WHERE id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -71,6 +71,17 @@
       },
       {
         "ordinal": 6,
+        "name": "is_hidden",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "playlists",
+            "name": "is_hidden"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -81,7 +92,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -105,8 +116,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "f0db8cd20b9b6a4b28ea6759fcb8d649ce9eed19da1f4e930fbf40024502a608"
+  "hash": "a95816df8e1b682da5d2a945366a4ca52a0fdd8156e64b3f7b036ddfb516f8e8"
 }

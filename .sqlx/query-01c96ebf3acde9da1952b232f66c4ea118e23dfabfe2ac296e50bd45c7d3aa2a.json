@@ -1,0 +1,53 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT song_id AS \"song_id!\", user_id AS \"user_id!\", create_time AS \"create_time!\" FROM (\n                SELECT l.song_id, l.user_id, l.create_time,\n                    ROW_NUMBER() OVER (PARTITION BY l.song_id ORDER BY l.create_time DESC, l.user_id DESC) AS rn\n                FROM song_likes l\n                JOIN songs s ON s.id = l.song_id\n                WHERE l.song_id = ANY($1) AND l.user_id <> s.uploader_uid\n            ) t\n            WHERE rn <= $2\n            ORDER BY song_id, create_time DESC, user_id DESC",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "song_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_likes",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "user_id!",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_likes",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "create_time!",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "song_likes",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "01c96ebf3acde9da1952b232f66c4ea118e23dfabfe2ac296e50bd45c7d3aa2a"
+}

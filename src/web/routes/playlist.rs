@@ -58,9 +58,21 @@ pub struct DetailReq {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailResp {
     pub playlist_info: PlaylistItem,
+    /// Songs that can be played, by `order_index`.
     pub songs: Vec<SongItem>,
     /// @since 260121
     pub creator_profile: PublicUserProfile,
+    /// Songs in the playlist that were deleted or hidden, to show as unavailable in their place.
+    /// @since 261008
+    pub unavailable_songs: Vec<UnavailableSongItem>,
+}
+
+/// @since 261008
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnavailableSongItem {
+    pub song_id: i64,
+    pub order_index: i32,
+    pub add_time: DateTime<Utc>,
 }
 
 // Basic song information
@@ -127,6 +139,9 @@ pub struct PlaylistItem {
     pub songs_count: i64,
     /// @since 260122
     pub update_time: DateTime<Utc>,
+    /// Hidden by the platform; only its owner sees it.
+    /// @since 261008
+    pub is_hidden: bool,
 }
 
 #[framed]
@@ -149,6 +164,7 @@ async fn list(
             update_time: x.update_time,
             is_public: x.is_public,
             songs_count: count.get(&x.id).cloned().unwrap_or(0),
+            is_hidden: x.is_hidden,
         };
         result.push(item);
     }
@@ -258,6 +274,7 @@ async fn create(
         user_id: uid,
         cover_url: None, // TODO: Pick a song cover by default
         is_public: req.is_public,
+        is_hidden: false,
         create_time: Utc::now(),
         update_time: Utc::now(),
     };
@@ -363,6 +380,7 @@ async fn add_song(
     let mut playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
     let song = SongDao::get_by_id(&state.sql_pool, req.song_id).await?
+        .filter(|x| !x.is_hidden || x.uploader_uid == claims.uid())
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
     let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;

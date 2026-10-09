@@ -44,7 +44,12 @@ pub struct PublicSongDetail {
     /// @since 251105
     pub gain: Option<f32>,
     /// @since 251105
-    pub explicit: Option<bool>
+    pub explicit: Option<bool>,
+    /// Hidden by the platform. Only its uploader gets it from the detail endpoints; lists leave
+    /// it out.
+    /// @since 261008
+    #[serde(default)]
+    pub is_hidden: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +80,17 @@ impl CreationTypeInfo {
     }
 }
 
+/// The song unless it is hidden.
 pub async fn get_public_detail_with_cache_by_display_id(
+    redis: ConnectionManager,
+    sql_pool: &PgPool,
+    song_display_id: &str,
+) -> Result<Option<PublicSongDetail>, anyhow::Error> {
+    Ok(get_detail_with_cache_by_display_id(redis, sql_pool, song_display_id).await?.filter(|x| !x.is_hidden))
+}
+
+/// The song, hidden or not.
+pub async fn get_detail_with_cache_by_display_id(
     mut redis: ConnectionManager,
     sql_pool: &PgPool,
     song_display_id: &str,
@@ -109,7 +124,19 @@ pub async fn get_public_detail_with_cache_by_display_id(
     }
 }
 
+/// The songs that exist and aren't hidden, by id.
 pub async fn get_public_detail_with_cache(
+    redis: ConnectionManager,
+    sql_pool: &PgPool,
+    song_id_list: &[i64],
+) -> Result<HashMap<i64, PublicSongDetail>, anyhow::Error> {
+    let mut songs = get_detail_with_cache(redis, sql_pool, song_id_list).await?;
+    songs.retain(|_, x| !x.is_hidden);
+    Ok(songs)
+}
+
+/// The songs that exist, hidden or not, by id.
+pub async fn get_detail_with_cache(
     mut redis: ConnectionManager,
     sql_pool: &PgPool,
     song_id_list: &[i64],
@@ -424,6 +451,7 @@ async fn assemble_from_db_batch(
             release_time: song.release_time,
             gain: song.gain,
             explicit: song.explicit,
+            is_hidden: song.is_hidden,
         };
         data
     }).collect_vec();
@@ -501,6 +529,7 @@ async fn assemble_from_db(
         release_time: song.release_time,
         gain: song.gain,
         explicit: song.explicit,
+        is_hidden: song.is_hidden,
     };
 
     Ok(Some(data))
@@ -520,4 +549,35 @@ pub fn generate_song_display_id() -> String {
         .collect();
 
     format!("JM-{}-{}", letters, numbers)
+}
+/// Hides or shows a song for everyone but its uploader, in the caller's transaction. Returns the
+/// song if it exists. Call [refresh_after_visibility_change] after committing.
+/// @since 261008
+pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, song_id: i64, hidden: bool) -> anyhow::Result<Option<Song>> {
+    if !SongDao::set_hidden(&mut **tx, song_id, hidden).await? {
+        return Ok(None);
+    }
+    Ok(SongDao::get_by_id(&mut **tx, song_id).await?)
+}
+
+/// Updates the search index and clears cached details and lists after [set_hidden] commits.
+/// Failures are logged: the database is already right, and caches expire on their own.
+/// @since 261008
+pub async fn refresh_after_visibility_change(state: &crate::web::state::AppState, song: &Song) {
+    let index_result = if song.is_hidden {
+        crate::search::song::delete_song_document(&state.meilisearch, &[song.id]).await.map_err(anyhow::Error::from)
+    } else {
+        crate::search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song.id]).await
+    };
+    if let Err(e) = index_result {
+        warn!(song_id = song.id, "Failed to update the song search index: {e:?}");
+    }
+    let mut redis = state.redis_conn.clone();
+    let keys = [format!("song:detail:{}", song.id), format!("song:detail:{}", song.display_id)];
+    if let Err(e) = redis.del(&keys).await {
+        warn!(song_id = song.id, "Failed to clear the song detail cache: {e:?}");
+    }
+    if let Err(e) = crate::service::recommend_v2::notify_update(song.id, state.redis_conn.clone()).await {
+        warn!(song_id = song.id, "Failed to clear song list caches: {e:?}");
+    }
 }

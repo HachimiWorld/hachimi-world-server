@@ -25,6 +25,7 @@ macro_rules! query_songs {
                 play_count,
                 like_count,
                 is_private,
+                is_hidden,
                 release_time,
                 create_time,
                 update_time,
@@ -53,6 +54,7 @@ macro_rules! query_songs {
                 play_count,
                 like_count,
                 is_private,
+                is_hidden,
                 release_time,
                 create_time,
                 update_time,
@@ -238,6 +240,11 @@ pub struct Song {
     /// @deprecated since 20250925
     pub like_count: i64,
     pub is_private: bool,
+    /// Hidden by the platform: only the uploader can see it, and only [SongDao::set_hidden] changes
+    /// it. Defaults to false for review snapshots saved before it existed.
+    /// @since 261008
+    #[serde(default)]
+    pub is_hidden: bool,
     pub release_time: DateTime<Utc>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
@@ -310,8 +317,8 @@ where
     fn list_by_create_time_after(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
     fn list_by_create_time_before(executor: E, create_time: DateTime<Utc>, limit: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
     fn list_random(executor: E, limit: i64) -> impl Future<Output=sqlx::Result<Vec<i64>>>;
-    fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
-    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
+    fn page_by_user(executor: E, user_id: i64, include_hidden: bool, page: i64, size: i64) -> impl Future<Output=sqlx::Result<Vec<Self::Entity>>>;
+    fn count_by_user(executor: E, user_id: i64, include_hidden: bool) -> impl Future<Output=sqlx::Result<i64>>;
     fn count_likes(executor: E, song_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
     fn count_likes_batch(executor: E, song_ids: &[i64]) -> impl Future<Output=sqlx::Result<HashMap<i64, i64>>>;
     fn count_likes_by_user(executor: E, user_id: i64) -> impl Future<Output=sqlx::Result<i64>>;
@@ -415,12 +422,13 @@ where
                 play_count,
                 like_count,
                 is_private,
+                is_hidden,
                 release_time,
                 create_time,
                 update_time,
                 explicit,
                 gain
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id",
             value.display_id,
             value.title,
             value.subtitle,
@@ -435,6 +443,7 @@ where
             value.play_count,
             value.like_count,
             value.is_private,
+            value.is_hidden,
             value.release_time,
             value.create_time,
             value.update_time,
@@ -525,15 +534,17 @@ where
         Ok(rows.into_iter().map(|x| x.id).collect_vec())
     }
 
-    async fn page_by_user(executor: E, user_id: i64, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
-        query_songs!("WHERE uploader_uid = $1 ORDER BY id DESC LIMIT $2 OFFSET $3", user_id, size, page * size)
-            .fetch_all(executor).await
+    async fn page_by_user(executor: E, user_id: i64, include_hidden: bool, page: i64, size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+        query_songs!(
+            "WHERE uploader_uid = $1 AND ($2 OR NOT is_hidden) ORDER BY id DESC LIMIT $3 OFFSET $4",
+            user_id, include_hidden, size, page * size
+        ).fetch_all(executor).await
     }
 
-    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
+    async fn count_by_user(executor: E, user_id: i64, include_hidden: bool) -> sqlx::Result<i64> {
         sqlx::query!(
-            "SELECT COUNT(*) FROM songs WHERE uploader_uid = $1",
-            user_id
+            "SELECT COUNT(*) FROM songs WHERE uploader_uid = $1 AND ($2 OR NOT is_hidden)",
+            user_id, include_hidden
         ).fetch_one(executor).await.map(|r| r.count.unwrap_or(0))
     }
 
@@ -659,10 +670,17 @@ pub struct SongSitemapEntry {
 }
 
 impl<'e> SongDao {
+    /// Returns whether the song exists.
+    /// @since 261008
+    pub async fn set_hidden(executor: impl PgExecutor<'e>, id: i64, hidden: bool) -> sqlx::Result<bool> {
+        sqlx::query!("UPDATE songs SET is_hidden = $2 WHERE id = $1", id, hidden)
+            .execute(executor).await.map(|x| x.rows_affected() > 0)
+    }
+
     /// Public songs for the sitemap, oldest first so sitemap file boundaries stay stable.
     /// @since 261002
     pub async fn list_sitemap_entries(executor: impl PgExecutor<'e>) -> sqlx::Result<Vec<SongSitemapEntry>> {
-        sqlx::query_as!(SongSitemapEntry, "SELECT display_id, update_time FROM songs WHERE is_private = false ORDER BY id")
+        sqlx::query_as!(SongSitemapEntry, "SELECT display_id, update_time FROM songs WHERE is_private = false AND is_hidden = false ORDER BY id")
             .fetch_all(executor)
             .await
     }

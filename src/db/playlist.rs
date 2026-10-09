@@ -15,6 +15,7 @@ macro_rules! query_playlists {
                 user_id,
                 cover_url,
                 is_public,
+                is_hidden,
                 create_time,
                 update_time
             FROM playlists
@@ -31,6 +32,7 @@ macro_rules! query_playlists {
                 user_id,
                 cover_url,
                 is_public,
+                is_hidden,
                 create_time,
                 update_time
             FROM playlists
@@ -104,6 +106,11 @@ pub struct Playlist {
     pub user_id: i64,
     pub cover_url: Option<String>,
     pub is_public: bool,
+    /// Hidden by the platform: only the owner can see it, and only [PlaylistDao::set_hidden]
+    /// changes it.
+    /// @since 261008
+    #[serde(default)]
+    pub is_hidden: bool,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
 }
@@ -196,14 +203,16 @@ where
                user_id,
                cover_url,
                is_public,
+               is_hidden,
                create_time,
                update_time
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
             value.name,
             value.description,
             value.user_id,
             value.cover_url,
             value.is_public,
+            value.is_hidden,
             value.create_time,
             value.update_time
         ).fetch_one(executor).await
@@ -352,5 +361,14 @@ impl<'e> PlaylistDao {
         sqlx::query!("DELETE FROM playlists WHERE id = $1", id)
             .execute(&mut **tx).await?;
         Ok(())
+    }
+}
+
+impl PlaylistDao {
+    /// Returns whether the playlist exists.
+    /// @since 261008
+    pub async fn set_hidden<'e>(executor: impl PgExecutor<'e>, id: i64, hidden: bool) -> sqlx::Result<bool> {
+        sqlx::query!("UPDATE playlists SET is_hidden = $2 WHERE id = $1", id, hidden)
+            .execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 }

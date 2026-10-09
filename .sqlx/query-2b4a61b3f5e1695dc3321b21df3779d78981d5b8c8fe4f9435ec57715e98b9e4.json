@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT uid, channel, read_time, update_time FROM message_read_marks WHERE uid = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "uid",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "message_read_marks",
+            "name": "uid"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "channel",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "message_read_marks",
+            "name": "channel"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "read_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "message_read_marks",
+            "name": "read_time"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "message_read_marks",
+            "name": "update_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "2b4a61b3f5e1695dc3321b21df3779d78981d5b8c8fe4f9435ec57715e98b9e4"
+}

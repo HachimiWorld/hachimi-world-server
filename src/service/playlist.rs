@@ -2,7 +2,7 @@ use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::db::CrudDao;
 use crate::service::playlist::GetDetailError::{CreatorUserNotFound, NotFound, NotOwner};
 use crate::service::{song, user};
-use crate::web::routes::playlist::{DetailResp, PlaylistItem, SongItem};
+use crate::web::routes::playlist::{DetailResp, PlaylistItem, SongItem, UnavailableSongItem};
 use crate::web::state::AppState;
 use axum::extract::State;
 use chrono::{DateTime, Utc};
@@ -29,6 +29,11 @@ pub enum GetDetailError {
 pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: i64) -> Result<DetailResp, GetDetailError> {
     let playlist = PlaylistDao::get_by_id(&state.sql_pool, playlist_id).await?
         .ok_or_else(|| NotFound { playlist_id })?;
+
+    // A hidden playlist doesn't exist for anyone but its owner
+    if playlist.is_hidden && uid != Some(playlist.user_id) {
+        return Err(NotFound { playlist_id });
+    }
 
     // Check permission if it's private
     if !playlist.is_public {
@@ -72,6 +77,13 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
     // Sort by order_index
     result.sort_by_key(|x| x.order_index);
 
+    // Deleted or hidden songs stay in place as unavailable
+    let mut unavailable_songs: Vec<UnavailableSongItem> = playlist_songs_map.values()
+        .filter(|x| !result.iter().any(|s| s.song_id == x.song_id))
+        .map(|x| UnavailableSongItem { song_id: x.song_id, order_index: x.order_index, add_time: x.add_time })
+        .collect();
+    unavailable_songs.sort_by_key(|x| x.order_index);
+
     let resp = DetailResp {
         playlist_info: PlaylistItem {
             id: playlist.id,
@@ -80,11 +92,13 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
             description: playlist.description,
             create_time: playlist.create_time,
             is_public: playlist.is_public,
-            songs_count: result.len() as i64,
+            songs_count: (result.len() + unavailable_songs.len()) as i64,
             update_time: playlist.update_time,
+            is_hidden: playlist.is_hidden,
         },
         creator_profile: creator_user,
         songs: result,
+        unavailable_songs,
     };
     Ok(resp)
 }
@@ -115,6 +129,7 @@ pub async fn list_playlist_metadata(
     if filter_private {
         rows.retain(|x| x.is_public);
     }
+    rows.retain(|x| !x.is_hidden);
 
     let user_ids = rows.iter().map(|x| x.user_id).collect_vec();
     let counts = PlaylistDao::count_songs(sql_pool, &playlist_ids).await?;
@@ -139,4 +154,26 @@ pub async fn list_playlist_metadata(
         .map(|x| (x.id, x))
         .collect();
     Ok(result)
+}
+/// Hides or shows a playlist for everyone but its owner, in the caller's transaction. Returns the
+/// playlist if it exists. Call [refresh_after_visibility_change] after committing.
+/// @since 261008
+pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, playlist_id: i64, hidden: bool) -> anyhow::Result<Option<Playlist>> {
+    if !PlaylistDao::set_hidden(&mut **tx, playlist_id, hidden).await? {
+        return Ok(None);
+    }
+    Ok(PlaylistDao::get_by_id(&mut **tx, playlist_id).await?)
+}
+
+/// Updates the search index after [set_hidden] commits. Failures are logged.
+/// @since 261008
+pub async fn refresh_after_visibility_change(state: &AppState, playlist: &Playlist) {
+    let result = if playlist.is_hidden {
+        crate::search::playlist::delete_playlist_document(&state.meilisearch, &[playlist.id]).await.map_err(anyhow::Error::from)
+    } else {
+        crate::search::playlist::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[playlist.id]).await
+    };
+    if let Err(e) = result {
+        tracing::warn!(playlist_id = playlist.id, "Failed to update the playlist search index: {e:?}");
+    }
 }
