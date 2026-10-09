@@ -8,7 +8,7 @@ use hachimi_world_server::web::routes::committee::{MeResp, MemberReq, MembersRes
 use hachimi_world_server::web::routes::playlist::{AddSongReq, CreatePlaylistReq, CreatePlaylistResp, DetailReq as PlaylistDetailReq, DetailResp as PlaylistDetailResp, UpdatePlaylistReq};
 use hachimi_world_server::web::routes::publish::review::ApproveReviewReq;
 use hachimi_world_server::web::routes::publish::{ModifyReq, ModifyResp};
-use hachimi_world_server::web::routes::report::{CaseReq, CaseResp, OwnerNoticeReq, OwnerNoticeResp, QueueReq, QueueResp, ResolveReq, ResolveResp, SubmitReq, SubmitResp};
+use hachimi_world_server::web::routes::report::{CaseReq, CaseResp, HiddenReasonReq, HiddenReasonResp, QueueReq, QueueResp, ResolveReq, ResolveResp, SubmitReq, SubmitResp};
 use hachimi_world_server::web::routes::song::{DetailByIdReq, DetailResp as SongDetail, LikeReq, MyLikesReq, MyLikesResp};
 
 fn login(env: &mut TestEnvironment, user: &TestUser) {
@@ -309,7 +309,7 @@ async fn test_hide_and_restore_song() {
         assert_eq!(song_detail(&env, song.id).await.unwrap_err(), "not_found");
         login(&mut env, &owner);
         assert!(song_detail(&env, song.id).await.unwrap().is_hidden);
-        let notice: OwnerNoticeResp = env.api.get_query("/report/owner_notice", &OwnerNoticeReq { target_type: "song".into(), target_id: song.id })
+        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id })
             .await.parse_resp().await.unwrap();
         assert!(notice.hidden);
         assert_eq!(notice.reason.as_deref(), Some("封面不适合公开展示"));
@@ -323,7 +323,7 @@ async fn test_hide_and_restore_song() {
         let likes: MyLikesResp = env.api.get_query("/song/likes/page_my_likes", &MyLikesReq { page_index: 0, page_size: 20 }).await.parse_resp().await.unwrap();
         assert!(likes.data.is_empty());
         assert_eq!(likes.unavailable.iter().map(|x| x.song_id).collect::<Vec<_>>(), vec![song.id]);
-        let notice: OwnerNoticeResp = env.api.get_query("/report/owner_notice", &OwnerNoticeReq { target_type: "song".into(), target_id: song.id })
+        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id })
             .await.parse_resp().await.unwrap();
         assert!(!notice.hidden && notice.reason.is_none());
 

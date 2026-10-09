@@ -410,13 +410,13 @@ pub async fn resolve(
 }
 
 /// Why a target the user owns is hidden.
-pub struct OwnerNotice {
+pub struct HiddenReason {
     pub reason: Option<String>,
     pub hide_time: DateTime<Utc>,
 }
 
 /// For the owner of a hidden song or playlist: the decision that hid it.
-pub async fn owner_notice(pool: &PgPool, uid: i64, kind: UgcKind, target_id: i64) -> sqlx::Result<Option<OwnerNotice>> {
+pub async fn hidden_reason(pool: &PgPool, uid: i64, kind: UgcKind, target_id: i64) -> sqlx::Result<Option<HiddenReason>> {
     let Some(target) = kind.load(pool, target_id).await? else {
         return Ok(None);
     };
@@ -431,7 +431,7 @@ pub async fn owner_notice(pool: &PgPool, uid: i64, kind: UgcKind, target_id: i64
     Ok(ModerationActionDao::list_by_case(pool, case.id, ACTIONS_SHOWN).await?
         .into_iter()
         .find(|x| x.content_actions.iter().any(is_penalty))
-        .map(|x| OwnerNotice { reason: x.author_reason, hide_time: x.create_time }))
+        .map(|x| HiddenReason { reason: x.author_reason, hide_time: x.create_time }))
 }
 
 async fn load_target(pool: &PgPool, case: &ReportCase) -> sqlx::Result<Option<UgcTarget>> {

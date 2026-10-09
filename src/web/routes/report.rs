@@ -23,7 +23,7 @@ pub fn router() -> Router<AppState> {
         .route("/queue", get(queue))
         .route("/case", get(case))
         .route("/resolve", post(resolve))
-        .route("/owner_notice", get(owner_notice))
+        .route("/hidden_reason", get(hidden_reason))
 }
 
 /// @since 261008
@@ -307,14 +307,14 @@ async fn resolve(claims: Claims, state: State<AppState>, req: Json<ResolveReq>) 
 
 /// @since 261008
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OwnerNoticeReq {
+pub struct HiddenReasonReq {
     pub target_type: String,
     pub target_id: i64,
 }
 
 /// @since 261008
 #[derive(Debug, Serialize, Deserialize)]
-pub struct OwnerNoticeResp {
+pub struct HiddenReasonResp {
     /// Whether the user's song or playlist is hidden.
     pub hidden: bool,
     /// Why, if it is.
@@ -323,12 +323,12 @@ pub struct OwnerNoticeResp {
 }
 
 /// For the owner of a song or playlist: whether it's hidden, and why.
-async fn owner_notice(claims: Claims, state: State<AppState>, req: Query<OwnerNoticeReq>) -> WebResult<OwnerNoticeResp> {
+async fn hidden_reason(claims: Claims, state: State<AppState>, req: Query<HiddenReasonReq>) -> WebResult<HiddenReasonResp> {
     let Some(kind) = UgcKind::parse(&req.target_type) else {
         err!("invalid_target_type", "Unknown target type")
     };
-    let notice = report::owner_notice(&state.sql_pool, claims.uid(), kind, req.target_id).await?;
-    ok!(OwnerNoticeResp {
+    let notice = report::hidden_reason(&state.sql_pool, claims.uid(), kind, req.target_id).await?;
+    ok!(HiddenReasonResp {
         hidden: notice.is_some(),
         reason: notice.as_ref().and_then(|x| x.reason.clone()),
         hide_time: notice.map(|x| x.hide_time),
