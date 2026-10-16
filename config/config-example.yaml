@@ -43,15 +43,16 @@ sitemap:
 community:
   contributors:
     - "maintainer@example.com"
-# Optional. When present, usernames and bios are checked with TypeSafe's Jev when they change, and
-# blocked ones aren't saved. policy_dir holds the policy; config/content-check-example/ shows the
-# format. Without this section, content isn't checked; it's commented out so local runs don't need
-# a TypeSafe key.
-#content_check:
-#  policy_dir: config/content-check-example
-#  # Pin a version; the thresholds are tuned against it.
-#  model: jev-1.13.0
-#  typesafe:
-#    api_key: change-me
-#    base_url: https://api.typesafe.ai
-#    timeout_ms: 3000
+# Usernames and bios are checked with TypeSafe's Jev when they change, and blocked ones aren't
+# saved. Off unless enabled is true; when false, nothing else here is read, so local runs don't
+# need a TypeSafe key. Without this section, checks are off too. policy_dir holds the policy;
+# config/content-check-example/ shows the format.
+content_check:
+  enabled: false
+  policy_dir: config/content-check-example
+  # Pin a version; the thresholds are tuned against it.
+  model: jev-1.13.0
+  typesafe:
+    api_key: change-me
+    base_url: https://api.typesafe.ai
+    timeout_ms: 3000

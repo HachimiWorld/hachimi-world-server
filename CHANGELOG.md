@@ -34,7 +34,7 @@
   - `/committee/me` (GET): `can_view`, `can_resolve`
   - `/committee/members` (GET, committee and contributors), `/committee/appoint` and `/committee/revoke` (POST, contributors; body `uid`). Errors: `user_not_found`, `already_member`, `not_member`
 - Review results now also send the uploader a system notification, in the same transaction as the review: `publish.review_approved`, `publish.review_rejected`, `publish.modify_approved`, `publish.modify_rejected`. `content_intent` is `{ action: "creation.review.view", data: { review_id } }`
-- Content checks for usernames and bios, enabled by the new optional `content_check` config (`policy_dir`, `model`, `typesafe.api_key` / `base_url` / `timeout_ms`; see `config/content-check-example/`). A changed username or non-empty bio is judged by TypeSafe's Jev against the policy; a blocked one isn't saved. Unchanged fields aren't checked. When the check fails, the content passes. The server won't start with a policy whose files don't agree
+- Content checks for usernames and bios, enabled by the new optional `content_check` config (`enabled`, `policy_dir`, `model`, `typesafe.api_key` / `base_url` / `timeout_ms`; see `config/content-check-example/`). `enabled` is required in the section; when false, nothing else in it is read. A changed username or non-empty bio is judged by TypeSafe's Jev against the policy; a blocked one isn't saved. Unchanged fields aren't checked. When the check fails, the content passes. The server won't start with a policy whose files don't agree
   - `/user/update_profile` errors: `username_rejected`, `bio_rejected` (the reason isn't given)
   - Every check is recorded in `content_checks`, and each policy version once in `content_policies`
 

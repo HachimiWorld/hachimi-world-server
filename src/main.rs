@@ -3,7 +3,7 @@ extern crate hachimi_world_server as app;
 use app::config::Config;
 use app::service::{email_outbox, notification};
 use app::service::sitemap::{self, SitemapCfg};
-use app::service::content_check::{ContentCheckCfg, ContentChecker};
+use app::service::content_check::{self, ContentCheckCfg, ContentChecker};
 use app::file_hosting::{FileHost, S3FileHost};
 use app::util::bilibili::BilibiliClientImpl;
 use app::util::gracefully_shutdown;
@@ -91,9 +91,9 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Content checks run only on instances with `content_check` configured.
+/// Content checks run only on instances with `content_check.enabled` set to true.
 async fn get_content_checker(config: &Config, sql_pool: &sqlx::PgPool) -> anyhow::Result<Option<Arc<ContentChecker>>> {
-    if config.get("content_check")?.is_none() {
+    if !content_check::is_enabled(config)? {
         info!("Content checks are off");
         return Ok(None);
     }

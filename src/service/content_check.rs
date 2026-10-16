@@ -1,6 +1,7 @@
 //! Machine checks of user content before it is saved, judged by TypeSafe's Jev against a policy
 //! kept in deployment config. See `docs/specs/content-check`.
 
+use crate::config::Config;
 use crate::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicy, ContentPolicyDao};
 use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient};
 use anyhow::{bail, Context};
@@ -26,7 +27,7 @@ pub const SUBJECT_BIO: &str = "user.bio";
 /// Every subject the server checks. A policy must cover exactly these.
 const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO];
 
-/// `content_check` in the config. Without it, content checks are off.
+/// `content_check` in the config, read only when `content_check.enabled` is true; see [is_enabled].
 /// @since 261016
 #[derive(Debug, Clone, Deserialize)]
 pub struct ContentCheckCfg {
@@ -35,6 +36,17 @@ pub struct ContentCheckCfg {
     /// The model for text, pinned to a version such as `jev-1.13.0`.
     pub model: String,
     pub typesafe: TypeSafeCfg,
+}
+
+/// Whether content checks are on. Without a `content_check` section they are off. With one,
+/// `enabled` must be given, so nobody believes checks are on when they aren't; when it's false,
+/// nothing else in the section is read, so the rest can stay in place for turning them back on.
+/// @since 261017
+pub fn is_enabled(config: &Config) -> anyhow::Result<bool> {
+    if config.get("content_check")?.is_none() {
+        return Ok(false);
+    }
+    config.get_and_parse::<bool>("content_check.enabled")
 }
 
 /// @since 261016
@@ -321,6 +333,15 @@ mod tests {
         assert!(error_of("subjects:\n  user.bio:\n    block_at: {}\n", &[("user.bio", QUESTIONS)]).contains("never block"));
         assert!(error_of("subjects:\n  user.bio:\n    block_at: { politics: 0.7 }\n    reasons: {}\n", &[("user.bio", QUESTIONS)]).contains("Invalid decision.yaml"));
         assert!(error_of(DECISION, &[("user.bio", "[]")]).contains("is not a JSON object"));
+    }
+
+    #[test]
+    fn is_enabled_only_when_said_so() {
+        let enabled = |yaml: &str| is_enabled(&Config::parse_by_str(yaml).unwrap());
+        assert!(!enabled("server: {}").unwrap());
+        assert!(!enabled("content_check:\n  enabled: false\n").unwrap());
+        assert!(enabled("content_check:\n  enabled: true\n  model: jev-1.13.0\n").unwrap());
+        assert!(enabled("content_check:\n  model: jev-1.13.0\n").is_err());
     }
 
     #[test]
