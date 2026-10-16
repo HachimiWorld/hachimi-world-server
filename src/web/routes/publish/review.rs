@@ -172,13 +172,13 @@ async fn compose_publish_song_publish_review_data(
         });
 
     let mut id_display_map = HashMap::new();
-    for x in &data.song_origin_infos {
-        match SongDao::get_by_id(sql_pool, x.song_id).await? {
+    for origin_song_id in data.song_origin_infos.iter().filter_map(|x| x.origin_song_id) {
+        match SongDao::get_by_id(sql_pool, origin_song_id).await? {
             Some(y) => {
-                id_display_map.insert(x.id, y.display_id);
+                id_display_map.insert(origin_song_id, y.display_id);
             }
             None => {
-                id_display_map.insert(x.id, "deleted".to_string());
+                id_display_map.insert(origin_song_id, "deleted".to_string());
             }
         }
     }

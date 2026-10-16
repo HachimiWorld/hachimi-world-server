@@ -479,14 +479,14 @@ async fn assemble_from_db(
     let origin_infos = SongDao::list_origin_info_by_song_id(sql_pool, song.id).await?;
     let mut id_display_map = HashMap::new();
 
-    for x in &origin_infos {
-        match SongDao::get_by_id(sql_pool, x.song_id).await? {
+    for origin_song_id in origin_infos.iter().filter_map(|x| x.origin_song_id) {
+        match SongDao::get_by_id(sql_pool, origin_song_id).await? {
             Some(y) => {
-                id_display_map.insert(x.id, y.display_id);
+                id_display_map.insert(origin_song_id, y.display_id);
             }
             None => {
                 // TODO: Consider to use other way to indicate the song was deleted
-                id_display_map.insert(x.id, "deleted".to_string());
+                id_display_map.insert(origin_song_id, "deleted".to_string());
             }
         }
     }
