@@ -1,11 +1,12 @@
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
-use crate::common::publish::{publish_template, read_test_mp3};
+use crate::common::publish::{create_approved_song, publish_template, read_test_mp3};
 use crate::common::res_utils::generate_test_image;
 use crate::common::{assert_is_err, ApiResult, CommonParse};
 use crate::common::{assert_is_ok, with_test_environment, ApiClient};
 use hachimi_world_server::service::song::{CreationTypeInfo, ExternalLink};
+use hachimi_world_server::web::routes::publish::jmid::JmidGetNextResp;
 use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
 use hachimi_world_server::web::routes::publish::{review, CreationInfo, ModifyReq, ModifyResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::notification::{ListReq as NotificationListReq, ListResp as NotificationListResp, NotificationItem};
@@ -706,6 +707,73 @@ async fn test_review_results_notify_uploader() {
         // The contributor gets none of these
         env.api.set_token(contributor_token);
         assert!(notifications(&env.api).await.is_empty());
+    }).await
+}
+
+#[tokio::test]
+async fn test_origin_infos_return_origin_song_display_id() {
+    with_test_environment(|mut env| async move {
+        let uploader = with_new_random_test_user(&mut env).await;
+        let contributor = with_test_contributor_user(&mut env).await;
+        let uploader_token = uploader.token.access_token.clone();
+        let contributor_token = contributor.token.access_token.clone();
+        let origin = create_approved_song(&mut env, &uploader_token, &contributor_token, "Origin").await;
+        time::sleep(Duration::from_millis(100)).await;
+
+        // A derivative work pointing at the existing song, plus one external origin
+        let mut req = publish_template(&env).await;
+        let next_jmid = env.api.get("/publish/jmid/get_next").await.parse_resp::<JmidGetNextResp>().await.unwrap();
+        req.jmid = Some(format!("JM-{}", next_jmid.jmid));
+        req.creation_info = CreationInfo {
+            creation_type: 2,
+            origin_info: Some(CreationTypeInfo {
+                song_display_id: None,
+                title: Some("原作".into()),
+                artist: Some("群星".into()),
+                url: None,
+                origin_type: 0,
+            }),
+            derivative_info: Some(CreationTypeInfo {
+                song_display_id: Some(origin.jmid.clone()),
+                title: Some("二创".into()),
+                artist: None,
+                url: None,
+                origin_type: 1,
+            }),
+        };
+        let published: PublishResp = env.api.post("/publish/publish", &req).await.parse_resp().await.unwrap();
+
+        let display_id_by_title = |infos: &[CreationTypeInfo]| {
+            infos.iter().map(|x| (x.title.clone().unwrap(), x.song_display_id.clone())).sorted().collect_vec()
+        };
+        let expected = vec![
+            ("二创".to_string(), Some(origin.jmid.clone())),
+            ("原作".to_string(), None),
+        ];
+
+        let detail: review::DetailResp = env.api.get_query(
+            "/publish/review/detail",
+            &review::DetailReq { review_id: published.review_id },
+        ).await.parse_resp().await.unwrap();
+        assert_eq!(display_id_by_title(&detail.origin_infos), expected);
+
+        let history: ReviewHistoryListResp = env.api.get_query(
+            "/publish/review/history/list",
+            &ReviewHistoryListReq { review_id: published.review_id, page_index: 0, page_size: 20 },
+        ).await.parse_resp().await.unwrap();
+        let snapshot = history.data[0].snapshot.as_ref().unwrap();
+        assert_eq!(display_id_by_title(&snapshot.origin_infos), expected);
+
+        // The public detail once approved
+        env.api.set_token(contributor_token);
+        assert_is_ok(env.api.post("/publish/review/approve", &ApproveReviewReq {
+            review_id: published.review_id,
+            comment: None,
+        }).await).await;
+        env.api.clear_token();
+        let song = env.api.get_query("/song/detail", &DetailReq { id: published.song_display_id })
+            .await.parse_resp::<DetailResp>().await.unwrap();
+        assert_eq!(display_id_by_title(&song.origin_infos), expected);
     }).await
 }
 
