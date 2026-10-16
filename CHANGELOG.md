@@ -40,6 +40,7 @@
 
 ### Changes
 
+- `/user/profile` shows a changed username, bio or avatar right away; before, the cached profile could stay up to 50 minutes old. When updating the search index fails after `/user/update_profile` or `/user/set_avatar` saved, the request no longer errors; the failure is logged
 - Songs and playlists can be hidden by a report decision (`is_hidden`). A hidden one is only visible to its owner: `/song/detail` and `/song/detail_by_id` return `not_found` to others (send the token to get your own), and it is left out of search, lists, recommendations and the sitemap. Approving a modification of a hidden song shows it again
   - `/playlist/detail`: new `unavailable_songs` (`song_id`, `order_index`, `add_time`) for songs that were deleted or hidden; `playlist_info.is_hidden`; `songs_count` now counts them too
   - `/song/likes/page_my_likes`: new `unavailable` (`song_id`, `liked_time`) for liked songs that were deleted or hidden

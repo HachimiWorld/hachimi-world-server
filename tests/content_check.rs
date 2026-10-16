@@ -3,9 +3,8 @@ mod common;
 use crate::common::typesafe::TEST_MODEL;
 use crate::common::{auth, with_test_environment, with_test_environment_with, ApiClient, CommonParse, TestOptions};
 use hachimi_world_server::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicyDao};
-use hachimi_world_server::db::user::{User, UserDao};
-use hachimi_world_server::db::CrudDao;
-use hachimi_world_server::web::routes::user::UpdateProfileReq;
+use hachimi_world_server::service::user::PublicUserProfile;
+use hachimi_world_server::web::routes::user::{GetProfileReq, UpdateProfileReq};
 use sqlx::PgPool;
 
 const CHECKS_ON: TestOptions = TestOptions { content_check: true };
@@ -18,9 +17,8 @@ async fn update(api: &ApiClient, username: &str, bio: Option<&str>) -> Result<()
     }).await.parse_resp::<()>().await.map_err(|e| e.code)
 }
 
-/// Read from the database: `/user/profile` is cached and `update_profile` doesn't clear it.
-async fn profile(pool: &PgPool, uid: i64) -> User {
-    UserDao::get_by_id(pool, uid).await.unwrap().unwrap()
+async fn profile(api: &ApiClient, uid: i64) -> PublicUserProfile {
+    api.get_query("/user/profile", &GetProfileReq { uid }).await.parse_resp().await.unwrap()
 }
 
 /// Oldest first.
@@ -37,7 +35,7 @@ async fn ordinary_changes_pass_and_are_recorded() {
 
         update(&env.api, "哈基米", Some("喜欢听歌")).await.unwrap();
 
-        let profile = profile(&env.pool, user.uid).await;
+        let profile = profile(&env.api, user.uid).await;
         assert_eq!(profile.username, "哈基米");
         assert_eq!(profile.bio.as_deref(), Some("喜欢听歌"));
 
@@ -67,12 +65,12 @@ async fn ordinary_changes_pass_and_are_recorded() {
 async fn a_blocked_username_is_not_saved() {
     with_test_environment_with(CHECKS_ON, |mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;
-        let before = profile(&env.pool, user.uid).await;
+        let before = profile(&env.api, user.uid).await;
 
         assert_eq!(update(&env.api, "坏名#sexual", Some("喜欢听歌")).await, Err("username_rejected".to_string()));
 
         // Nothing is saved, not even the bio that passed
-        let after = profile(&env.pool, user.uid).await;
+        let after = profile(&env.api, user.uid).await;
         assert_eq!(after.username, before.username);
         assert_eq!(after.bio, before.bio);
 
@@ -89,11 +87,11 @@ async fn a_blocked_username_is_not_saved() {
 async fn a_blocked_bio_is_not_saved() {
     with_test_environment_with(CHECKS_ON, |mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;
-        let before = profile(&env.pool, user.uid).await;
+        let before = profile(&env.api, user.uid).await;
 
         assert_eq!(update(&env.api, "哈基米", Some("加群领福利 #spam")).await, Err("bio_rejected".to_string()));
 
-        let after = profile(&env.pool, user.uid).await;
+        let after = profile(&env.api, user.uid).await;
         assert_eq!(after.username, before.username);
         assert_eq!(after.bio, before.bio);
 
@@ -109,11 +107,11 @@ async fn content_passes_when_the_check_fails() {
 
         // The call fails
         update(&env.api, "名字#down", None).await.unwrap();
-        assert_eq!(profile(&env.pool, user.uid).await.username, "名字#down");
+        assert_eq!(profile(&env.api, user.uid).await.username, "名字#down");
 
         // The answers don't match the policy
         update(&env.api, "名字#odd", None).await.unwrap();
-        assert_eq!(profile(&env.pool, user.uid).await.username, "名字#odd");
+        assert_eq!(profile(&env.api, user.uid).await.username, "名字#odd");
 
         let checks = checks(&env.pool, user.uid).await;
         assert_eq!(checks.len(), 2);
@@ -159,7 +157,7 @@ async fn nothing_is_checked_without_content_check() {
 
         update(&env.api, "坏名#sexual", Some("加群领福利 #spam")).await.unwrap();
 
-        assert_eq!(profile(&env.pool, user.uid).await.username, "坏名#sexual");
+        assert_eq!(profile(&env.api, user.uid).await.username, "坏名#sexual");
         assert!(checks(&env.pool, user.uid).await.is_empty());
     }).await
 }

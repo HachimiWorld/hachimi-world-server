@@ -1,6 +1,5 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
-use crate::search::user::UserDocument;
 use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
 use crate::service::content_check::{self, ContentChecker, Verdict};
 use crate::service::errors::ServiceError;
@@ -126,13 +125,7 @@ async fn update_profile(
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
     UserDao::update_by_id(&state.sql_pool, &user).await?;
-
-    search::user::update_user_document(&state.meilisearch, UserDocument {
-        id: user.id,
-        avatar_url: user.avatar_url,
-        name: user.username,
-        follower_count: user.follower_count.unwrap_or(0),
-    }).await?;
+    service::user::refresh_after_profile_change(&state, &user).await;
 
     ok!(())
 }
@@ -208,13 +201,7 @@ async fn set_avatar(
     // Save url
     user.avatar_url = Some(result.public_url);
     UserDao::update_by_id(&state.sql_pool, &mut user).await?;
-
-    search::user::update_user_document(&state.meilisearch, UserDocument {
-        id: user.id,
-        avatar_url: user.avatar_url,
-        name: user.username,
-        follower_count: user.follower_count.unwrap_or(0),
-    }).await?;
+    service::user::refresh_after_profile_change(&state, &user).await;
 
     ok!(())
 }
