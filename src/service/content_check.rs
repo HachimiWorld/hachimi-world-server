@@ -17,6 +17,15 @@ use tracing::warn;
 const DECISION_FILE: &str = "decision.yaml";
 const QUESTIONS_DIR: &str = "questions";
 
+/// A username, checked when it changes.
+/// @since 261016
+pub const SUBJECT_USERNAME: &str = "user.username";
+/// A profile bio, checked when it changes.
+/// @since 261016
+pub const SUBJECT_BIO: &str = "user.bio";
+/// Every subject the server checks. A policy must cover exactly these.
+const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO];
+
 /// `content_check` in the config. Without it, content checks are off.
 /// @since 261016
 #[derive(Debug, Clone, Deserialize)]
@@ -127,6 +136,22 @@ impl Policy {
 
         Ok(Policy { version: version_of(&files), files, subjects })
     }
+
+    /// Checks that the policy covers exactly `expected`: a missing subject would fail every check
+    /// of it, and an extra one is most likely a typo.
+    fn check_subjects(&self, expected: &[&str]) -> anyhow::Result<()> {
+        for subject in expected {
+            if !self.subjects.contains_key(*subject) {
+                bail!("The policy has no subject {subject}");
+            }
+        }
+        for subject in self.subjects.keys() {
+            if !expected.contains(&subject.as_str()) {
+                bail!("The policy has subject {subject}, which the server doesn't check");
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Hashes each path and content in order, with separators so that moving bytes between a path and
@@ -171,6 +196,7 @@ impl ContentChecker {
     /// Loads the policy and stores a snapshot of it if this version is new.
     pub async fn new(cfg: &ContentCheckCfg, client: Arc<dyn TypeSafeClient>, pool: &PgPool) -> anyhow::Result<Self> {
         let policy = Policy::load(&cfg.policy_dir)?;
+        policy.check_subjects(SUBJECTS)?;
         store_snapshot(pool, &policy).await?;
         Ok(Self { policy, model: cfg.model.clone(), client })
     }
@@ -295,6 +321,14 @@ mod tests {
         assert!(error_of("subjects:\n  user.bio:\n    block_at: {}\n", &[("user.bio", QUESTIONS)]).contains("never block"));
         assert!(error_of("subjects:\n  user.bio:\n    block_at: { politics: 0.7 }\n    reasons: {}\n", &[("user.bio", QUESTIONS)]).contains("Invalid decision.yaml"));
         assert!(error_of(DECISION, &[("user.bio", "[]")]).contains("is not a JSON object"));
+    }
+
+    #[test]
+    fn requires_exactly_the_subjects_the_server_checks() {
+        let policy = Policy::from_files(files(DECISION, &[("user.bio", QUESTIONS)])).unwrap();
+        assert!(policy.check_subjects(&["user.bio"]).is_ok());
+        assert!(policy.check_subjects(&["user.bio", "user.username"]).unwrap_err().to_string().contains("no subject user.username"));
+        assert!(policy.check_subjects(&[]).unwrap_err().to_string().contains("doesn't check"));
     }
 
     #[test]

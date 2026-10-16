@@ -76,6 +76,7 @@ where
         config: Arc::new(get_test_config()),
         red_lock: RedLock::new(redis_conn).unwrap(),
         bili_client: Arc::new(bilibili::get_mock_bili_client()),
+        content_checker: None,
     };
 
     let random_listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts
