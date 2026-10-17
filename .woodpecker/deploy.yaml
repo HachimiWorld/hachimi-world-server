@@ -41,15 +41,29 @@ steps:
       script_stop: true
       script:
         - ./deploy_hachimi_world_server.sh ${CI_COMMIT_SHA}
-  - name: notify
+  # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
+  # success even after a failed step. Woodpecker's own `when.status` picks the right one.
+  - name: notify-success
     image: appleboy/drone-discord:1.5.1
     settings:
       webhook_url:
         from_secret: discord_webhook_url
       message: |
-        {{#success build.status}}Succeeded{{else}}Failed{{/success}}: {{repo.name}} · deploy · {{commit.branch}} @ {{truncate commit.sha 7}}
+        ✅ Succeeded: {{repo.name}} · deploy · {{commit.branch}} @ {{truncate commit.sha 7}}
         {{build.link}}
     # A Discord outage should not mark the pipeline as failed
     failure: ignore
     when:
-      - status: [success, failure]
+      - status: [success]
+  - name: notify-failure
+    image: appleboy/drone-discord:1.5.1
+    settings:
+      webhook_url:
+        from_secret: discord_webhook_url
+      message: |
+        ❌ Failed: {{repo.name}} · deploy · {{commit.branch}} @ {{truncate commit.sha 7}}
+        {{build.link}}
+    # A Discord outage should not mark the pipeline as failed
+    failure: ignore
+    when:
+      - status: [failure]
