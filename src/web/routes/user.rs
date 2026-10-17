@@ -81,14 +81,8 @@ async fn update_profile(
     req: Json<UpdateProfileReq>,
 ) -> WebResult<()> {
     // Validate input
-    if req.username.is_empty() {
-        err!("invalid_username", "Username cannot be empty");
-    }
-    if req.username.chars().count() > 10 {
-        err!(
-            "invalid_username",
-            "Username must be less than 10 characters"
-        );
+    if let Some(problem) = service::user::username_problem(&req.username) {
+        err!("invalid_username", "{problem}");
     }
 
     if let Some(user) = UserDao::get_by_username(&state.sql_pool, &req.username).await? {

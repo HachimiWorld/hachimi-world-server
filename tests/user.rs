@@ -72,6 +72,27 @@ async fn test_profile_reflects_changes_right_away() {
 }
 
 #[tokio::test]
+async fn test_username_width() {
+    with_test_environment(|mut env| async move {
+        auth::with_new_random_test_user(&mut env).await;
+        let update = |username: &str| {
+            let req = UpdateProfileReq { username: username.to_string(), bio: None, gender: None };
+            let api = &env.api;
+            async move { api.post("/user/update_profile", &req).await.parse_resp::<()>().await.map_err(|e| e.code) }
+        };
+
+        // A CJK character counts as 2, others as 1, up to 20
+        update("一二三四五六七八九十").await.unwrap();
+        update("abcdefghijklmnopqrst").await.unwrap();
+        update("小风xiaofeng").await.unwrap();
+        assert_eq!(update("一二三四五六七八九十一").await, Err("invalid_username".to_string()));
+        assert_eq!(update("abcdefghijklmnopqrstu").await, Err("invalid_username".to_string()));
+        assert_eq!(update("名字\n第二行").await, Err("invalid_username".to_string()));
+        assert_eq!(update("").await, Err("invalid_username".to_string()));
+    }).await
+}
+
+#[tokio::test]
 async fn test_set_avatar() {
     with_test_environment(|mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;

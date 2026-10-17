@@ -58,6 +58,7 @@ mockall = "0.14.0"
 async-trait = "0.1.89"
 tokio-cron-scheduler = "0.15.1"
 enum_dispatch = "0.3.13"
+unicode-width = "0.2.2"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.7"
