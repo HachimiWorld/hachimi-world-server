@@ -37,6 +37,7 @@
 - Content checks for usernames and bios, configured by the new **required** `content_check` config (`enabled`, `policy_dir`, `model`, `typesafe.api_key` / `base_url` / `timeout_ms`; see `config/content-check-example/`). Add it before deploying, with `enabled: false` to keep checks off; when false, nothing else in it is read. When enabled, startup tries the key, the model and the policy against TypeSafe: a rejection (such as a bad key or an unknown model) stops the server, while a timeout or an outage only logs a warning. A changed username or non-empty bio is judged by TypeSafe's Jev against the policy; a blocked one isn't saved. Unchanged fields aren't checked. When the check fails, the content passes. The server won't start with a policy whose files don't agree
   - `/user/update_profile` errors: `username_rejected`, `bio_rejected` (the reason isn't given)
   - Every check is recorded in `content_checks`, and each policy version once in `content_policies`
+  - Prometheus metrics: `content_check_total{subject, outcome}` (`pass`, `block`, `error`; an error passes the content), `content_check_blocked_total{subject, question}`, `content_check_duration_seconds{subject, outcome}` (a histogram with buckets from 0.05 to 5 seconds), `content_check_input_tokens_total{subject}`, and `content_check_policy_info{version, model}` set to 1 while checks are on
 
 ### Changes
 
