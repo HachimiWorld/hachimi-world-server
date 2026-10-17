@@ -201,8 +201,8 @@ pub async fn reset_profile(
     Ok(Some(user))
 }
 
-/// Updates the search index and the cached profile after [reset_profile] commits. Failures are
-/// logged.
+/// Updates the search index and clears the cached profile after a change to the user is saved, such
+/// as an edit by the user or [reset_profile]. Failures are logged.
 /// @since 261008
 pub async fn refresh_after_profile_change(state: &crate::web::state::AppState, user: &crate::db::user::User) {
     if let Err(e) = crate::search::user::update_user_document(&state.meilisearch, crate::search::user::UserDocument {

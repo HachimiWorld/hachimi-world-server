@@ -3,10 +3,12 @@ extern crate hachimi_world_server as app;
 use app::config::Config;
 use app::service::{email_outbox, notification};
 use app::service::sitemap::{self, SitemapCfg};
+use app::service::content_check::{self, ContentCheckCfg, ContentChecker};
 use app::file_hosting::{FileHost, S3FileHost};
 use app::util::bilibili::BilibiliClientImpl;
 use app::util::gracefully_shutdown;
 use app::util::redlock::RedLock;
+use app::util::typesafe::TypeSafeClientImpl;
 use app::web::state::AppState;
 use app::web::ServerCfg;
 use app::{search, web};
@@ -40,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::parse(config_path)?;
     let server_cfg = config.get_and_parse::<ServerCfg>("server")?;
     let sql_pool = get_database_pool(config.clone()).await?;
+    let content_checker = get_content_checker(&config, &sql_pool).await?;
     let all = async {
         tokio::join!(
             get_redis_pool(config.clone()),
@@ -58,7 +61,8 @@ async fn main() -> anyhow::Result<()> {
                 file_host: Arc::new(file_host?),
                 meilisearch: Arc::new(meilisearch_client?),
                 red_lock: RedLock::new(redis_conn)?,
-                bili_client: Arc::new(BilibiliClientImpl::new())
+                bili_client: Arc::new(BilibiliClientImpl::new()),
+                content_checker,
             }
         }
         _ = cancel_token.cancelled() => {
@@ -85,6 +89,19 @@ async fn main() -> anyhow::Result<()> {
     cancel_handle.await?;
     info!("Shutdown successfully");
     Ok(())
+}
+
+/// `content_check` is required; checks run only when `content_check.enabled` is true.
+async fn get_content_checker(config: &Config, sql_pool: &sqlx::PgPool) -> anyhow::Result<Option<Arc<ContentChecker>>> {
+    if !content_check::is_enabled(config)? {
+        info!("Content checks are off");
+        return Ok(None);
+    }
+    let cfg = config.get_and_parse::<ContentCheckCfg>("content_check")?;
+    let client = Arc::new(TypeSafeClientImpl::new(&cfg.typesafe)?);
+    let checker = ContentChecker::new(&cfg, client, sql_pool).await?;
+    info!("Content checks are on with policy {}", checker.policy_version());
+    Ok(Some(Arc::new(checker)))
 }
 
 #[derive(Deserialize, Clone, Debug)]
