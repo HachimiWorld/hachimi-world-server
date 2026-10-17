@@ -17,6 +17,7 @@ use hachimi_world_server::search::setup_meilisearch_indexes;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::result::CommonError;
 use hachimi_world_server::web::state::AppState;
+use hachimi_world_server::web::governor::RateLimitCfg;
 use hachimi_world_server::web::{start_main_server, ServerCfg};
 use redis::aio::ConnectionManager;
 use reqwest::{RequestBuilder, Response};
@@ -69,6 +70,7 @@ where
         jwt_secret: "12345678".to_string(),
         allow_origins: vec!["http://localhost".to_string()],
         publish_version_token: "12345678".to_string(),
+        rate_limit: RateLimitCfg { per_second: 64, burst_size: 128 },
     };
 
     // Boot external dependencies in parallel to reduce test startup time.
@@ -110,7 +112,7 @@ where
         server_cfg.allow_origins,
         hachimi_world_server::web::jwt::Keys::new(server_cfg.jwt_secret.as_bytes()),
         server_cfg.publish_version_token,
-        128,
+        server_cfg.rate_limit,
         tokio_util::sync::CancellationToken::new(),
     );
     let _handle = tokio::spawn(server);

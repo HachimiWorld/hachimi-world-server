@@ -6,6 +6,10 @@ server:
     - "http://localhost"
     # - "https://*.hachimi-world-client.pages.dev"  # single-level subdomain wildcard
   publish_version_token: 12345678
+  # Global limit on /api, per user when signed in, per IP otherwise. Defaults shown.
+  rate_limit:
+    per_second: 10
+    burst_size: 60
 db:
   address: postgresql:5432
   username: user
