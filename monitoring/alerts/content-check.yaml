@@ -1,0 +1,126 @@
+# Grafana alert rules for content checks, in Grafana's alerting provisioning format.
+# See monitoring/README.md for how to load them and what they assume.
+#
+# Profile edits are few, so every rule also needs a minimum number of checks: otherwise two failures
+# in a quiet hour would be 100%. With no checks at all there is no data, which counts as OK.
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: content-check
+    folder: Hachimi World
+    interval: 1m
+    rules:
+      - uid: content-check-errors
+        title: Content checks are failing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Share of checks in 10 minutes that failed and let the content through, when there
+              # were more than 10.
+              expr: >-
+                (sum(increase(content_check_total{outcome="error"}[10m])) / sum(increase(content_check_total[10m])))
+                and sum(increase(content_check_total[10m])) > 10
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 0.2 ] }
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          service: hachimi-world-server
+          severity: warning
+        annotations:
+          summary: More than 20% of content checks are failing
+          description: >-
+            TypeSafe is failing or its answers don't match the policy, so usernames and bios are saved
+            unchecked. Look for "Content check failed" in the server logs and at the error column of
+            content_checks.
+
+      - uid: content-check-block-rate
+        title: Content checks are blocking a lot
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Share of checks in an hour that were blocked, when there were more than 20.
+              expr: >-
+                (sum(increase(content_check_total{outcome="block"}[1h])) / sum(increase(content_check_total[1h])))
+                and sum(increase(content_check_total[1h])) > 20
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 0.1 ] }
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          service: hachimi-world-server
+          severity: warning
+        annotations:
+          summary: More than 10% of content checks in the last hour were blocked
+          description: >-
+            Either the policy or the model now blocks too much, often right after a policy change
+            (see content_check_policy_info), or someone is posting a lot of bad content. Read the
+            latest blocked rows in content_checks. To stop blocking at once, set
+            content_check.enabled to false and redeploy.
+
+      - uid: content-check-slow
+        title: Content checks are slow
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # p95 time per check over 10 minutes, when there were more than 10.
+              expr: >-
+                histogram_quantile(0.95, sum by (le) (increase(content_check_duration_seconds_bucket[10m])))
+                and sum(increase(content_check_total[10m])) > 10
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 3 ] }
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          service: hachimi-world-server
+          severity: warning
+        annotations:
+          summary: The p95 of content checks is above 3 seconds
+          description: >-
+            Users wait for the check when they save their profile. Slow checks near
+            typesafe.timeout_ms usually end as timeouts, which let the content through.
