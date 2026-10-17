@@ -36,6 +36,42 @@ async fn test_get_and_update_profile() {
 }
 
 #[tokio::test]
+async fn test_profile_reflects_changes_right_away() {
+    with_test_environment(|mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+        let get_profile = || async {
+            env.api.get_query("/user/profile", &GetProfileReq { uid: user.uid }).await
+                .parse_resp::<PublicUserProfile>().await.unwrap()
+        };
+
+        // Caches the profile
+        let before = get_profile().await;
+        assert_eq!(before.bio, None);
+        assert_eq!(before.avatar_url, None);
+
+        let resp = env.api.post("/user/update_profile", &UpdateProfileReq {
+            username: "改过的名字".to_string(),
+            bio: Some("改过的简介".to_string()),
+            gender: None,
+        }).await;
+        assert_is_ok(resp).await;
+        let after_update = get_profile().await;
+        assert_eq!(after_update.username, "改过的名字");
+        assert_eq!(after_update.bio.as_deref(), Some("改过的简介"));
+
+        let png = generate_test_image(64, 64, ImageFormat::Png);
+        let resp = env.api
+            .post_raw("/user/set_avatar")
+            .multipart(Form::new().part("file", Part::bytes(png).file_name("avatar.png")))
+            .send()
+            .await
+            .unwrap();
+        assert_is_ok(resp).await;
+        assert!(get_profile().await.avatar_url.is_some());
+    }).await
+}
+
+#[tokio::test]
 async fn test_set_avatar() {
     with_test_environment(|mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;

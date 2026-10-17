@@ -1,10 +1,11 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
-use crate::search::user::UserDocument;
 use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
+use crate::service::content_check::{self, ContentChecker, Verdict};
 use crate::service::errors::ServiceError;
 use crate::service::follow::FollowError;
 use crate::service::upload::ResizeType;
+use crate::util::IsBlank;
 use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -115,20 +116,51 @@ async fn update_profile(
     } else {
         err!("not_found", "User not found")
     };
+
+    if let Some(checker) = &state.content_checker {
+        check_profile_content(checker, &state.sql_pool, &user, &req).await?;
+    }
     user.username = req.username.clone();
     user.gender = req.gender;
     user.bio = req.bio.clone();
     user.update_time = Utc::now();
     UserDao::update_by_id(&state.sql_pool, &user).await?;
-
-    search::user::update_user_document(&state.meilisearch, UserDocument {
-        id: user.id,
-        avatar_url: user.avatar_url,
-        name: user.username,
-        follower_count: user.follower_count.unwrap_or(0),
-    }).await?;
+    service::user::refresh_after_profile_change(&state, &user).await;
 
     ok!(())
+}
+
+/// Checks the username and bio if they changed. Unchanged fields aren't checked, so existing
+/// profiles are never blocked; an empty bio has nothing to check. Users aren't told why.
+async fn check_profile_content(
+    checker: &ContentChecker,
+    pool: &sqlx::PgPool,
+    user: &crate::db::user::User,
+    req: &UpdateProfileReq,
+) -> Result<(), WebError<CommonError>> {
+    let uid = user.id;
+    let username = async {
+        if req.username == user.username {
+            return Ok(Verdict::Pass);
+        }
+        checker.check_text(pool, content_check::SUBJECT_USERNAME, uid, uid, &req.username).await
+    };
+    let bio = async {
+        match &req.bio {
+            Some(bio) if !bio.is_blank() && req.bio != user.bio => {
+                checker.check_text(pool, content_check::SUBJECT_BIO, uid, uid, bio).await
+            }
+            _ => Ok(Verdict::Pass),
+        }
+    };
+    let (username, bio) = tokio::join!(username, bio);
+    if username? != Verdict::Pass {
+        err!("username_rejected", "Username contains inappropriate content");
+    }
+    if bio? != Verdict::Pass {
+        err!("bio_rejected", "Bio contains inappropriate content");
+    }
+    Ok(())
 }
 
 #[framed]
@@ -169,13 +201,7 @@ async fn set_avatar(
     // Save url
     user.avatar_url = Some(result.public_url);
     UserDao::update_by_id(&state.sql_pool, &mut user).await?;
-
-    search::user::update_user_document(&state.meilisearch, UserDocument {
-        id: user.id,
-        avatar_url: user.avatar_url,
-        name: user.username,
-        follower_count: user.follower_count.unwrap_or(0),
-    }).await?;
+    service::user::refresh_after_profile_change(&state, &user).await;
 
     ok!(())
 }

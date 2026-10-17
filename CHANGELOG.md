@@ -34,9 +34,13 @@
   - `/committee/me` (GET): `can_view`, `can_resolve`
   - `/committee/members` (GET, committee and contributors), `/committee/appoint` and `/committee/revoke` (POST, contributors; body `uid`). Errors: `user_not_found`, `already_member`, `not_member`
 - Review results now also send the uploader a system notification, in the same transaction as the review: `publish.review_approved`, `publish.review_rejected`, `publish.modify_approved`, `publish.modify_rejected`. `content_intent` is `{ action: "creation.review.view", data: { review_id } }`
+- Content checks for usernames and bios, configured by the new **required** `content_check` config (`enabled`, `policy_dir`, `model`, `typesafe.api_key` / `base_url` / `timeout_ms`; see `config/content-check-example/`). Add it before deploying, with `enabled: false` to keep checks off; when false, nothing else in it is read. When enabled, startup tries the key, the model and the policy against TypeSafe: a rejection (such as a bad key or an unknown model) stops the server, while a timeout or an outage only logs a warning. A changed username or non-empty bio is judged by TypeSafe's Jev against the policy; a blocked one isn't saved. Unchanged fields aren't checked. When the check fails, the content passes. The server won't start with a policy whose files don't agree
+  - `/user/update_profile` errors: `username_rejected`, `bio_rejected` (the reason isn't given)
+  - Every check is recorded in `content_checks`, and each policy version once in `content_policies`
 
 ### Changes
 
+- `/user/profile` shows a changed username, bio or avatar right away; before, the cached profile could stay up to 50 minutes old. When updating the search index fails after `/user/update_profile` or `/user/set_avatar` saved, the request no longer errors; the failure is logged
 - Songs and playlists can be hidden by a report decision (`is_hidden`). A hidden one is only visible to its owner: `/song/detail` and `/song/detail_by_id` return `not_found` to others (send the token to get your own), and it is left out of search, lists, recommendations and the sitemap. Approving a modification of a hidden song shows it again
   - `/playlist/detail`: new `unavailable_songs` (`song_id`, `order_index`, `add_time`) for songs that were deleted or hidden; `playlist_info.is_hidden`; `songs_count` now counts them too
   - `/song/likes/page_my_likes`: new `unavailable` (`song_id`, `liked_time`) for liked songs that were deleted or hidden

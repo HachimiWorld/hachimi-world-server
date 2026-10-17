@@ -6,6 +6,7 @@ pub mod bilibili;
 pub mod res_utils;
 pub mod publish;
 pub mod images;
+pub mod typesafe;
 
 use crate::common::images::{Meilisearch1_32, Postgres17, Redis8};
 use async_trait::async_trait;
@@ -37,8 +38,24 @@ pub struct TestEnvironment {
 }
 
 
+/// Options for [with_test_environment_with].
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TestOptions {
+    /// Check usernames and bios with the example policy and a mock TypeSafe client; see [typesafe].
+    pub content_check: bool,
+}
+
 /// This is used to start a black-box test environment. It will launch the web server and provide an API client, SQL pool and Redis connection for testing.
 pub async fn with_test_environment<F, Fut>(f: F)
+where
+    F: Fn(TestEnvironment) -> Fut,
+    Fut: Future<Output=()> + Send + 'static,
+{
+    with_test_environment_with(TestOptions::default(), f).await
+}
+
+/// [with_test_environment] with features that are off by default turned on.
+pub async fn with_test_environment_with<F, Fut>(options: TestOptions, f: F)
 where
     F: Fn(TestEnvironment) -> Fut,
     Fut: Future<Output=()> + Send + 'static,
@@ -68,6 +85,12 @@ where
 
     setup_meilisearch_indexes(&ms_client, &sql_pool).await.unwrap();
 
+    let content_checker = if options.content_check {
+        Some(Arc::new(typesafe::get_test_content_checker(&sql_pool).await))
+    } else {
+        None
+    };
+
     let app_state = AppState {
         sql_pool: sql_pool,
         file_host: Arc::new(get_test_file_host().await),
@@ -76,6 +99,7 @@ where
         config: Arc::new(get_test_config()),
         red_lock: RedLock::new(redis_conn).unwrap(),
         bili_client: Arc::new(bilibili::get_mock_bili_client()),
+        content_checker,
     };
 
     let random_listener = TcpListener::bind("localhost:0").await.unwrap(); // Use OS assigned port to avoid conflicts

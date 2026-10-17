@@ -21,6 +21,7 @@ pub mod message_read_mark;
 pub mod received_like;
 pub mod report;
 pub mod committee_member;
+pub mod content_check;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {

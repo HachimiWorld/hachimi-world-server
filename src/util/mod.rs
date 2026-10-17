@@ -10,6 +10,7 @@ use url::Url;
 pub mod gracefully_shutdown;
 pub mod redlock;
 pub mod bilibili;
+pub mod typesafe;
 
 pub trait IsBlank {
     fn is_blank(&self) -> bool; 
