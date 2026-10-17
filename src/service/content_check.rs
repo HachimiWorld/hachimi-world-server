@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
+use metrics::{counter, gauge, histogram};
 use tracing::warn;
 
 const DECISION_FILE: &str = "decision.yaml";
@@ -28,6 +29,14 @@ pub const SUBJECT_BIO: &str = "user.bio";
 const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO];
 /// Sent to TypeSafe at startup to try the policy; harmless under any policy.
 const PROBE_TEXT: &str = "哈基米";
+
+/// Time taken by TypeSafe for one check, labelled by `subject` and `outcome`.
+/// @since 261017
+pub const METRIC_DURATION: &str = "content_check_duration_seconds";
+/// Buckets for [METRIC_DURATION], in seconds. Jev usually answers in 0.07 to 1.7 seconds, and calls
+/// time out at `typesafe.timeout_ms` (3 seconds in production), so timeouts gather in one bucket.
+/// @since 261017
+pub const DURATION_BUCKETS: &[f64] = &[0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 5.0];
 
 /// `content_check` in the config, read only when `content_check.enabled` is true; see [is_enabled].
 /// @since 261016
@@ -216,6 +225,8 @@ impl ContentChecker {
         let checker = Self { policy, model: cfg.model.clone(), client };
         checker.probe().await?;
         store_snapshot(pool, &checker.policy).await?;
+        // Shows on dashboards which policy and model each instance runs, and that checks are on.
+        gauge!("content_check_policy_info", "version" => checker.policy.version.clone(), "model" => checker.model.clone()).set(1.0);
         Ok(checker)
     }
 
@@ -264,8 +275,10 @@ impl ContentChecker {
 
         let started = Instant::now();
         let result = self.client.system_one(&self.model, text, &policy.questions).await;
-        let latency_ms = started.elapsed().as_millis().min(i32::MAX as u128) as i32;
+        let elapsed = started.elapsed();
+        let latency_ms = elapsed.as_millis().min(i32::MAX as u128) as i32;
 
+        let input_tokens = result.as_ref().ok().map(|resp| resp.usage.input_tokens);
         let (model, answers, error, blocked) = match result {
             Ok(resp) => match blocked_by(&policy.block_at, &resp) {
                 Ok(blocked) => (Some(resp.model), Some(resp.answers), None, blocked),
@@ -276,6 +289,7 @@ impl ContentChecker {
         if let Some(e) = &error {
             warn!(subject, actor_uid, "Content check failed, passing the content: {e}");
         }
+        record_metrics(subject, error.is_some(), &blocked, input_tokens, elapsed);
 
         ContentCheckDao::insert(pool, &ContentCheck {
             id: 0,
@@ -294,6 +308,21 @@ impl ContentChecker {
         }).await?;
 
         Ok(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) })
+    }
+}
+
+/// Labels hold only fixed sets of values (subjects, outcomes, question ids), never content or users.
+pub(crate) fn record_metrics(subject: &str, failed: bool, blocked: &[String], input_tokens: Option<i64>, elapsed: std::time::Duration) {
+    // A failed check passes the content, but it counts as an error, not a pass.
+    let outcome = if failed { "error" } else if blocked.is_empty() { "pass" } else { "block" };
+    let subject = subject.to_string();
+    counter!("content_check_total", "subject" => subject.clone(), "outcome" => outcome).increment(1);
+    histogram!(METRIC_DURATION, "subject" => subject.clone(), "outcome" => outcome).record(elapsed.as_secs_f64());
+    for question in blocked {
+        counter!("content_check_blocked_total", "subject" => subject.clone(), "question" => question.clone()).increment(1);
+    }
+    if let Some(tokens) = input_tokens {
+        counter!("content_check_input_tokens_total", "subject" => subject).increment(tokens.max(0) as u64);
     }
 }
 

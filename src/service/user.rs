@@ -156,6 +156,35 @@ async fn save_to_cache(mut redis: ConnectionManager, profiles: &HashMap<i64, Pub
     Ok(())
 }
 /// A random username such as `神人01234567`, as given at registration.
+/// Widest a username may be, where a CJK character counts as 2 and most others as 1: 10 Chinese
+/// characters or 20 Latin letters take about the same space on screen.
+/// @since 261017
+pub const USERNAME_MAX_WIDTH: usize = 20;
+/// A cap on characters as well, since zero-width ones add no width.
+/// @since 261017
+pub const USERNAME_MAX_CHARS: usize = 32;
+
+/// Why `name` can't be a username, or `None` if it can. Width follows Unicode East Asian Width
+/// (UAX #11): wide and fullwidth characters, such as CJK and most emoji, count as 2, ambiguous ones
+/// as 1, and zero-width ones as 0.
+/// @since 261017
+pub fn username_problem(name: &str) -> Option<String> {
+    use unicode_width::UnicodeWidthStr;
+    if name.chars().any(char::is_control) {
+        return Some("Username cannot contain control characters such as line breaks".to_string());
+    }
+    let width = name.width();
+    if width == 0 {
+        return Some("Username cannot be empty".to_string());
+    }
+    if width > USERNAME_MAX_WIDTH || name.chars().count() > USERNAME_MAX_CHARS {
+        return Some(format!(
+            "Username must be at most {USERNAME_MAX_WIDTH} wide, where a CJK character counts as 2"
+        ));
+    }
+    None
+}
+
 pub fn generate_username() -> String {
     use rand::RngExt;
     format!("神人{:08}", rand::rng().random_range(0..100000000))
@@ -216,5 +245,33 @@ pub async fn refresh_after_profile_change(state: &crate::web::state::AppState, u
     let mut redis = state.redis_conn.clone();
     if let Err(e) = redis.del(gen_cache_key(user.id)).await {
         tracing::warn!(uid = user.id, "Failed to clear the cached profile: {e:?}");
+    }
+}
+
+#[cfg(test)]
+mod username_tests {
+    use super::{generate_username, username_problem};
+
+    #[test]
+    fn counts_cjk_as_two() {
+        assert_eq!(username_problem("哈基米"), None);
+        assert_eq!(username_problem("一二三四五六七八九十"), None); // 10 CJK = 20
+        assert!(username_problem("一二三四五六七八九十一").is_some()); // 11 CJK = 22
+        assert_eq!(username_problem("abcdefghijklmnopqrst"), None); // 20 Latin
+        assert!(username_problem("abcdefghijklmnopqrstu").is_some()); // 21 Latin
+        assert_eq!(username_problem("小风xiaofeng"), None); // 4 + 8
+        assert_eq!(username_problem("罗兹official"), None);
+        assert_eq!(username_problem("(｡•̀ᴗ-)✧"), None);
+        assert_eq!(username_problem(&generate_username()), None);
+    }
+
+    #[test]
+    fn rejects_empty_invisible_and_control() {
+        assert!(username_problem("").is_some());
+        assert!(username_problem("\u{200B}\u{200B}").is_some()); // zero-width spaces only
+        assert!(username_problem("名字\n第二行").is_some());
+        assert!(username_problem("tab\there").is_some());
+        // Zero-width characters add no width, so the character cap stops padding with them
+        assert!(username_problem(&format!("a{}", "\u{200B}".repeat(40))).is_some());
     }
 }
