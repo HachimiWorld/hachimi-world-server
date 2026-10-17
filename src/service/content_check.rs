@@ -3,7 +3,7 @@
 
 use crate::config::Config;
 use crate::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicy, ContentPolicyDao};
-use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient};
+use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient, TypeSafeStatusError};
 use anyhow::{bail, Context};
 use chrono::Utc;
 use serde::Deserialize;
@@ -26,6 +26,8 @@ pub const SUBJECT_USERNAME: &str = "user.username";
 pub const SUBJECT_BIO: &str = "user.bio";
 /// Every subject the server checks. A policy must cover exactly these.
 const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO];
+/// Sent to TypeSafe at startup to try the policy; harmless under any policy.
+const PROBE_TEXT: &str = "哈基米";
 
 /// `content_check` in the config, read only when `content_check.enabled` is true; see [is_enabled].
 /// @since 261016
@@ -38,13 +40,13 @@ pub struct ContentCheckCfg {
     pub typesafe: TypeSafeCfg,
 }
 
-/// Whether content checks are on. Without a `content_check` section they are off. With one,
-/// `enabled` must be given, so nobody believes checks are on when they aren't; when it's false,
-/// nothing else in the section is read, so the rest can stay in place for turning them back on.
+/// Whether content checks are on. The `content_check` section is required and must say `enabled`,
+/// so no instance runs without checks by accident; when it's false, nothing else in the section is
+/// read, so the rest can stay in place for turning them back on.
 /// @since 261017
 pub fn is_enabled(config: &Config) -> anyhow::Result<bool> {
     if config.get("content_check")?.is_none() {
-        return Ok(false);
+        bail!("Config [content_check] is required; set content_check.enabled to false to turn content checks off");
     }
     config.get_and_parse::<bool>("content_check.enabled")
 }
@@ -206,11 +208,41 @@ pub struct ContentChecker {
 
 impl ContentChecker {
     /// Loads the policy and stores a snapshot of it if this version is new.
+    /// Loads the policy, tries it against TypeSafe and stores a snapshot of it if this version is
+    /// new. Fails on a mistake in the policy or the config; see [ContentChecker::probe].
     pub async fn new(cfg: &ContentCheckCfg, client: Arc<dyn TypeSafeClient>, pool: &PgPool) -> anyhow::Result<Self> {
         let policy = Policy::load(&cfg.policy_dir)?;
         policy.check_subjects(SUBJECTS)?;
-        store_snapshot(pool, &policy).await?;
-        Ok(Self { policy, model: cfg.model.clone(), client })
+        let checker = Self { policy, model: cfg.model.clone(), client };
+        checker.probe().await?;
+        store_snapshot(pool, &checker.policy).await?;
+        Ok(checker)
+    }
+
+    /// Asks every subject's questions about a harmless text, which tries the key, the model and the
+    /// questions at once. A rejection that retrying can't fix, or answers that don't match the
+    /// policy, fail startup. A passing failure, such as a timeout or TypeSafe being down, only logs:
+    /// an outage elsewhere shouldn't keep the server from starting, and checks pass meanwhile.
+    async fn probe(&self) -> anyhow::Result<()> {
+        for (subject, policy) in &self.policy.subjects {
+            match self.client.system_one(&self.model, PROBE_TEXT, &policy.questions).await {
+                Ok(resp) => {
+                    if let Err(e) = blocked_by(&policy.block_at, &resp) {
+                        bail!("TypeSafe's answers for {subject} don't match the policy: {e}");
+                    }
+                }
+                Err(e) => match e.downcast_ref::<TypeSafeStatusError>() {
+                    Some(status) if status.is_config_error() => {
+                        return Err(e.context(format!("TypeSafe rejected the questions for {subject} with model {}; check the key, the model and the policy", self.model)));
+                    }
+                    _ => {
+                        warn!("Couldn't try the content check policy against TypeSafe, starting anyway: {e:#}");
+                        return Ok(());
+                    }
+                },
+            }
+        }
+        Ok(())
     }
 
     pub fn policy_version(&self) -> &str {
@@ -336,9 +368,9 @@ mod tests {
     }
 
     #[test]
-    fn is_enabled_only_when_said_so() {
+    fn is_enabled_must_be_said() {
         let enabled = |yaml: &str| is_enabled(&Config::parse_by_str(yaml).unwrap());
-        assert!(!enabled("server: {}").unwrap());
+        assert!(enabled("server: {}").unwrap_err().to_string().contains("required"));
         assert!(!enabled("content_check:\n  enabled: false\n").unwrap());
         assert!(enabled("content_check:\n  enabled: true\n  model: jev-1.13.0\n").unwrap());
         assert!(enabled("content_check:\n  model: jev-1.13.0\n").is_err());

@@ -9,12 +9,27 @@ pub const TEST_MODEL: &str = "jev-test";
 /// A content checker using `config/content-check-example` and [get_mock_typesafe_client], so the
 /// example policy is kept loadable too.
 pub async fn get_test_content_checker(pool: &PgPool) -> ContentChecker {
+    new_content_checker(pool, get_mock_typesafe_client()).await.unwrap()
+}
+
+/// A content checker using `config/content-check-example` and `client`.
+pub async fn new_content_checker(pool: &PgPool, client: MockTypeSafeClient) -> anyhow::Result<ContentChecker> {
     let cfg = ContentCheckCfg {
         policy_dir: "config/content-check-example".into(),
         model: TEST_MODEL.to_string(),
         typesafe: TypeSafeCfg { api_key: String::new(), base_url: String::new(), timeout_ms: 0 },
     };
-    ContentChecker::new(&cfg, Arc::new(get_mock_typesafe_client()), pool).await.unwrap()
+    ContentChecker::new(&cfg, Arc::new(client), pool).await
+}
+
+/// A mock TypeSafe client whose every call fails with what `error` makes.
+pub fn get_failing_typesafe_client(error: fn() -> anyhow::Error) -> MockTypeSafeClient {
+    let mut mock = MockTypeSafeClient::default();
+    mock.expect_system_one().returning(move |_, _, _| {
+        let e = error();
+        Box::pin(async move { Err(e) })
+    });
+    mock
 }
 
 /// A mock TypeSafe client whose answers depend on markers in the text:

@@ -1,7 +1,6 @@
 //! Client for TypeSafe's System One API, which runs the Jev models: it asks typed questions about
 //! a `state` and returns typed answers. See https://docs.typesafe.ai/api.
 
-use anyhow::bail;
 use async_trait::async_trait;
 use mockall::automock;
 use serde::Deserialize;
@@ -15,6 +14,28 @@ pub struct TypeSafeCfg {
     /// Such as `https://api.typesafe.ai`.
     pub base_url: String,
     pub timeout_ms: u64,
+}
+
+/// The API answered with an error status. Other failures, such as timeouts and network errors,
+/// come as other errors.
+/// @since 261017
+#[derive(Debug, thiserror::Error)]
+#[error("TypeSafe returned {status}: {body}")]
+pub struct TypeSafeStatusError {
+    pub status: reqwest::StatusCode,
+    /// Shortened; it can echo the request.
+    pub body: String,
+}
+
+impl TypeSafeStatusError {
+    /// Whether retrying can't help because the request or the config is wrong: a bad key, an
+    /// unknown model, malformed questions or a wrong `base_url`. Timeouts, rate limits and server
+    /// errors are passing.
+    pub fn is_config_error(&self) -> bool {
+        self.status.is_client_error()
+            && self.status != reqwest::StatusCode::REQUEST_TIMEOUT
+            && self.status != reqwest::StatusCode::TOO_MANY_REQUESTS
+    }
 }
 
 /// @since 261016
@@ -93,7 +114,7 @@ impl TypeSafeClient for TypeSafeClientImpl {
         if !status.is_success() {
             // The body can echo the request; keep the log short.
             let body: String = body.chars().take(300).collect();
-            bail!("TypeSafe returned {status}: {body}");
+            return Err(TypeSafeStatusError { status, body }.into());
         }
         Ok(serde_json::from_str(&body)?)
     }
@@ -101,7 +122,21 @@ impl TypeSafeClient for TypeSafeClientImpl {
 
 #[cfg(test)]
 mod tests {
-    use super::SystemOneResponse;
+    use super::{SystemOneResponse, TypeSafeStatusError};
+    use reqwest::StatusCode;
+
+    #[test]
+    fn tells_config_errors_from_passing_ones() {
+        let is_config = |status| TypeSafeStatusError { status, body: String::new() }.is_config_error();
+        assert!(is_config(StatusCode::UNAUTHORIZED));
+        assert!(is_config(StatusCode::FORBIDDEN));
+        assert!(is_config(StatusCode::NOT_FOUND));
+        assert!(is_config(StatusCode::UNPROCESSABLE_ENTITY));
+        assert!(!is_config(StatusCode::REQUEST_TIMEOUT));
+        assert!(!is_config(StatusCode::TOO_MANY_REQUESTS));
+        assert!(!is_config(StatusCode::INTERNAL_SERVER_ERROR));
+        assert!(!is_config(StatusCode::from_u16(529).unwrap()));
+    }
 
     #[test]
     fn parses_a_response_and_reads_nouls() {

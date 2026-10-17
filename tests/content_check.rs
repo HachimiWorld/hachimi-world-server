@@ -1,10 +1,12 @@
 mod common;
 
-use crate::common::typesafe::TEST_MODEL;
+use crate::common::typesafe::{get_failing_typesafe_client, get_mock_typesafe_client, new_content_checker, TEST_MODEL};
 use crate::common::{auth, with_test_environment, with_test_environment_with, ApiClient, CommonParse, TestOptions};
 use hachimi_world_server::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicyDao};
 use hachimi_world_server::service::user::PublicUserProfile;
+use hachimi_world_server::util::typesafe::{MockTypeSafeClient, SystemOneResponse, TypeSafeStatusError};
 use hachimi_world_server::web::routes::user::{GetProfileReq, UpdateProfileReq};
+use reqwest::StatusCode;
 use sqlx::PgPool;
 
 const CHECKS_ON: TestOptions = TestOptions { content_check: true };
@@ -159,5 +161,47 @@ async fn nothing_is_checked_without_content_check() {
 
         assert_eq!(profile(&env.api, user.uid).await.username, "坏名#sexual");
         assert!(checks(&env.pool, user.uid).await.is_empty());
+    }).await
+}
+
+fn status(status: StatusCode) -> anyhow::Error {
+    TypeSafeStatusError { status, body: "mock".to_string() }.into()
+}
+
+#[tokio::test]
+async fn startup_fails_when_typesafe_rejects_the_config() {
+    with_test_environment(|env| async move {
+        // A bad key
+        let e = new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::UNAUTHORIZED))).await
+            .err().expect("a rejected key should stop startup");
+        assert!(format!("{e:#}").contains("401"), "{e:#}");
+
+        // A bad model or malformed questions
+        assert!(new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::UNPROCESSABLE_ENTITY))).await.is_err());
+
+        // Answers that don't match the policy
+        let mut mismatched = MockTypeSafeClient::default();
+        mismatched.expect_system_one().returning(|model, _, _| {
+            let resp: SystemOneResponse = serde_json::from_value(serde_json::json!({
+                "model": model, "answers": {}, "usage": { "input_tokens": 1 }
+            })).unwrap();
+            Box::pin(async move { Ok(resp) })
+        });
+        let e = new_content_checker(&env.pool, mismatched).await.err().expect("mismatched answers should stop startup");
+        assert!(format!("{e:#}").contains("don't match the policy"), "{e:#}");
+
+        // Nothing was stored for a policy that didn't start
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_policies").fetch_one(&env.pool).await.unwrap();
+        assert_eq!(count, 0);
+    }).await
+}
+
+#[tokio::test]
+async fn startup_goes_on_when_typesafe_is_unavailable() {
+    with_test_environment(|env| async move {
+        new_content_checker(&env.pool, get_failing_typesafe_client(|| anyhow::anyhow!("operation timed out"))).await.unwrap();
+        new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::SERVICE_UNAVAILABLE))).await.unwrap();
+        new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::TOO_MANY_REQUESTS))).await.unwrap();
+        new_content_checker(&env.pool, get_mock_typesafe_client()).await.unwrap();
     }).await
 }

@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Content checks run only on instances with `content_check.enabled` set to true.
+/// `content_check` is required; checks run only when `content_check.enabled` is true.
 async fn get_content_checker(config: &Config, sql_pool: &sqlx::PgPool) -> anyhow::Result<Option<Arc<ContentChecker>>> {
     if !content_check::is_enabled(config)? {
         info!("Content checks are off");

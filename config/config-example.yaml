@@ -43,9 +43,10 @@ sitemap:
 community:
   contributors:
     - "maintainer@example.com"
-# Usernames and bios are checked with TypeSafe's Jev when they change, and blocked ones aren't
-# saved. Off unless enabled is true; when false, nothing else here is read, so local runs don't
-# need a TypeSafe key. Without this section, checks are off too. policy_dir holds the policy;
+# Required. Usernames and bios are checked with TypeSafe's Jev when they change, and blocked ones
+# aren't saved. Off unless enabled is true; when false, nothing else here is read, so local runs
+# don't need a TypeSafe key. At startup the key, the model and the policy are tried against
+# TypeSafe; a rejection stops the server. policy_dir holds the policy;
 # config/content-check-example/ shows the format.
 content_check:
   enabled: false
