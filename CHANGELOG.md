@@ -41,6 +41,7 @@
 
 ### Changes
 
+- Register, login, `/auth/refresh_token` and the anonymous play history and recommendation endpoints no longer fail with an internal error when the request has neither `X-Real-IP` nor `CF-Connecting-IP`, for example on a local server without a proxy. They use the connection's IP instead
 - The `/api` rate limit counts per user when the request has a valid access token, and per IP otherwise (it was per IP for everyone). It is looser now, 10 requests per second with bursts of 60, and set by the new optional `server.rate_limit` config (`per_second`, `burst_size`)
 - Usernames can be longer. `/user/update_profile` now measures width instead of characters: a CJK character (and most emoji) counts as 2 and others as 1, up to 20, so 10 Chinese characters or 20 Latin letters; at most 32 characters. Usernames with control characters such as line breaks, or with nothing visible, are rejected. All errors are still `invalid_username`
 - `/user/profile` shows a changed username, bio or avatar right away; before, the cached profile could stay up to 50 minutes old. When updating the search index fails after `/user/update_profile` or `/user/set_avatar` saved, the request no longer errors; the failure is logged
