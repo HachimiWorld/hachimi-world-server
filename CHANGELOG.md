@@ -41,6 +41,7 @@
 
 ### Changes
 
+- Usernames can be longer. `/user/update_profile` now measures width instead of characters: a CJK character (and most emoji) counts as 2 and others as 1, up to 20, so 10 Chinese characters or 20 Latin letters; at most 32 characters. Usernames with control characters such as line breaks, or with nothing visible, are rejected. All errors are still `invalid_username`
 - `/user/profile` shows a changed username, bio or avatar right away; before, the cached profile could stay up to 50 minutes old. When updating the search index fails after `/user/update_profile` or `/user/set_avatar` saved, the request no longer errors; the failure is logged
 - Songs and playlists can be hidden by a report decision (`is_hidden`). A hidden one is only visible to its owner: `/song/detail` and `/song/detail_by_id` return `not_found` to others (send the token to get your own), and it is left out of search, lists, recommendations and the sitemap. Approving a modification of a hidden song shows it again
   - `/playlist/detail`: new `unavailable_songs` (`song_id`, `order_index`, `add_time`) for songs that were deleted or hidden; `playlist_info.is_hidden`; `songs_count` now counts them too
