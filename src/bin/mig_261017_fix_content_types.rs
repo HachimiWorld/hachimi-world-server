@@ -4,22 +4,21 @@
 //!
 //! Dry run by default: lists what would change. Pass `--apply` to rewrite the objects in place.
 //! Only objects whose extension `content_type_for_key` recognizes are touched.
+//!
+//! Reads `S3_ENDPOINT_URL`, `S3_BUCKET_NAME`, `S3_ACCESS_KEY_ID` and `S3_ACCESS_KEY_SECRET` from
+//! the environment or `.env`.
 
 use aws_sdk_s3::config::Region;
 use aws_sdk_s3::types::MetadataDirective;
-use hachimi_world_server::config::Config;
 use hachimi_world_server::file_hosting::content_type_for_key;
-use serde::{Deserialize, Serialize};
 use std::env;
 
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
     let apply = env::args().any(|x| x == "--apply");
-    let cfg = Config::parse(&env::var("FIX_CONTENT_TYPES_CONFIG_PATH").unwrap()).unwrap();
-    let s3_cfg: S3Config = cfg.get_and_parse("s3").unwrap();
-    let bucket = s3_cfg.bucket_name.clone();
-    let client = get_client(s3_cfg);
+    let bucket = env::var("S3_BUCKET_NAME").unwrap();
+    let client = get_client();
 
     if !apply {
         println!("Dry run. Pass --apply to change the objects.");
@@ -72,21 +71,12 @@ async fn main() {
     println!("Scanned {scanned}. {verb} {fixed}, already correct {correct}, unknown extension {skipped}.");
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-struct S3Config {
-    pub bucket_name: String,
-    pub endpoint_url: String,
-    pub public_domain: String,
-    pub access_key_id: String,
-    pub access_key_secret: String,
-}
-
-fn get_client(cfg: S3Config) -> aws_sdk_s3::Client {
+fn get_client() -> aws_sdk_s3::Client {
     let config = aws_sdk_s3::Config::builder()
-        .endpoint_url(cfg.endpoint_url)
+        .endpoint_url(env::var("S3_ENDPOINT_URL").unwrap())
         .credentials_provider(aws_sdk_s3::config::Credentials::new(
-            cfg.access_key_id,
-            cfg.access_key_secret,
+            env::var("S3_ACCESS_KEY_ID").unwrap(),
+            env::var("S3_ACCESS_KEY_SECRET").unwrap(),
             None, // session token is not used with R2
             None,
             "R2",
