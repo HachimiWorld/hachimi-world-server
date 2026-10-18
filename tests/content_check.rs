@@ -302,10 +302,23 @@ async fn avatar_checks_are_limited_per_hour() {
     with_test_environment_with(CHECKS_ON, |mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;
 
-        // Blocked checks count too, and uploads at the same time are counted one by one
+        // Encoded first: encoding on the test's only thread holds up Redis replies, unlocks included
+        let pngs = (0..4).map(|_| png(GREY)).collect::<Vec<_>>();
+
+        // Blocked checks count too
         set_avatar(&env.api, png(RED)).await.unwrap_err();
-        let results = futures::future::join_all((0..12).map(|_| set_avatar(&env.api, png(GREY)))).await;
-        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 9, "{results:?}");
+        // Seven more earlier this hour, so a few uploads reach the limit. Few, because they wait for
+        // each other
+        for _ in 0..7 {
+            sqlx::query(
+                "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, blocked_by, latency_ms, create_time)
+                 VALUES ('user.avatar', $1, $1, 'earlier', 'earlier', 'earlier', '{}', 0, now() - interval '30 minutes')"
+            ).bind(user.uid).execute(&env.pool).await.unwrap();
+        }
+
+        // Uploads at the same time are counted one by one
+        let results = futures::future::join_all(pngs.into_iter().map(|png| set_avatar(&env.api, png))).await;
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2, "{results:?}");
         assert!(results.iter().filter(|r| r.is_err()).all(|r| r.as_ref().err().map(String::as_str) == Some("rate_limited")), "{results:?}");
 
         // A limited upload isn't checked, so it doesn't count
