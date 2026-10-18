@@ -1,0 +1,18 @@
+{
+  "sexual": {
+    "type": "noul",
+    "instructions": "`state` is a profile picture. Is it sexually explicit?",
+    "criteria": {
+      "true": "It shows sexual acts, exposed genitals or pornography.",
+      "false": "It is not sexual."
+    }
+  },
+  "spam": {
+    "type": "noul",
+    "instructions": "`state` is a profile picture. Is it an advertisement, such as contact details, a QR code or a promotion?",
+    "criteria": {
+      "true": "It promotes something or diverts viewers elsewhere.",
+      "false": "It is an ordinary profile picture."
+    }
+  }
+}

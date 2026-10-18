@@ -1,12 +1,15 @@
 mod common;
 
-use crate::common::typesafe::{get_failing_typesafe_client, get_mock_typesafe_client, new_content_checker, TEST_MODEL};
+use crate::common::typesafe::{get_failing_typesafe_client, get_mock_typesafe_client, new_content_checker, TEST_IMAGE_MODEL, TEST_MODEL};
 use crate::common::{auth, with_test_environment, with_test_environment_with, ApiClient, CommonParse, TestOptions};
 use hachimi_world_server::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicyDao};
 use hachimi_world_server::service::user::PublicUserProfile;
 use hachimi_world_server::util::typesafe::{MockTypeSafeClient, SystemOneResponse, TypeSafeStatusError};
 use hachimi_world_server::web::routes::user::{GetProfileReq, UpdateProfileReq};
+use image::{ImageFormat, Rgb, RgbImage};
+use reqwest::multipart::{Form, Part};
 use reqwest::StatusCode;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 
 const CHECKS_ON: TestOptions = TestOptions { content_check: true };
@@ -17,6 +20,26 @@ async fn update(api: &ApiClient, username: &str, bio: Option<&str>) -> Result<()
         bio: bio.map(str::to_string),
         gender: None,
     }).await.parse_resp::<()>().await.map_err(|e| e.code)
+}
+
+/// A PNG of one colour; the mock judges images by their colour, see [get_mock_typesafe_client].
+fn png(color: [u8; 3]) -> Vec<u8> {
+    let mut png = Vec::new();
+    RgbImage::from_pixel(300, 200, Rgb(color)).write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png).unwrap();
+    png
+}
+
+const GREY: [u8; 3] = [128, 128, 128];
+/// Blocked as `sexual` by the mock
+const RED: [u8; 3] = [230, 20, 20];
+/// Fails the mock's call
+const BLUE: [u8; 3] = [20, 20, 230];
+
+async fn set_avatar(api: &ApiClient, png: Vec<u8>) -> Result<(), String> {
+    api.post_raw("/user/set_avatar")
+        .multipart(Form::new().part("file", Part::bytes(png).file_name("avatar.png")))
+        .send().await.unwrap()
+        .parse_resp::<()>().await.map_err(|e| e.code)
 }
 
 async fn profile(api: &ApiClient, uid: i64) -> PublicUserProfile {
@@ -180,11 +203,16 @@ async fn startup_fails_when_typesafe_rejects_the_config() {
         assert!(new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::UNPROCESSABLE_ENTITY))).await.is_err());
 
         // Answers that don't match the policy
+        let empty = |model: &str| -> SystemOneResponse {
+            serde_json::from_value(serde_json::json!({ "model": model, "answers": {}, "usage": { "input_tokens": 1 } })).unwrap()
+        };
         let mut mismatched = MockTypeSafeClient::default();
-        mismatched.expect_system_one().returning(|model, _, _| {
-            let resp: SystemOneResponse = serde_json::from_value(serde_json::json!({
-                "model": model, "answers": {}, "usage": { "input_tokens": 1 }
-            })).unwrap();
+        mismatched.expect_system_one().returning(move |model, _, _| {
+            let resp = empty(model);
+            Box::pin(async move { Ok(resp) })
+        });
+        mismatched.expect_system_one_image().returning(move |model, _, _| {
+            let resp = empty(model);
             Box::pin(async move { Ok(resp) })
         });
         let e = new_content_checker(&env.pool, mismatched).await.err().expect("mismatched answers should stop startup");
@@ -203,5 +231,123 @@ async fn startup_goes_on_when_typesafe_is_unavailable() {
         new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::SERVICE_UNAVAILABLE))).await.unwrap();
         new_content_checker(&env.pool, get_failing_typesafe_client(|| status(StatusCode::TOO_MANY_REQUESTS))).await.unwrap();
         new_content_checker(&env.pool, get_mock_typesafe_client()).await.unwrap();
+    }).await
+}
+
+/// The storage key in a mock file host URL.
+fn key_of(url: &str) -> &str {
+    url.strip_prefix("https://mock-file-host/").unwrap()
+}
+
+#[tokio::test]
+async fn an_ordinary_avatar_passes_and_is_recorded() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        let uploaded = png(GREY);
+        set_avatar(&env.api, uploaded.clone()).await.unwrap();
+        let avatar_url = profile(&env.api, user.uid).await.avatar_url.expect("the avatar should be saved");
+
+        let checks = checks(&env.pool, user.uid).await;
+        assert_eq!(checks.len(), 1);
+        let check = &checks[0];
+        assert_eq!(check.subject, "user.avatar");
+        assert_eq!(check.target_id, user.uid);
+        assert_eq!(check.content, key_of(&avatar_url));
+        // The hash is of the file as uploaded, not of the copy that was checked
+        assert_eq!(check.content_hash, hex::encode(Sha256::digest(&uploaded)));
+        assert_eq!(check.model.as_deref(), Some(TEST_IMAGE_MODEL));
+        assert!(check.blocked_by.is_empty(), "{check:?}");
+        assert_eq!(check.error, None);
+    }).await
+}
+
+#[tokio::test]
+async fn a_blocked_avatar_is_not_saved() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+        set_avatar(&env.api, png(GREY)).await.unwrap();
+        let before = profile(&env.api, user.uid).await.avatar_url;
+
+        assert_eq!(set_avatar(&env.api, png(RED)).await, Err("avatar_rejected".to_string()));
+        assert_eq!(profile(&env.api, user.uid).await.avatar_url, before);
+
+        let checks = checks(&env.pool, user.uid).await;
+        assert_eq!(checks.len(), 2);
+        assert_eq!(checks[1].blocked_by, ["sexual"]);
+        assert!(checks[1].content.starts_with("content-check/blocked/avatar/"), "{}", checks[1].content);
+        assert!(checks[1].content.ends_with(".webp"), "{}", checks[1].content);
+    }).await
+}
+
+#[tokio::test]
+async fn an_avatar_passes_when_the_check_fails() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        set_avatar(&env.api, png(BLUE)).await.unwrap();
+        let avatar_url = profile(&env.api, user.uid).await.avatar_url.expect("the avatar should be saved");
+
+        let checks = checks(&env.pool, user.uid).await;
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].content, key_of(&avatar_url));
+        assert_eq!(checks[0].model, None);
+        assert!(checks[0].error.as_deref().unwrap().contains("503"), "{:?}", checks[0].error);
+        assert!(checks[0].blocked_by.is_empty());
+    }).await
+}
+
+#[tokio::test]
+async fn avatar_checks_are_limited_per_hour() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        // Encoded first: encoding on the test's only thread holds up Redis replies, unlocks included
+        let pngs = (0..4).map(|_| png(GREY)).collect::<Vec<_>>();
+
+        // Blocked checks count too
+        set_avatar(&env.api, png(RED)).await.unwrap_err();
+        // Seven more earlier this hour, so a few uploads reach the limit. Few, because they wait for
+        // each other
+        for _ in 0..7 {
+            sqlx::query(
+                "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, blocked_by, latency_ms, create_time)
+                 VALUES ('user.avatar', $1, $1, 'earlier', 'earlier', 'earlier', '{}', 0, now() - interval '30 minutes')"
+            ).bind(user.uid).execute(&env.pool).await.unwrap();
+        }
+
+        // Uploads at the same time are counted one by one
+        let results = futures::future::join_all(pngs.into_iter().map(|png| set_avatar(&env.api, png))).await;
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 2, "{results:?}");
+        assert!(results.iter().filter(|r| r.is_err()).all(|r| r.as_ref().err().map(String::as_str) == Some("rate_limited")), "{results:?}");
+
+        // A limited upload isn't checked, so it doesn't count
+        assert_eq!(checks(&env.pool, user.uid).await.len(), 10);
+
+        // Other users have their own limit, and text isn't limited
+        update(&env.api, "哈基米", Some("喜欢听歌")).await.unwrap();
+        let other = auth::with_new_random_test_user(&mut env).await;
+        set_avatar(&env.api, png(GREY)).await.unwrap();
+        assert_eq!(checks(&env.pool, other.uid).await.len(), 1);
+    }).await
+}
+
+#[tokio::test]
+async fn startup_fails_when_typesafe_rejects_the_image_model() {
+    with_test_environment(|env| async move {
+        let mut mock = MockTypeSafeClient::default();
+        mock.expect_system_one().returning(|model, _, questions| {
+            let answers: serde_json::Map<_, _> = questions.as_object().unwrap().keys()
+                .map(|id| (id.clone(), serde_json::json!({ "type": "noul", "noul": 0.05 })))
+                .collect();
+            let resp: SystemOneResponse = serde_json::from_value(serde_json::json!({
+                "model": model, "answers": answers, "usage": { "input_tokens": 1 }
+            })).unwrap();
+            Box::pin(async move { Ok(resp) })
+        });
+        mock.expect_system_one_image().returning(|_, _, _| Box::pin(async move { Err(status(StatusCode::BAD_REQUEST)) }));
+
+        let e = new_content_checker(&env.pool, mock).await.err().expect("a rejected image model should stop startup");
+        assert!(format!("{e:#}").contains(TEST_IMAGE_MODEL), "{e:#}");
     }).await
 }
