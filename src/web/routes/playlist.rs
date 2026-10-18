@@ -1,6 +1,7 @@
 use crate::db::playlist::{FavoritePlaylist, IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
 use crate::db::song::SongDao;
 use crate::db::CrudDao;
+use crate::service::content_check::{self, ContentChecker, ImageUpload, Verdict};
 use crate::service::playlist;
 use crate::service::playlist::{GetDetailError, PlaylistMetadata};
 use crate::service::upload::ResizeType;
@@ -278,7 +279,17 @@ async fn create(
         create_time: Utc::now(),
         update_time: Utc::now(),
     };
-    let id = PlaylistDao::insert(&state.sql_pool, &entity).await?;
+    let id = if let Some(checker) = &state.content_checker {
+        // Inserted first so the checks can name the playlist, and rolled back if they block it.
+        // A blocked playlist's checks keep an id that is never used.
+        let mut tx = state.sql_pool.begin().await?;
+        let id = PlaylistDao::insert(&mut *tx, &entity).await?;
+        check_playlist_text(checker, &state.sql_pool, uid, id, None, &req.name, req.description.as_deref()).await?;
+        tx.commit().await?;
+        id
+    } else {
+        PlaylistDao::insert(&state.sql_pool, &entity).await?
+    };
 
     if req.is_public {
         // Write behind, data consistence is not guaranteed.
@@ -321,6 +332,10 @@ async fn update(
 
     let playlist = check_ownership(&claims, &state.sql_pool, req.id).await?;
 
+    if let Some(checker) = &state.content_checker {
+        check_playlist_text(checker, &state.sql_pool, claims.uid(), playlist.id, Some(&playlist), &req.name, req.description.as_deref()).await?;
+    }
+
     PlaylistDao::update_by_id(
         &state.sql_pool,
         &Playlist {
@@ -344,6 +359,41 @@ async fn update(
     }
 
     ok!(())
+}
+
+/// Checks the name and description, leaving out what `current` already has, so existing playlists
+/// are never blocked; an empty description has nothing to check. Users aren't told why.
+async fn check_playlist_text(
+    checker: &ContentChecker,
+    pool: &PgPool,
+    uid: i64,
+    playlist_id: i64,
+    current: Option<&Playlist>,
+    name: &str,
+    description: Option<&str>,
+) -> Result<(), WebError<CommonError>> {
+    let name_check = async {
+        if current.is_some_and(|x| x.name == name) {
+            return Ok(Verdict::Pass);
+        }
+        checker.check_text(pool, content_check::SUBJECT_PLAYLIST_NAME, uid, playlist_id, name).await
+    };
+    let description_check = async {
+        match description {
+            Some(desc) if !desc.is_blank() && current.is_none_or(|x| x.description.as_deref() != Some(desc)) => {
+                checker.check_text(pool, content_check::SUBJECT_PLAYLIST_DESCRIPTION, uid, playlist_id, desc).await
+            }
+            _ => Ok(Verdict::Pass),
+        }
+    };
+    let (name_verdict, description_verdict) = tokio::join!(name_check, description_check);
+    if name_verdict? != Verdict::Pass {
+        err!("name_rejected", "Playlist name contains inappropriate content");
+    }
+    if description_verdict? != Verdict::Pass {
+        err!("description_rejected", "Playlist description contains inappropriate content");
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -514,12 +564,36 @@ async fn set_cover(
         err!("image_too_large", "Image size must be less than 8MB");
     }
 
-    let webp = service::upload::scale_down_to_webp(512, 512, bytes.clone(), ResizeType::Crop, 80f32)
+    // Off the async workers: encoding takes long enough to stall other requests
+    let webp = tokio::task::spawn_blocking({
+        let bytes = bytes.clone();
+        move || service::upload::scale_down_to_webp(512, 512, bytes, ResizeType::Crop, 80f32)
+    }).await.context("Failed to scale the cover")?
         .map_err(|_| common!("invalid_image", "The image is not supported"))?;
 
-    // Upload image
     let sha1 = openssl::sha::sha1(&webp);
     let filename = format!("images/playlist/{}.webp", hex::encode(sha1));
+
+    // Held until the cover is saved, so the user's uploads are checked one at a time
+    let _lock = if let Some(checker) = &state.content_checker {
+        let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
+            subject: content_check::SUBJECT_PLAYLIST_COVER,
+            actor_uid: claims.uid(),
+            target_id: playlist.id,
+            uploaded: &bytes,
+            webp: &webp,
+            key: &filename,
+            blocked_dir: "playlist",
+        }).await?;
+        if verdict != Verdict::Pass {
+            err!("cover_rejected", "Cover contains inappropriate content");
+        }
+        Some(lock)
+    } else {
+        None
+    };
+
+    // Upload image
     let result = state.file_host.upload(Bytes::from(webp), &filename).await?;
 
     playlist.cover_url = Some(result.public_url);
