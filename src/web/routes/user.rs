@@ -1,11 +1,10 @@
 use crate::db::user::{IUserDao, UserDao};
 use crate::db::CrudDao;
 use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
-use crate::service::content_check::{self, ContentChecker, Verdict};
+use crate::service::content_check::{self, ContentChecker, ImageUpload, Verdict};
 use crate::service::errors::ServiceError;
 use crate::service::follow::FollowError;
 use crate::service::upload::ResizeType;
-use crate::util::redlock::RedLockGuard;
 use crate::util::IsBlank;
 use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::{CommonError, WebError, WebResult};
@@ -19,7 +18,6 @@ use axum::{extract::State, routing::get, Json, Router};
 use chrono::Utc;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -197,7 +195,19 @@ async fn set_avatar(
 
     // Held until the avatar is saved, so the user's uploads are checked one at a time
     let _lock = if let Some(checker) = &state.content_checker {
-        Some(check_avatar(checker, &state, user.id, &bytes, &webp, &filename).await?)
+        let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
+            subject: content_check::SUBJECT_AVATAR,
+            actor_uid: user.id,
+            target_id: user.id,
+            uploaded: &bytes,
+            webp: &webp,
+            key: &filename,
+            blocked_dir: "avatar",
+        }).await?;
+        if verdict != Verdict::Pass {
+            err!("avatar_rejected", "Avatar contains inappropriate content");
+        }
+        Some(lock)
     } else {
         None
     };
@@ -211,39 +221,6 @@ async fn set_avatar(
     service::user::refresh_after_profile_change(&state, &user).await;
 
     ok!(())
-}
-
-/// Checks a new avatar, after the per-hour limit. A blocked avatar is stored apart, so wrong blocks
-/// can be looked into, and the request fails. Returns the lock on the user's avatar checks.
-async fn check_avatar(
-    checker: &ContentChecker,
-    state: &AppState,
-    uid: i64,
-    uploaded: &[u8],
-    webp: &[u8],
-    filename: &str,
-) -> Result<RedLockGuard, WebError<CommonError>> {
-    let lock = state.red_lock.lock_with_timeout(&format!("content_check:avatar:{uid}"), std::time::Duration::from_secs(10)).await?
-        .ok_or_else(|| common!("rate_limited", "Too many avatar uploads, try again later"))?;
-    if checker.image_limit_reached(&state.sql_pool, content_check::SUBJECT_AVATAR, uid).await? {
-        err!("rate_limited", "Too many avatar uploads, try again later");
-    }
-
-    let jpeg = tokio::task::spawn_blocking({
-        let webp = webp.to_vec();
-        move || service::upload::to_content_check_jpeg(&webp)
-    }).await.context("Failed to convert the avatar for the check")??;
-    // Random, so the uploader can't work out a public URL for a blocked image from their own file
-    let blocked_key = format!("content-check/blocked/avatar/{}.webp", uuid::Uuid::new_v4());
-    let verdict = checker.check_image(&state.sql_pool, content_check::SUBJECT_AVATAR, uid, uid, uploaded, &jpeg, filename, &blocked_key).await?;
-    if verdict != Verdict::Pass {
-        // The check is recorded either way; losing the copy only makes a wrong block harder to see
-        if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
-            warn!(uid, "Failed to store a blocked avatar: {e:#}");
-        }
-        err!("avatar_rejected", "Avatar contains inappropriate content");
-    }
-    Ok(lock)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
