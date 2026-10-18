@@ -65,7 +65,8 @@ pub struct ContentCheck {
     pub actor_uid: i64,
     /// The text as submitted, or the storage key of an image; which one depends on `subject`.
     pub content: String,
-    /// sha256 hex of exactly what was checked: the text as submitted, or the image file.
+    /// sha256 hex of what the user submitted: the text as it is, or the image file as uploaded
+    /// (not the copy re-encoded for the check).
     pub content_hash: String,
     pub policy_version: String,
     /// The model that answered; `None` when the call failed.
@@ -114,5 +115,13 @@ impl ContentCheckDao {
     pub async fn list_by_actor<'e>(executor: impl PgExecutor<'e>, actor_uid: i64, limit: i64) -> sqlx::Result<Vec<ContentCheck>> {
         query_content_checks!("WHERE actor_uid = $1 ORDER BY create_time DESC, id DESC LIMIT $2", actor_uid, limit)
             .fetch_all(executor).await
+    }
+
+    /// @since 261018
+    pub async fn count_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: i64, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
+        sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3"#,
+            actor_uid, subject, since
+        ).fetch_one(executor).await
     }
 }

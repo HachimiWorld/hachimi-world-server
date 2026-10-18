@@ -55,8 +55,10 @@ community:
 content_check:
   enabled: false
   policy_dir: config/content-check-example
-  # Pin a version; the thresholds are tuned against it.
+  # Pin versions; the thresholds are tuned against them.
   model: jev-1.13.0
+  # For images (avatars). Images are a preview feature of TypeSafe's API.
+  image_model: jev-1.14.0
   typesafe:
     api_key: change-me
     base_url: https://api.typesafe.ai

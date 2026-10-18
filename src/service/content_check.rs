@@ -12,7 +12,9 @@ use sqlx::PgPool;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::future::Future;
 use std::time::Instant;
+use chrono::Duration;
 use metrics::{counter, gauge, histogram};
 use tracing::warn;
 
@@ -25,10 +27,18 @@ pub const SUBJECT_USERNAME: &str = "user.username";
 /// A profile bio, checked when it changes.
 /// @since 261016
 pub const SUBJECT_BIO: &str = "user.bio";
+/// An avatar, checked when it's uploaded. Checked as an image.
+/// @since 261018
+pub const SUBJECT_AVATAR: &str = "user.avatar";
 /// Every subject the server checks. A policy must cover exactly these.
-const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO];
+const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR];
+/// The subjects whose content is an image; the rest are text.
+const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR];
 /// Sent to TypeSafe at startup to try the policy; harmless under any policy.
 const PROBE_TEXT: &str = "哈基米";
+/// How many images of one subject a user may have checked in an hour. Each check costs tokens, and
+/// trying again and again would let someone feel out the thresholds.
+const IMAGE_CHECKS_PER_HOUR: i64 = 10;
 
 /// Time taken by TypeSafe for one check, labelled by `subject` and `outcome`.
 /// @since 261017
@@ -46,6 +56,9 @@ pub struct ContentCheckCfg {
     pub policy_dir: PathBuf,
     /// The model for text, pinned to a version such as `jev-1.13.0`.
     pub model: String,
+    /// The model for images, pinned to a version such as `jev-1.14.0`.
+    /// @since 261018
+    pub image_model: String,
     pub typesafe: TypeSafeCfg,
 }
 
@@ -212,6 +225,7 @@ fn blocked_by(block_at: &BTreeMap<String, f64>, resp: &SystemOneResponse) -> Res
 pub struct ContentChecker {
     policy: Policy,
     model: String,
+    image_model: String,
     client: Arc<dyn TypeSafeClient>,
 }
 
@@ -222,21 +236,29 @@ impl ContentChecker {
     pub async fn new(cfg: &ContentCheckCfg, client: Arc<dyn TypeSafeClient>, pool: &PgPool) -> anyhow::Result<Self> {
         let policy = Policy::load(&cfg.policy_dir)?;
         policy.check_subjects(SUBJECTS)?;
-        let checker = Self { policy, model: cfg.model.clone(), client };
+        let checker = Self { policy, model: cfg.model.clone(), image_model: cfg.image_model.clone(), client };
         checker.probe().await?;
         store_snapshot(pool, &checker.policy).await?;
         // Shows on dashboards which policy and model each instance runs, and that checks are on.
         gauge!("content_check_policy_info", "version" => checker.policy.version.clone(), "model" => checker.model.clone()).set(1.0);
+        gauge!("content_check_policy_info", "version" => checker.policy.version.clone(), "model" => checker.image_model.clone()).set(1.0);
         Ok(checker)
     }
 
-    /// Asks every subject's questions about a harmless text, which tries the key, the model and the
-    /// questions at once. A rejection that retrying can't fix, or answers that don't match the
-    /// policy, fail startup. A passing failure, such as a timeout or TypeSafe being down, only logs:
-    /// an outage elsewhere shouldn't keep the server from starting, and checks pass meanwhile.
+    /// Asks every subject's questions about harmless content (a text, or a plain grey image), which
+    /// tries the key, the models and the questions at once. A rejection that retrying can't fix, or
+    /// answers that don't match the policy, fail startup. A passing failure, such as a timeout or
+    /// TypeSafe being down, only logs: an outage elsewhere shouldn't keep the server from starting,
+    /// and checks pass meanwhile.
     async fn probe(&self) -> anyhow::Result<()> {
+        let probe_image = probe_image()?;
         for (subject, policy) in &self.policy.subjects {
-            match self.client.system_one(&self.model, PROBE_TEXT, &policy.questions).await {
+            let result = if is_image(subject) {
+                self.client.system_one_image(&self.image_model, &probe_image, &policy.questions).await
+            } else {
+                self.client.system_one(&self.model, PROBE_TEXT, &policy.questions).await
+            };
+            match result {
                 Ok(resp) => {
                     if let Err(e) = blocked_by(&policy.block_at, &resp) {
                         bail!("TypeSafe's answers for {subject} don't match the policy: {e}");
@@ -244,7 +266,8 @@ impl ContentChecker {
                 }
                 Err(e) => match e.downcast_ref::<TypeSafeStatusError>() {
                     Some(status) if status.is_config_error() => {
-                        return Err(e.context(format!("TypeSafe rejected the questions for {subject} with model {}; check the key, the model and the policy", self.model)));
+                        let model = if is_image(subject) { &self.image_model } else { &self.model };
+                        return Err(e.context(format!("TypeSafe rejected the questions for {subject} with model {model}; check the key, the model and the policy")));
                     }
                     _ => {
                         warn!("Couldn't try the content check policy against TypeSafe, starting anyway: {e:#}");
@@ -270,11 +293,64 @@ impl ContentChecker {
         target_id: i64,
         text: &str,
     ) -> anyhow::Result<Verdict> {
-        let policy = self.policy.subjects.get(subject)
-            .with_context(|| format!("No content check policy for {subject}"))?;
+        let policy = self.subject_policy(subject)?;
+        let call = self.client.system_one(&self.model, text, &policy.questions);
+        let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(text.as_bytes()) };
+        self.check(pool, policy, record, call, |_| text.to_string()).await
+    }
 
+    /// Checks an image as `subject` and records it, the same way as [ContentChecker::check_text].
+    /// `jpeg` is what TypeSafe judges, made by [crate::service::upload::to_content_check_jpeg];
+    /// `uploaded` is the file as the user sent it, whose hash is recorded. The record keeps the
+    /// storage key of the image: `passed_key` if it passes, `blocked_key` if not. Storing the image
+    /// is the caller's job.
+    /// @since 261018
+    pub async fn check_image(
+        &self,
+        pool: &PgPool,
+        subject: &str,
+        actor_uid: i64,
+        target_id: i64,
+        uploaded: &[u8],
+        jpeg: &[u8],
+        passed_key: &str,
+        blocked_key: &str,
+    ) -> anyhow::Result<Verdict> {
+        let policy = self.subject_policy(subject)?;
+        let call = self.client.system_one_image(&self.image_model, jpeg, &policy.questions);
+        let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
+        self.check(pool, policy, record, call, |blocked| {
+            if blocked { blocked_key } else { passed_key }.to_string()
+        }).await
+    }
+
+    /// Whether `actor_uid` has had as many images of `subject` checked in the last hour as allowed.
+    /// Callers hold a lock per user around this and the check, or uploads at the same time would
+    /// all see the count from before any of them was recorded.
+    /// @since 261018
+    pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: i64) -> anyhow::Result<bool> {
+        let since = Utc::now() - Duration::hours(1);
+        let count = ContentCheckDao::count_by_actor_and_subject_since(pool, actor_uid, subject, since).await?;
+        Ok(count >= IMAGE_CHECKS_PER_HOUR)
+    }
+
+    fn subject_policy(&self, subject: &str) -> anyhow::Result<&SubjectPolicy> {
+        self.policy.subjects.get(subject).with_context(|| format!("No content check policy for {subject}"))
+    }
+
+    /// Makes `call`, judges its answers and records the check. `content` gives what to record as
+    /// the content, given whether it was blocked.
+    async fn check(
+        &self,
+        pool: &PgPool,
+        policy: &SubjectPolicy,
+        record: Record<'_>,
+        call: impl Future<Output = anyhow::Result<SystemOneResponse>>,
+        content: impl FnOnce(bool) -> String,
+    ) -> anyhow::Result<Verdict> {
+        let Record { subject, actor_uid, target_id, content_hash } = record;
         let started = Instant::now();
-        let result = self.client.system_one(&self.model, text, &policy.questions).await;
+        let result = call.await;
         let elapsed = started.elapsed();
         let latency_ms = elapsed.as_millis().min(i32::MAX as u128) as i32;
 
@@ -296,8 +372,8 @@ impl ContentChecker {
             subject: subject.to_string(),
             target_id,
             actor_uid,
-            content: text.to_string(),
-            content_hash: sha256_hex(text.as_bytes()),
+            content: content(!blocked.is_empty()),
+            content_hash,
             policy_version: self.policy.version.clone(),
             model,
             answers,
@@ -309,6 +385,26 @@ impl ContentChecker {
 
         Ok(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) })
     }
+}
+
+/// Who and what a check is about, for its record.
+struct Record<'a> {
+    subject: &'a str,
+    actor_uid: i64,
+    target_id: i64,
+    content_hash: String,
+}
+
+fn is_image(subject: &str) -> bool {
+    IMAGE_SUBJECTS.contains(&subject)
+}
+
+/// A plain grey JPEG that fits TypeSafe's limits, harmless under any policy.
+fn probe_image() -> anyhow::Result<Vec<u8>> {
+    let image = image::RgbImage::from_pixel(280, 280, image::Rgb([128, 128, 128]));
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90).encode_image(&image)?;
+    Ok(out)
 }
 
 /// Labels hold only fixed sets of values (subjects, outcomes, question ids), never content or users.

@@ -3,8 +3,10 @@ use hachimi_world_server::util::typesafe::{MockTypeSafeClient, SystemOneResponse
 use sqlx::PgPool;
 use std::sync::Arc;
 
-/// The model name the mock reports.
+/// The model name the mock reports for text.
 pub const TEST_MODEL: &str = "jev-test";
+/// The model name the mock reports for images.
+pub const TEST_IMAGE_MODEL: &str = "jev-test-image";
 
 /// A content checker using `config/content-check-example` and [get_mock_typesafe_client], so the
 /// example policy is kept loadable too.
@@ -17,6 +19,7 @@ pub async fn new_content_checker(pool: &PgPool, client: MockTypeSafeClient) -> a
     let cfg = ContentCheckCfg {
         policy_dir: "config/content-check-example".into(),
         model: TEST_MODEL.to_string(),
+        image_model: TEST_IMAGE_MODEL.to_string(),
         typesafe: TypeSafeCfg { api_key: String::new(), base_url: String::new(), timeout_ms: 0 },
     };
     ContentChecker::new(&cfg, Arc::new(client), pool).await
@@ -29,6 +32,10 @@ pub fn get_failing_typesafe_client(error: fn() -> anyhow::Error) -> MockTypeSafe
         let e = error();
         Box::pin(async move { Err(e) })
     });
+    mock.expect_system_one_image().returning(move |_, _, _| {
+        let e = error();
+        Box::pin(async move { Err(e) })
+    });
     mock
 }
 
@@ -36,13 +43,39 @@ pub fn get_failing_typesafe_client(error: fn() -> anyhow::Error) -> MockTypeSafe
 /// - `#<question id>`, such as `#sexual`, gives that noul 0.95; other nouls get 0.05
 /// - `#down` fails the call
 /// - `#odd` returns no answers, as if the response didn't match the policy
+///
+/// Images are read as the marker for their main colour (see [image_marker]): a mostly red image
+/// is `#sexual`, a mostly blue one is `#down`.
 pub fn get_mock_typesafe_client() -> MockTypeSafeClient {
     let mut mock = MockTypeSafeClient::default();
     mock.expect_system_one().returning(|model, state, questions| {
         let result = answer(model, state, questions);
         Box::pin(async move { result })
     });
+    mock.expect_system_one_image().returning(|model, jpeg, questions| {
+        let result = image_marker(jpeg).and_then(|marker| answer(model, marker, questions));
+        Box::pin(async move { result })
+    });
     mock
+}
+
+/// The marker a mock image stands for, by the average colour of the JPEG sent.
+fn image_marker(jpeg: &[u8]) -> anyhow::Result<&'static str> {
+    let image = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg)?.to_rgb8();
+    let mut sum = [0u64; 3];
+    for pixel in image.pixels() {
+        for (s, c) in sum.iter_mut().zip(pixel.0) {
+            *s += c as u64;
+        }
+    }
+    let [r, g, b] = sum.map(|s| s / image.pixels().len() as u64);
+    Ok(if r > 180 && g < 80 && b < 80 {
+        "#sexual"
+    } else if b > 180 && r < 80 && g < 80 {
+        "#down"
+    } else {
+        ""
+    })
 }
 
 fn answer(model: &str, state: &str, questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {

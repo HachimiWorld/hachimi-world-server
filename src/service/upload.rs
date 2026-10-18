@@ -89,6 +89,36 @@ pub fn scale_down_to_webp(
     Ok(webp.to_vec())
 }
 
+/// Re-encodes an image as a JPEG that fits TypeSafe's limits for images: each side between 256
+/// and 1568 pixels and at least 280 × 280 in area. Small images are scaled up; images too thin to
+/// fit both limits are padded with white.
+/// @since 261018
+pub fn to_content_check_jpeg(bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    const MIN: u32 = 280;
+    const MAX: u32 = 1568;
+    let img = image::load_from_memory(bytes)?.to_rgb8();
+    let (w, h) = img.dimensions();
+    let (short, long) = (w.min(h) as f64, w.max(h) as f64);
+    // Fit the long side first, then grow the short side if that still allows the long side to fit
+    let mut scale = (MAX as f64 / long).min(1.0);
+    if short * scale < MIN as f64 {
+        scale = (MIN as f64 / short).min(MAX as f64 / long);
+    }
+    let (nw, nh) = (((w as f64 * scale).round() as u32).max(1), ((h as f64 * scale).round() as u32).max(1));
+    let resized = image::imageops::resize(&img, nw, nh, FilterType::Lanczos3);
+    let (cw, ch) = (nw.max(MIN), nh.max(MIN));
+    let canvas = if (cw, ch) == (nw, nh) {
+        resized
+    } else {
+        let mut canvas = image::RgbImage::from_pixel(cw, ch, image::Rgb([255, 255, 255]));
+        image::imageops::overlay(&mut canvas, &resized, ((cw - nw) / 2) as i64, ((ch - nh) / 2) as i64);
+        canvas
+    };
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90).encode_image(&canvas)?;
+    Ok(out)
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadedImageTempData {
@@ -189,7 +219,7 @@ fn build_image_temp_key(module_type: &str, temp_id: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::service::upload::{scale_down_to_webp, ResizeType};
+    use crate::service::upload::{scale_down_to_webp, to_content_check_jpeg, ResizeType};
     use image::{DynamicImage, ImageBuffer, ImageFormat, Rgb};
     use std::io::Cursor;
 
@@ -252,5 +282,25 @@ mod tests {
     fn test_scale_down_invalid_bytes() {
         let result = scale_down_to_webp(100, 100, vec![0u8; 10].into(), ResizeType::Fit, 90.0);
         assert!(result.is_err());
+    }
+
+    fn dimensions_of(jpeg: &[u8]) -> (u32, u32) {
+        let img = image::load_from_memory_with_format(jpeg, ImageFormat::Jpeg).unwrap();
+        (img.width(), img.height())
+    }
+
+    #[test]
+    fn test_content_check_jpeg_fits_typesafe_limits() {
+        // An avatar, 256 × 256, is scaled up to the minimum area
+        let avatar = scale_down_to_webp(256, 256, make_test_image(600, 400, ImageFormat::Png).into(), ResizeType::Crop, 80.0).unwrap();
+        assert_eq!(dimensions_of(&to_content_check_jpeg(&avatar).unwrap()), (280, 280));
+
+        // A large image is scaled down to fit the long side
+        assert_eq!(dimensions_of(&to_content_check_jpeg(&make_test_image(3136, 1000, ImageFormat::Png)).unwrap()), (1568, 500));
+
+        // A thin image is padded to the minimum
+        assert_eq!(dimensions_of(&to_content_check_jpeg(&make_test_image(2000, 100, ImageFormat::Png)).unwrap()), (1568, 280));
+
+        assert!(to_content_check_jpeg(&[0u8; 10]).is_err());
     }
 }
