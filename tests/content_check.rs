@@ -5,6 +5,7 @@ use crate::common::{auth, with_test_environment, with_test_environment_with, Api
 use hachimi_world_server::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicyDao};
 use hachimi_world_server::service::user::PublicUserProfile;
 use hachimi_world_server::util::typesafe::{MockTypeSafeClient, SystemOneResponse, TypeSafeStatusError};
+use hachimi_world_server::web::routes::playlist::{CreatePlaylistReq, CreatePlaylistResp, ListResp, PlaylistItem, SetCoverReq, UpdatePlaylistReq};
 use hachimi_world_server::web::routes::user::{GetProfileReq, UpdateProfileReq};
 use image::{ImageFormat, Rgb, RgbImage};
 use reqwest::multipart::{Form, Part};
@@ -349,5 +350,167 @@ async fn startup_fails_when_typesafe_rejects_the_image_model() {
 
         let e = new_content_checker(&env.pool, mock).await.err().expect("a rejected image model should stop startup");
         assert!(format!("{e:#}").contains(TEST_IMAGE_MODEL), "{e:#}");
+    }).await
+}
+
+async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>) -> Result<i64, String> {
+    api.post("/playlist/create", &CreatePlaylistReq {
+        name: name.to_string(),
+        description: description.map(str::to_string),
+        is_public: true,
+    }).await.parse_resp::<CreatePlaylistResp>().await.map(|x| x.id).map_err(|e| e.code)
+}
+
+async fn update_playlist(api: &ApiClient, id: i64, name: &str, description: Option<&str>) -> Result<(), String> {
+    api.post("/playlist/update", &UpdatePlaylistReq {
+        id,
+        name: name.to_string(),
+        description: description.map(str::to_string),
+        is_public: true,
+    }).await.parse_resp::<()>().await.map_err(|e| e.code)
+}
+
+async fn set_cover(api: &ApiClient, playlist_id: i64, png: Vec<u8>) -> Result<(), String> {
+    let json = serde_json::to_string(&SetCoverReq { playlist_id }).unwrap();
+    api.post_raw("/playlist/set_cover")
+        .multipart(Form::new().text("json", json).part("file", Part::bytes(png).file_name("cover.png")))
+        .send().await.unwrap()
+        .parse_resp::<()>().await.map_err(|e| e.code)
+}
+
+/// The user's own playlists.
+async fn playlists(api: &ApiClient) -> Vec<PlaylistItem> {
+    api.get("/playlist/list").await.parse_resp::<ListResp>().await.unwrap().playlists
+}
+
+#[tokio::test]
+async fn ordinary_playlists_pass_and_are_recorded() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        let id = create_playlist(&env.api, "通勤歌单", Some("上班路上听")).await.unwrap();
+
+        let checks = checks(&env.pool, user.uid).await;
+        let mut subjects: Vec<_> = checks.iter().map(|c| c.subject.as_str()).collect();
+        subjects.sort();
+        assert_eq!(subjects, ["playlist.description", "playlist.name"]);
+        for check in &checks {
+            assert_eq!(check.target_id, id);
+            assert!(check.blocked_by.is_empty(), "{check:?}");
+            assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
+        }
+    }).await
+}
+
+#[tokio::test]
+async fn a_blocked_playlist_is_not_created() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        assert_eq!(create_playlist(&env.api, "坏名#sexual", None).await, Err("name_rejected".to_string()));
+        assert_eq!(create_playlist(&env.api, "通勤歌单", Some("加群领福利 #spam")).await, Err("description_rejected".to_string()));
+        assert!(playlists(&env.api).await.is_empty());
+
+        let checks = checks(&env.pool, user.uid).await;
+        let name = checks.iter().find(|c| c.subject == "playlist.name" && !c.blocked_by.is_empty()).unwrap();
+        assert_eq!(name.content, "坏名#sexual");
+        assert_eq!(name.blocked_by, ["sexual"]);
+        let description = checks.iter().find(|c| c.subject == "playlist.description").unwrap();
+        assert_eq!(description.blocked_by, ["spam"]);
+    }).await
+}
+
+#[tokio::test]
+async fn a_blocked_playlist_change_is_not_saved() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        auth::with_new_random_test_user(&mut env).await;
+        let id = create_playlist(&env.api, "通勤歌单", Some("上班路上听")).await.unwrap();
+
+        assert_eq!(update_playlist(&env.api, id, "坏名#sexual", Some("上班路上听")).await, Err("name_rejected".to_string()));
+        assert_eq!(update_playlist(&env.api, id, "通勤歌单", Some("加群领福利 #spam")).await, Err("description_rejected".to_string()));
+
+        let playlist = playlists(&env.api).await.into_iter().next().unwrap();
+        assert_eq!(playlist.name, "通勤歌单");
+        assert_eq!(playlist.description.as_deref(), Some("上班路上听"));
+    }).await
+}
+
+#[tokio::test]
+async fn only_changed_playlist_fields_are_checked() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+        let id = create_playlist(&env.api, "通勤歌单", None).await.unwrap();
+        assert_eq!(checks(&env.pool, user.uid).await.len(), 1);
+
+        // Same name, new description
+        update_playlist(&env.api, id, "通勤歌单", Some("上班路上听")).await.unwrap();
+        let checks_now = checks(&env.pool, user.uid).await;
+        assert_eq!(checks_now.len(), 2);
+        assert_eq!(checks_now[1].subject, "playlist.description");
+
+        // Nothing changed, and an empty description has nothing to check
+        update_playlist(&env.api, id, "通勤歌单", Some("上班路上听")).await.unwrap();
+        update_playlist(&env.api, id, "通勤歌单", Some("  ")).await.unwrap();
+        assert_eq!(checks(&env.pool, user.uid).await.len(), 2);
+
+        // A playlist passes when the check fails
+        update_playlist(&env.api, id, "名字#down", None).await.unwrap();
+        assert_eq!(playlists(&env.api).await[0].name, "名字#down");
+    }).await
+}
+
+#[tokio::test]
+async fn playlist_covers_are_checked() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+        let id = create_playlist(&env.api, "通勤歌单", None).await.unwrap();
+
+        let uploaded = png(GREY);
+        set_cover(&env.api, id, uploaded.clone()).await.unwrap();
+        let cover_url = playlists(&env.api).await[0].cover_url.clone().expect("the cover should be saved");
+
+        assert_eq!(set_cover(&env.api, id, png(RED)).await, Err("cover_rejected".to_string()));
+        assert_eq!(playlists(&env.api).await[0].cover_url.as_ref(), Some(&cover_url));
+
+        let covers: Vec<_> = checks(&env.pool, user.uid).await.into_iter().filter(|c| c.subject == "playlist.cover").collect();
+        assert_eq!(covers.len(), 2);
+        assert_eq!(covers[0].target_id, id);
+        assert_eq!(covers[0].content, key_of(&cover_url));
+        assert_eq!(covers[0].content_hash, hex::encode(Sha256::digest(&uploaded)));
+        assert_eq!(covers[0].model.as_deref(), Some(TEST_IMAGE_MODEL));
+        assert_eq!(covers[1].blocked_by, ["sexual"]);
+        assert!(covers[1].content.starts_with("content-check/blocked/playlist/"), "{}", covers[1].content);
+    }).await
+}
+
+#[tokio::test]
+async fn cover_checks_are_limited_apart_from_avatars() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+        let id = create_playlist(&env.api, "通勤歌单", None).await.unwrap();
+
+        for _ in 0..10 {
+            sqlx::query(
+                "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, blocked_by, latency_ms, create_time)
+                 VALUES ('playlist.cover', $2, $1, 'earlier', 'earlier', 'earlier', '{}', 0, now() - interval '30 minutes')"
+            ).bind(user.uid).bind(id).execute(&env.pool).await.unwrap();
+        }
+        assert_eq!(set_cover(&env.api, id, png(GREY)).await, Err("rate_limited".to_string()));
+
+        // Avatars have their own limit
+        set_avatar(&env.api, png(GREY)).await.unwrap();
+    }).await
+}
+
+#[tokio::test]
+async fn playlists_are_not_checked_without_content_check() {
+    with_test_environment(|mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        let id = create_playlist(&env.api, "坏名#sexual", Some("加群领福利 #spam")).await.unwrap();
+        set_cover(&env.api, id, png(RED)).await.unwrap();
+
+        assert!(playlists(&env.api).await[0].cover_url.is_some());
+        assert!(checks(&env.pool, user.uid).await.is_empty());
     }).await
 }
