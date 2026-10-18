@@ -44,6 +44,12 @@ impl TypeSafeStatusError {
 pub trait TypeSafeClient: Send + Sync {
     /// Asks `questions`, the API's `questions` map, about the text `state` with `model`.
     async fn system_one(&self, model: &str, state: &str, questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse>;
+
+    /// Asks `questions` about a JPEG image as the `state`. The image must already fit TypeSafe's
+    /// limits: each side 256 to 1568 pixels and at least 280 × 280 in area. Images are a preview
+    /// feature of the API.
+    /// @since 261017
+    async fn system_one_image(&self, model: &str, jpeg: &[u8], questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse>;
 }
 
 /// @since 261016
@@ -78,6 +84,10 @@ impl<T: TypeSafeClient + ?Sized> TypeSafeClient for Arc<T> {
     async fn system_one(&self, model: &str, state: &str, questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {
         (**self).system_one(model, state, questions).await
     }
+
+    async fn system_one_image(&self, model: &str, jpeg: &[u8], questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {
+        (**self).system_one_image(model, jpeg, questions).await
+    }
 }
 
 pub struct TypeSafeClientImpl {
@@ -99,16 +109,15 @@ impl TypeSafeClientImpl {
     }
 }
 
-#[async_trait]
-impl TypeSafeClient for TypeSafeClientImpl {
-    async fn system_one(&self, model: &str, state: &str, questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {
-        // No retries: callers that make a user wait would rather go on without an answer, and
-        // background callers retry on their own schedule.
-        let resp = self.client.post(&self.endpoint)
-            .bearer_auth(&self.api_key)
-            .json(&serde_json::json!({ "model": model, "state": state, "questions": questions }))
-            .send()
-            .await?;
+impl TypeSafeClientImpl {
+    // No retries: callers that make a user wait would rather go on without an answer, and
+    // background callers retry on their own schedule.
+    async fn post(&self, body: &serde_json::Value, images: bool) -> anyhow::Result<SystemOneResponse> {
+        let mut request = self.client.post(&self.endpoint).bearer_auth(&self.api_key).json(body);
+        if images {
+            request = request.header("TypeSafe-Danger-Zone-Images", "true");
+        }
+        let resp = request.send().await?;
         let status = resp.status();
         let body = resp.text().await?;
         if !status.is_success() {
@@ -117,6 +126,32 @@ impl TypeSafeClient for TypeSafeClientImpl {
             return Err(TypeSafeStatusError { status, body }.into());
         }
         Ok(serde_json::from_str(&body)?)
+    }
+}
+
+#[async_trait]
+impl TypeSafeClient for TypeSafeClientImpl {
+    async fn system_one(&self, model: &str, state: &str, questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {
+        self.post(&serde_json::json!({ "model": model, "state": state, "questions": questions }), false).await
+    }
+
+    async fn system_one_image(&self, model: &str, jpeg: &[u8], questions: &serde_json::Value) -> anyhow::Result<SystemOneResponse> {
+        // The API puts the image wherever this reference appears, so it must not occur in the
+        // questions by accident; a fresh UUID won't.
+        let reference = uuid::Uuid::new_v4().to_string();
+        let body = serde_json::json!({
+            "model": model,
+            "state": reference,
+            "assets": {
+                reference.clone(): {
+                    "type": "image",
+                    "format": "jpg",
+                    "data_base64": openssl::base64::encode_block(jpeg),
+                }
+            },
+            "questions": questions,
+        });
+        self.post(&body, true).await
     }
 }
 

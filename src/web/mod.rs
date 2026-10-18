@@ -15,7 +15,7 @@ pub mod jwt;
 pub mod result;
 mod web_metrics;
 mod extractors;
-mod governor;
+pub mod governor;
 mod request_id;
 mod cors;
 
@@ -26,6 +26,8 @@ pub struct ServerCfg {
     pub jwt_secret: String,
     pub allow_origins: Vec<String>,
     pub publish_version_token: String,
+    #[serde(default)]
+    pub rate_limit: governor::RateLimitCfg,
 }
 
 pub async fn run_web_app(
@@ -35,9 +37,8 @@ pub async fn run_web_app(
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(cfg.listen).await?;
 
-    let burst_size = 16u32;
     let (_main_server, _metrics_server) = tokio::join!(
-        start_main_server(listener, app_state, cfg.allow_origins, jwt::Keys::new(cfg.jwt_secret.as_bytes()), cfg.publish_version_token, burst_size, cancel_token.clone()),
+        start_main_server(listener, app_state, cfg.allow_origins, jwt::Keys::new(cfg.jwt_secret.as_bytes()), cfg.publish_version_token, cfg.rate_limit, cancel_token.clone()),
         web_metrics::start_metrics_server(cfg.metrics_listen, cancel_token)
     );
 
@@ -52,7 +53,7 @@ pub async fn start_main_server(
     allow_origins: Vec<String>,
     jwt_keys: jwt::Keys,
     publish_version_token: impl Into<String>,
-    burst_size: u32,
+    rate_limit: governor::RateLimitCfg,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<()> {
     jwt::initialize_jwt_key(jwt_keys);
@@ -63,7 +64,7 @@ pub async fn start_main_server(
     // /health stays outside the rate limiter so health checks never get a 429.
     let api = Router::new()
         .nest("/api", routes::router())
-        .layer(governor::governor_layer(burst_size));
+        .layer(governor::governor_layer(rate_limit));
     let app = Router::new()
         .merge(api)
         .route("/health", get(health))
