@@ -1,0 +1,18 @@
+{
+  "sexual": {
+    "type": "noul",
+    "instructions": "`state` is a playlist name. Is it sexually explicit?",
+    "criteria": {
+      "true": "It refers to sexual acts, genitals or pornography.",
+      "false": "It is not sexual."
+    }
+  },
+  "spam": {
+    "type": "noul",
+    "instructions": "`state` is a playlist name. Does it advertise something or carry contact details?",
+    "criteria": {
+      "true": "It promotes something or tells readers how to contact someone elsewhere.",
+      "false": "It is an ordinary name."
+    }
+  }
+}

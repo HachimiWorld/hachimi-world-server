@@ -3,7 +3,12 @@
 
 use crate::config::Config;
 use crate::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicy, ContentPolicyDao};
+use crate::service::upload;
+use crate::util::redlock::RedLockGuard;
 use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient, TypeSafeStatusError};
+use crate::web::result::{CommonError, WebError};
+use crate::web::state::AppState;
+use crate::{common, err};
 use anyhow::{bail, Context};
 use chrono::Utc;
 use serde::Deserialize;
@@ -30,10 +35,22 @@ pub const SUBJECT_BIO: &str = "user.bio";
 /// An avatar, checked when it's uploaded. Checked as an image.
 /// @since 261018
 pub const SUBJECT_AVATAR: &str = "user.avatar";
+/// A playlist name, checked when a playlist is created or renamed.
+/// @since 261018
+pub const SUBJECT_PLAYLIST_NAME: &str = "playlist.name";
+/// A playlist description, checked when it changes.
+/// @since 261018
+pub const SUBJECT_PLAYLIST_DESCRIPTION: &str = "playlist.description";
+/// A playlist cover, checked when it's uploaded. Checked as an image.
+/// @since 261018
+pub const SUBJECT_PLAYLIST_COVER: &str = "playlist.cover";
 /// Every subject the server checks. A policy must cover exactly these.
-const SUBJECTS: &[&str] = &[SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR];
+const SUBJECTS: &[&str] = &[
+    SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR,
+    SUBJECT_PLAYLIST_NAME, SUBJECT_PLAYLIST_DESCRIPTION, SUBJECT_PLAYLIST_COVER,
+];
 /// The subjects whose content is an image; the rest are text.
-const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR];
+const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR, SUBJECT_PLAYLIST_COVER];
 /// Sent to TypeSafe at startup to try the policy; harmless under any policy.
 const PROBE_TEXT: &str = "哈基米";
 /// How many images of one subject a user may have checked in an hour. Each check costs tokens, and
@@ -385,6 +402,53 @@ impl ContentChecker {
 
         Ok(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) })
     }
+}
+
+/// A new image to check before it's saved.
+/// @since 261018
+pub struct ImageUpload<'a> {
+    pub subject: &'a str,
+    pub actor_uid: i64,
+    pub target_id: i64,
+    /// The file as the user sent it.
+    pub uploaded: &'a [u8],
+    /// The image as it will be stored, at `key`.
+    pub webp: &'a [u8],
+    pub key: &'a str,
+    /// Where a blocked copy goes, under `content-check/blocked/`, such as `avatar`.
+    pub blocked_dir: &'a str,
+}
+
+/// Checks an uploaded image, after the per-hour limit. A blocked image is stored apart, so wrong
+/// blocks can be looked into. Returns the verdict and the lock on the user's checks of the subject;
+/// hold the lock until the image is saved, so the user's uploads are checked one at a time.
+/// @since 261018
+pub async fn check_image_upload(
+    checker: &ContentChecker,
+    state: &AppState,
+    upload: ImageUpload<'_>,
+) -> Result<(Verdict, RedLockGuard), WebError<CommonError>> {
+    let ImageUpload { subject, actor_uid, target_id, uploaded, webp, key, blocked_dir } = upload;
+    let lock = state.red_lock.lock_with_timeout(&format!("content_check:{subject}:{actor_uid}"), std::time::Duration::from_secs(10)).await?
+        .ok_or_else(|| common!("rate_limited", "Too many uploads, try again later"))?;
+    if checker.image_limit_reached(&state.sql_pool, subject, actor_uid).await? {
+        err!("rate_limited", "Too many uploads, try again later");
+    }
+
+    let jpeg = tokio::task::spawn_blocking({
+        let webp = webp.to_vec();
+        move || upload::to_content_check_jpeg(&webp)
+    }).await.context("Failed to convert the image for the check")??;
+    // Random, so the uploader can't work out a public URL for a blocked image from their own file
+    let blocked_key = format!("content-check/blocked/{blocked_dir}/{}.webp", uuid::Uuid::new_v4());
+    let verdict = checker.check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?;
+    if verdict != Verdict::Pass {
+        // The check is recorded either way; losing the copy only makes a wrong block harder to see
+        if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
+            warn!(subject, actor_uid, "Failed to store a blocked image: {e:#}");
+        }
+    }
+    Ok((verdict, lock))
 }
 
 /// Who and what a check is about, for its record.

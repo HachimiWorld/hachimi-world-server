@@ -3,12 +3,19 @@
 #
 # questions/<subject>.json is the `questions` map of TypeSafe's System One API, sent as it is.
 # Here, each subject gives a threshold for some of its noul questions: content whose probability
-# reaches it is blocked. The server checks the subjects user.username, user.bio and user.avatar (an
-# image), and refuses to start unless the policy has exactly those, each with a questions file.
+# reaches it is blocked. The server checks the subjects user.username, user.bio, user.avatar,
+# playlist.name, playlist.description and playlist.cover (the avatar and the cover are images), and
+# refuses to start unless the policy has exactly those, each with a questions file.
 subjects:
   user.username:
     block_at: { sexual: 0.8, spam: 0.8 }
   user.bio:
     block_at: { sexual: 0.8, spam: 0.8 }
   user.avatar:
+    block_at: { sexual: 0.8, spam: 0.8 }
+  playlist.name:
+    block_at: { sexual: 0.8, spam: 0.8 }
+  playlist.description:
+    block_at: { sexual: 0.8, spam: 0.8 }
+  playlist.cover:
     block_at: { sexual: 0.8, spam: 0.8 }
