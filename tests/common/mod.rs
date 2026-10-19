@@ -7,8 +7,10 @@ pub mod res_utils;
 pub mod publish;
 pub mod images;
 pub mod typesafe;
+pub mod postgres;
 
-use crate::common::images::{Meilisearch1_32, Postgres17, Redis8};
+use crate::common::images::{Meilisearch1_32, Redis8};
+use crate::common::postgres::TestPostgres;
 use async_trait::async_trait;
 use axum::http::HeaderMap;
 use hachimi_world_server::config::Config;
@@ -76,12 +78,7 @@ where
     // Boot external dependencies in parallel to reduce test startup time.
     let ((redis_instance, redis_conn), (postgres_instance, sql_pool), (ms_instance, ms_client)) = tokio::join!(
         get_test_redis_conn(),
-        async {
-            let (postgres_instance, sql_pool) = get_test_sql_pool().await;
-            // Migrations depend on Postgres only, so run them in the same task.
-            sqlx::migrate!().run(&sql_pool).await.unwrap();
-            (postgres_instance, sql_pool)
-        },
+        TestPostgres::start(),
         get_test_meilisearch(),
     );
 
@@ -125,7 +122,7 @@ where
 
     // Hold the instances until the end of the test to make sure the connections are still valid
     drop(redis_instance);
-    drop(postgres_instance);
+    postgres_instance.cleanup(app_state.sql_pool).await;
     drop(ms_instance);
 }
 
@@ -137,15 +134,6 @@ async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
     info!("Open test redis instance at {}", redis_url);
     let redis = redis::Client::open(redis_url).unwrap();
     (redis_instance, redis.get_connection_manager().await.unwrap())
-}
-
-async fn get_test_sql_pool() -> (ContainerAsync<Postgres17>, PgPool) {
-    let instance = Postgres17::default().start().await.unwrap();
-    let host_ip = instance.get_host().await.unwrap();
-    let host_port = instance.get_host_port_ipv4(5432).await.unwrap();
-    let url = format!("postgres://postgres:postgres@{host_ip}:{host_port}/postgres");
-    info!("Open test postgres instance at {}", url);
-    (instance, PgPool::connect(&url).await.unwrap())
 }
 
 async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch1_32>, meilisearch_sdk::client::Client) {

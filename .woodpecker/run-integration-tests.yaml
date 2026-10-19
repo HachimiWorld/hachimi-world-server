@@ -5,6 +5,13 @@ when:
   event:
     - push
     - manual
+# One Postgres for the whole run; each test clones its own database from a migrated template
+# (see tests/common/postgres.rs). Redis and Meilisearch still start per test via testcontainers.
+services:
+  - name: postgres
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
 steps:
   # Named volume is the cache; do not tar/zstd (write amplification).
   # Share CARGO_HOME with other workflows; keep CARGO_TARGET_DIR isolated.
@@ -13,6 +20,7 @@ steps:
     environment:
       SQLX_OFFLINE: true
       RUST_BACKTRACE: 1
+      TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
       CARGO_HOME: /cache/cargo
       CARGO_TARGET_DIR: /cache/target/run-integration-tests
     volumes:
