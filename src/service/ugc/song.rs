@@ -1,7 +1,7 @@
 //! Songs as report targets.
 
 use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
-use crate::db::song::SongDao;
+use crate::db::song::{SongDao, SongId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::song;
@@ -28,7 +28,7 @@ impl UgcAdapter for SongAdapter {
     }
 
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
-        Ok(SongDao::get_by_id(pool, id).await?.map(|x| UgcTarget {
+        Ok(SongDao::get_by_id(pool, SongId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.uploader_uid,
             title: x.title,
             cover_url: Some(x.cover_art_url),
@@ -44,12 +44,12 @@ impl UgcAdapter for SongAdapter {
     }
 
     async fn apply(&self, tx: &mut PgTransaction<'_>, id: i64, actions: &[ContentAction]) -> anyhow::Result<()> {
-        song::set_hidden(tx, id, actions.contains(&HIDE)).await?;
+        song::set_hidden(tx, SongId(id), actions.contains(&HIDE)).await?;
         Ok(())
     }
 
     async fn refresh(&self, state: &AppState, id: i64) {
-        match SongDao::get_by_id(&state.sql_pool, id).await {
+        match SongDao::get_by_id(&state.sql_pool, SongId(id)).await {
             Ok(Some(x)) => song::refresh_after_visibility_change(state, &x).await,
             Ok(None) => {}
             Err(e) => warn!(song_id = id, "Failed to load the song to refresh: {e:?}"),

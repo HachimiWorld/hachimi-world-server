@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
@@ -9,7 +10,7 @@ macro_rules! query_posts {
             Post, r#"
             SELECT
                 id,
-                author_uid,
+                author_uid as "author_uid: _",
                 title,
                 content,
                 content_type,
@@ -25,7 +26,7 @@ macro_rules! query_posts {
             Post, r#"
             SELECT
                 id,
-                author_uid,
+                author_uid as "author_uid: _",
                 title,
                 content,
                 content_type,
@@ -42,7 +43,7 @@ macro_rules! query_posts {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Post {
     pub id: i64,
-    pub author_uid: i64,
+    pub author_uid: UserId,
     pub title: String,
     pub content: String,
     pub content_type: String,
@@ -58,6 +59,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = Post;
+    type Id = i64;
 
     async fn list(executor: E) -> Result<Vec<Self::Entity>> {
         query_posts!()
@@ -98,7 +100,7 @@ where
         let rec = sqlx::query!(
             "INSERT INTO posts (author_uid, title, content, content_type, cover_url, create_time, update_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-            value.author_uid,
+            value.author_uid as UserId,
             value.title,
             value.content,
             value.content_type,

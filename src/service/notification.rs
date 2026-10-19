@@ -5,6 +5,7 @@
 //! Producers call [send_notification] inside their own business transaction, so the notification
 //! is committed or rolled back together with the business change. There is no HTTP endpoint for
 //! sending.
+use crate::db::user::UserId;
 
 use crate::db::notification::{Notification, NotificationDao};
 use crate::web::state::AppState;
@@ -60,7 +61,7 @@ impl ContentIntent {
 pub struct NewNotification {
     /// UUIDv7, generated once by the producer and reused when retrying the same send.
     pub id: Uuid,
-    pub recipient_uid: i64,
+    pub recipient_uid: UserId,
     /// `<domain>.<event>`, e.g. `governance.report_resolved`.
     pub notification_type: &'static str,
     pub title: String,
@@ -195,7 +196,7 @@ pub fn visible_since() -> DateTime<Utc> {
 /// Newest first. Returns the page and whether there are more.
 pub async fn list(
     pool: &PgPool,
-    recipient_uid: i64,
+    recipient_uid: UserId,
     before_id: Option<Uuid>,
     limit: i64,
 ) -> sqlx::Result<(Vec<Notification>, bool)> {
@@ -206,18 +207,18 @@ pub async fn list(
 }
 
 /// `None` if it isn't the recipient's or has expired.
-pub async fn get(pool: &PgPool, recipient_uid: i64, id: Uuid) -> sqlx::Result<Option<Notification>> {
+pub async fn get(pool: &PgPool, recipient_uid: UserId, id: Uuid) -> sqlx::Result<Option<Notification>> {
     Ok(NotificationDao::get_by_recipient(pool, recipient_uid, id).await?
         .filter(|x| x.create_time >= visible_since()))
 }
 
-pub async fn unread_count(pool: &PgPool, recipient_uid: i64) -> sqlx::Result<i64> {
+pub async fn unread_count(pool: &PgPool, recipient_uid: UserId) -> sqlx::Result<i64> {
     NotificationDao::count_unread_by_recipient(pool, recipient_uid, visible_since()).await
 }
 
 /// Marks it read, keeping the first read time if it already was. Returns the read time and the
 /// unread count after marking, or `None` if it isn't the recipient's or has expired.
-pub async fn mark_read(pool: &PgPool, recipient_uid: i64, id: Uuid) -> sqlx::Result<Option<(DateTime<Utc>, i64)>> {
+pub async fn mark_read(pool: &PgPool, recipient_uid: UserId, id: Uuid) -> sqlx::Result<Option<(DateTime<Utc>, i64)>> {
     let since = visible_since();
     let mut tx = pool.begin().await?;
     let Some(notification) = NotificationDao::get_by_recipient(&mut *tx, recipient_uid, id).await?
@@ -246,7 +247,7 @@ pub async fn mark_read(pool: &PgPool, recipient_uid: i64, id: Uuid) -> sqlx::Res
 
 /// Returns how many were marked and the unread count after marking. The count can be non-zero
 /// if a notification arrived meanwhile.
-pub async fn mark_all_read(pool: &PgPool, recipient_uid: i64) -> sqlx::Result<(u64, i64)> {
+pub async fn mark_all_read(pool: &PgPool, recipient_uid: UserId) -> sqlx::Result<(u64, i64)> {
     let since = visible_since();
     let mut tx = pool.begin().await?;
     let marked = NotificationDao::set_read_time_all_unread(&mut *tx, recipient_uid, since, Utc::now()).await?;

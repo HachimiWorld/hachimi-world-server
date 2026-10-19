@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 
@@ -7,7 +8,7 @@ macro_rules! query_user_connection_accounts {
         sqlx::query_as!(
             UserConnectionAccount, r#"
             SELECT
-                user_id,
+                user_id as "user_id: _",
                 provider_type,
                 provider_account_id,
                 provider_account_name,
@@ -22,7 +23,7 @@ macro_rules! query_user_connection_accounts {
         sqlx::query_as!(
             UserConnectionAccount, r#"
             SELECT
-                user_id,
+                user_id as "user_id: _",
                 provider_type,
                 provider_account_id,
                 provider_account_name,
@@ -38,7 +39,7 @@ macro_rules! query_user_connection_accounts {
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct UserConnectionAccount {
-    pub user_id: i64,
+    pub user_id: UserId,
     pub provider_type: String,
     pub provider_account_id: String,
     pub provider_account_name: String,
@@ -53,10 +54,10 @@ pub trait IUserConnectionAccountDao <'e, E>
 where E: PgExecutor<'e> {
     fn insert(executor: E, value: &UserConnectionAccount) -> impl Future<Output = sqlx::Result<()>> + Send;
     fn update(executor: E, value: &UserConnectionAccount) -> impl Future<Output = sqlx::Result<()>> + Send;
-    fn delete(executor: E, user_id: i64, provider_type: &str) -> impl Future<Output = sqlx::Result<()>> + Send;
-    fn list_by_user_id(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<UserConnectionAccount>>> + Send;
-    fn list_public_by_user_id(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<Vec<UserConnectionAccount>>> + Send;
-    fn get_by_user_id(executor: E, user_id: i64, provider_type: &str) -> impl Future<Output = sqlx::Result<Option<UserConnectionAccount>>> + Send;
+    fn delete(executor: E, user_id: UserId, provider_type: &str) -> impl Future<Output = sqlx::Result<()>> + Send;
+    fn list_by_user_id(executor: E, user_id: UserId) -> impl Future<Output = sqlx::Result<Vec<UserConnectionAccount>>> + Send;
+    fn list_public_by_user_id(executor: E, user_id: UserId) -> impl Future<Output = sqlx::Result<Vec<UserConnectionAccount>>> + Send;
+    fn get_by_user_id(executor: E, user_id: UserId, provider_type: &str) -> impl Future<Output = sqlx::Result<Option<UserConnectionAccount>>> + Send;
 }
 
 impl<'e, E> IUserConnectionAccountDao<'e, E> for UserConnectionAccountDao
@@ -64,7 +65,7 @@ where E: PgExecutor<'e> {
     async fn insert(executor: E, value: &UserConnectionAccount) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO user_connection_accounts(user_id, provider_type, provider_account_id, provider_account_name, public, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            value.user_id,
+            value.user_id as UserId,
             value.provider_type,
             value.provider_account_id,
             value.provider_account_name,
@@ -83,7 +84,7 @@ where E: PgExecutor<'e> {
             value.provider_account_name,
             value.public,
             value.update_time,
-            value.user_id,
+            value.user_id as UserId,
             value.provider_type
         )
         .execute(executor)
@@ -91,10 +92,10 @@ where E: PgExecutor<'e> {
         Ok(())
     }
 
-    async fn delete(executor: E, user_id: i64, provider_type: &str) -> sqlx::Result<()> {
+    async fn delete(executor: E, user_id: UserId, provider_type: &str) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM user_connection_accounts WHERE user_id = $1 AND provider_type = $2",
-            user_id,
+            user_id as UserId,
             provider_type
         )
         .execute(executor)
@@ -102,20 +103,20 @@ where E: PgExecutor<'e> {
         Ok(())
     }
 
-    async fn list_by_user_id(executor: E, user_id: i64) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1", user_id)
+    async fn list_by_user_id(executor: E, user_id: UserId) -> sqlx::Result<Vec<UserConnectionAccount>> {
+        query_user_connection_accounts!("WHERE user_id = $1", user_id as UserId)
             .fetch_all(executor)
             .await
     }
 
-    async fn list_public_by_user_id(executor: E, user_id: i64) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1 AND public = true", user_id)
+    async fn list_public_by_user_id(executor: E, user_id: UserId) -> sqlx::Result<Vec<UserConnectionAccount>> {
+        query_user_connection_accounts!("WHERE user_id = $1 AND public = true", user_id as UserId)
             .fetch_all(executor)
             .await
     }
 
-    async fn get_by_user_id(executor: E, user_id: i64, provider_type: &str) -> sqlx::Result<Option<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1 AND provider_type = $2", user_id, provider_type)
+    async fn get_by_user_id(executor: E, user_id: UserId, provider_type: &str) -> sqlx::Result<Option<UserConnectionAccount>> {
+        query_user_connection_accounts!("WHERE user_id = $1 AND provider_type = $2", user_id as UserId, provider_type)
             .fetch_optional(executor)
             .await
     }

@@ -1,3 +1,4 @@
+use crate::db::song::SongId;
 use crate::service::message_center::{self, Channel, ReceivedLikeItem};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
@@ -70,7 +71,7 @@ pub struct ReceivedLikesReq {
     /// `latest_like_time` of the previous page's last item. Omit both for the first page.
     pub before_time: Option<DateTime<Utc>>,
     /// `song_id` of the previous page's last item.
-    pub before_song_id: Option<i64>,
+    pub before_song_id: Option<SongId>,
     /// 1..=50, defaults to 20.
     pub limit: Option<i64>,
 }

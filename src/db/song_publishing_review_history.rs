@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{FromRow, PgExecutor, Result};
@@ -11,7 +12,7 @@ macro_rules! query_song_publishing_review_history {
             SELECT
                 id,
                 review_id,
-                user_id,
+                user_id as "user_id: _",
                 action_type,
                 note,
                 snapshot_data,
@@ -26,7 +27,7 @@ macro_rules! query_song_publishing_review_history {
             SELECT
                 id,
                 review_id,
-                user_id,
+                user_id as "user_id: _",
                 action_type,
                 note,
                 snapshot_data,
@@ -42,7 +43,7 @@ macro_rules! query_song_publishing_review_history {
 pub struct SongPublishingReviewHistory {
     pub id: i64,
     pub review_id: i64,
-    pub user_id: i64,
+    pub user_id: UserId,
     pub action_type: i32,
     pub note: Option<String>,
     pub snapshot_data: Value,
@@ -74,6 +75,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = SongPublishingReviewHistory;
+    type Id = i64;
 
     async fn list(executor: E) -> Result<Vec<Self::Entity>> {
         query_song_publishing_review_history!("ORDER BY create_time DESC, id DESC")
@@ -101,7 +103,7 @@ where
         sqlx::query!(
             "UPDATE song_publishing_review_history SET review_id = $1, user_id = $2, action_type = $3, note = $4, snapshot_data = $5, create_time = $6 WHERE id = $7",
             value.review_id,
-            value.user_id,
+            value.user_id as UserId,
             value.action_type,
             value.note,
             value.snapshot_data,
@@ -117,7 +119,7 @@ where
         sqlx::query_scalar!(
             "INSERT INTO song_publishing_review_history (review_id, user_id, action_type, note, snapshot_data, create_time) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             value.review_id,
-            value.user_id,
+            value.user_id as UserId,
             value.action_type,
             value.note,
             value.snapshot_data,

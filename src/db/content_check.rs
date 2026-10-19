@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
@@ -25,7 +26,7 @@ macro_rules! query_content_checks {
                 id,
                 subject,
                 target_id,
-                actor_uid,
+                actor_uid as "actor_uid: _",
                 content,
                 content_hash,
                 policy_version,
@@ -34,6 +35,7 @@ macro_rules! query_content_checks {
                 error,
                 blocked_by,
                 latency_ms,
+                reused_from,
                 create_time
             FROM content_checks
             "# + $extra,
@@ -62,7 +64,7 @@ pub struct ContentCheck {
     pub subject: String,
     /// The object the content belongs to.
     pub target_id: i64,
-    pub actor_uid: i64,
+    pub actor_uid: UserId,
     /// The text as submitted, or the storage key of an image; which one depends on `subject`.
     pub content: String,
     /// sha256 hex of what the user submitted: the text as it is, or the image file as uploaded
@@ -77,7 +79,12 @@ pub struct ContentCheck {
     pub error: Option<String>,
     /// Questions that reached their threshold; empty when passed.
     pub blocked_by: Vec<String>,
+    /// 0 when reused.
     pub latency_ms: i32,
+    /// The check whose answer this one reused, always one that asked TypeSafe; `None` when this one
+    /// asked TypeSafe itself.
+    /// @since 261019
+    pub reused_from: Option<i64>,
     pub create_time: DateTime<Utc>,
 }
 
@@ -104,24 +111,35 @@ impl ContentCheckDao {
     /// The `id` of `value` is ignored; returns the new id.
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &ContentCheck) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
-            "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, create_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
-            value.subject, value.target_id, value.actor_uid, value.content, value.content_hash, value.policy_version,
-            value.model, value.answers, value.error, &value.blocked_by, value.latency_ms, value.create_time
+            "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, reused_from, create_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
+            value.subject, value.target_id, value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
+            value.model, value.answers, value.error, &value.blocked_by, value.latency_ms, value.reused_from, value.create_time
         ).fetch_one(executor).await
     }
 
     /// Newest first.
-    pub async fn list_by_actor<'e>(executor: impl PgExecutor<'e>, actor_uid: i64, limit: i64) -> sqlx::Result<Vec<ContentCheck>> {
-        query_content_checks!("WHERE actor_uid = $1 ORDER BY create_time DESC, id DESC LIMIT $2", actor_uid, limit)
+    pub async fn list_by_actor<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, limit: i64) -> sqlx::Result<Vec<ContentCheck>> {
+        query_content_checks!("WHERE actor_uid = $1 ORDER BY create_time DESC, id DESC LIMIT $2", actor_uid as UserId, limit)
             .fetch_all(executor).await
     }
 
+    /// The latest check of `content_hash` as `subject` under `policy_version` whose call succeeded
+    /// and was answered by `model`.
+    /// @since 261019
+    pub async fn get_latest_succeeded<'e>(executor: impl PgExecutor<'e>, subject: &str, content_hash: &str, policy_version: &str, model: &str) -> sqlx::Result<Option<ContentCheck>> {
+        query_content_checks!(
+            "WHERE content_hash = $1 AND subject = $2 AND policy_version = $3 AND error IS NULL AND model = $4 ORDER BY id DESC LIMIT 1",
+            content_hash, subject, policy_version, model
+        ).fetch_optional(executor).await
+    }
+
+    /// Counts only checks that asked TypeSafe, not reused ones.
     /// @since 261018
-    pub async fn count_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: i64, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
+    pub async fn count_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
-            r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3"#,
-            actor_uid, subject, since
+            r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3 AND reused_from IS NULL"#,
+            actor_uid as UserId, subject, since
         ).fetch_one(executor).await
     }
 }

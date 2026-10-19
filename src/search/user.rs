@@ -1,3 +1,4 @@
+use crate::db::user::UserId;
 use crate::search::song::SearchResultHitsInfo;
 use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
@@ -9,7 +10,7 @@ use tracing::{error, info, info_span, Instrument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserDocument {
-    pub id: i64,
+    pub id: UserId,
     pub avatar_url: Option<String>,
     pub name: String,
     pub follower_count: i64
@@ -121,7 +122,7 @@ async fn fully_index_users(
     counter!("full_index_user_count").increment(1);
     // Use a custom query that includes COALESCE for follower_count
     let users = sqlx::query!(
-        r#"SELECT id, username, avatar_url, COALESCE(follower_count, 0) as "follower_count!: i64" FROM users"#
+        r#"SELECT id as "id: UserId", username, avatar_url, COALESCE(follower_count, 0) as "follower_count!: i64" FROM users"#
     )
     .fetch_all(pool)
     .await?;

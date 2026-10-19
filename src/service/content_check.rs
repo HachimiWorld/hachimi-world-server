@@ -3,6 +3,7 @@
 
 use crate::config::Config;
 use crate::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicy, ContentPolicyDao};
+use crate::db::user::UserId;
 use crate::service::upload;
 use crate::util::redlock::RedLockGuard;
 use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient, TypeSafeStatusError};
@@ -300,19 +301,24 @@ impl ContentChecker {
         &self.policy.version
     }
 
-    /// Checks `text` as `subject` and records it. When TypeSafe fails or its answer doesn't match
-    /// the policy, the text passes: the error is recorded and the caller goes on.
+    /// Checks `text` as `subject` and records it. Text judged before under this policy and model
+    /// gets the same verdict without asking TypeSafe again; see [ContentChecker::reuse]. When
+    /// TypeSafe fails or its answer doesn't match the policy, the text passes: the error is recorded
+    /// and the caller goes on.
     pub async fn check_text(
         &self,
         pool: &PgPool,
         subject: &str,
-        actor_uid: i64,
+        actor_uid: UserId,
         target_id: i64,
         text: &str,
     ) -> anyhow::Result<Verdict> {
         let policy = self.subject_policy(subject)?;
-        let call = self.client.system_one(&self.model, text, &policy.questions);
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(text.as_bytes()) };
+        if let Some(verdict) = self.reuse(pool, &record, |_| text.to_string()).await? {
+            return Ok(verdict);
+        }
+        let call = self.client.system_one(&self.model, text, &policy.questions);
         self.check(pool, policy, record, call, |_| text.to_string()).await
     }
 
@@ -320,13 +326,13 @@ impl ContentChecker {
     /// `jpeg` is what TypeSafe judges, made by [crate::service::upload::to_content_check_jpeg];
     /// `uploaded` is the file as the user sent it, whose hash is recorded. The record keeps the
     /// storage key of the image: `passed_key` if it passes, `blocked_key` if not. Storing the image
-    /// is the caller's job.
+    /// is the caller's job. Always asks TypeSafe; callers try [ContentChecker::reuse_image] first.
     /// @since 261018
     pub async fn check_image(
         &self,
         pool: &PgPool,
         subject: &str,
-        actor_uid: i64,
+        actor_uid: UserId,
         target_id: i64,
         uploaded: &[u8],
         jpeg: &[u8],
@@ -341,14 +347,68 @@ impl ContentChecker {
         }).await
     }
 
+    /// The verdict of an earlier check of the same image file, recorded the same way as
+    /// [ContentChecker::check_image]; `None` when there's none to reuse. See [ContentChecker::reuse].
+    /// @since 261019
+    pub async fn reuse_image(
+        &self,
+        pool: &PgPool,
+        subject: &str,
+        actor_uid: UserId,
+        target_id: i64,
+        uploaded: &[u8],
+        passed_key: &str,
+        blocked_key: &str,
+    ) -> anyhow::Result<Option<Verdict>> {
+        let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
+        self.reuse(pool, &record, |blocked| {
+            if blocked { blocked_key } else { passed_key }.to_string()
+        }).await
+    }
+
     /// Whether `actor_uid` has had as many images of `subject` checked in the last hour as allowed.
     /// Callers hold a lock per user around this and the check, or uploads at the same time would
     /// all see the count from before any of them was recorded.
     /// @since 261018
-    pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: i64) -> anyhow::Result<bool> {
+    pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: UserId) -> anyhow::Result<bool> {
         let since = Utc::now() - Duration::hours(1);
         let count = ContentCheckDao::count_by_actor_and_subject_since(pool, actor_uid, subject, since).await?;
         Ok(count >= IMAGE_CHECKS_PER_HOUR)
+    }
+
+    fn model_of(&self, subject: &str) -> &str {
+        if is_image(subject) { &self.image_model } else { &self.model }
+    }
+
+    /// Looks for an earlier check of the same content as `subject` whose call succeeded, under this
+    /// policy and model, by anyone. If there is one, records this check with its answers and
+    /// verdict, and returns the verdict: the same content would get the same answers, so asking
+    /// again only costs tokens. A new policy or model asks TypeSafe again. Failed calls aren't
+    /// reused, so content that passed because TypeSafe was down is judged next time.
+    async fn reuse(&self, pool: &PgPool, record: &Record<'_>, content: impl FnOnce(bool) -> String) -> anyhow::Result<Option<Verdict>> {
+        let Record { subject, actor_uid, target_id, content_hash } = record;
+        let Some(earlier) = ContentCheckDao::get_latest_succeeded(pool, subject, content_hash, &self.policy.version, self.model_of(subject)).await? else {
+            return Ok(None);
+        };
+        record_reuse_metrics(subject, &earlier.blocked_by);
+        ContentCheckDao::insert(pool, &ContentCheck {
+            id: 0,
+            subject: subject.to_string(),
+            target_id: *target_id,
+            actor_uid: *actor_uid,
+            content: content(!earlier.blocked_by.is_empty()),
+            content_hash: content_hash.clone(),
+            policy_version: self.policy.version.clone(),
+            model: earlier.model,
+            answers: earlier.answers,
+            error: None,
+            blocked_by: earlier.blocked_by.clone(),
+            latency_ms: 0,
+            reused_from: Some(earlier.reused_from.unwrap_or(earlier.id)),
+            create_time: Utc::now(),
+        }).await?;
+        let blocked = earlier.blocked_by;
+        Ok(Some(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) }))
     }
 
     fn subject_policy(&self, subject: &str) -> anyhow::Result<&SubjectPolicy> {
@@ -380,7 +440,7 @@ impl ContentChecker {
             Err(e) => (None, None, Some(format!("{e:#}")), Vec::new()),
         };
         if let Some(e) = &error {
-            warn!(subject, actor_uid, "Content check failed, passing the content: {e}");
+            warn!(subject, actor_uid = actor_uid.0, "Content check failed, passing the content: {e}");
         }
         record_metrics(subject, error.is_some(), &blocked, input_tokens, elapsed);
 
@@ -397,6 +457,7 @@ impl ContentChecker {
             error,
             blocked_by: blocked.clone(),
             latency_ms,
+            reused_from: None,
             create_time: Utc::now(),
         }).await?;
 
@@ -408,7 +469,7 @@ impl ContentChecker {
 /// @since 261018
 pub struct ImageUpload<'a> {
     pub subject: &'a str,
-    pub actor_uid: i64,
+    pub actor_uid: UserId,
     pub target_id: i64,
     /// The file as the user sent it.
     pub uploaded: &'a [u8],
@@ -419,8 +480,9 @@ pub struct ImageUpload<'a> {
     pub blocked_dir: &'a str,
 }
 
-/// Checks an uploaded image, after the per-hour limit. A blocked image is stored apart, so wrong
-/// blocks can be looked into. Returns the verdict and the lock on the user's checks of the subject;
+/// Checks an uploaded image. A file judged before gets the same verdict at once; anything else is
+/// sent to TypeSafe, after the per-hour limit. A blocked image is stored apart, so wrong blocks can
+/// be looked into. Returns the verdict and the lock on the user's checks of the subject;
 /// hold the lock until the image is saved, so the user's uploads are checked one at a time.
 /// @since 261018
 pub async fn check_image_upload(
@@ -431,21 +493,28 @@ pub async fn check_image_upload(
     let ImageUpload { subject, actor_uid, target_id, uploaded, webp, key, blocked_dir } = upload;
     let lock = state.red_lock.lock_with_timeout(&format!("content_check:{subject}:{actor_uid}"), std::time::Duration::from_secs(10)).await?
         .ok_or_else(|| common!("rate_limited", "Too many uploads, try again later"))?;
-    if checker.image_limit_reached(&state.sql_pool, subject, actor_uid).await? {
-        err!("rate_limited", "Too many uploads, try again later");
-    }
-
-    let jpeg = tokio::task::spawn_blocking({
-        let webp = webp.to_vec();
-        move || upload::to_content_check_jpeg(&webp)
-    }).await.context("Failed to convert the image for the check")??;
     // Random, so the uploader can't work out a public URL for a blocked image from their own file
     let blocked_key = format!("content-check/blocked/{blocked_dir}/{}.webp", uuid::Uuid::new_v4());
-    let verdict = checker.check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?;
+
+    // A reused verdict costs nothing and tells nothing new, so it isn't limited
+    let reused = checker.reuse_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, key, &blocked_key).await?;
+    let verdict = match reused {
+        Some(verdict) => verdict,
+        None => {
+            if checker.image_limit_reached(&state.sql_pool, subject, actor_uid).await? {
+                err!("rate_limited", "Too many uploads, try again later");
+            }
+            let jpeg = tokio::task::spawn_blocking({
+                let webp = webp.to_vec();
+                move || upload::to_content_check_jpeg(&webp)
+            }).await.context("Failed to convert the image for the check")??;
+            checker.check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?
+        }
+    };
     if verdict != Verdict::Pass {
         // The check is recorded either way; losing the copy only makes a wrong block harder to see
         if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
-            warn!(subject, actor_uid, "Failed to store a blocked image: {e:#}");
+            warn!(subject, actor_uid = actor_uid.0, "Failed to store a blocked image: {e:#}");
         }
     }
     Ok((verdict, lock))
@@ -454,7 +523,7 @@ pub async fn check_image_upload(
 /// Who and what a check is about, for its record.
 struct Record<'a> {
     subject: &'a str,
-    actor_uid: i64,
+    actor_uid: UserId,
     target_id: i64,
     content_hash: String,
 }
@@ -484,6 +553,13 @@ pub(crate) fn record_metrics(subject: &str, failed: bool, blocked: &[String], in
     if let Some(tokens) = input_tokens {
         counter!("content_check_input_tokens_total", "subject" => subject).increment(tokens.max(0) as u64);
     }
+}
+
+/// A check that reused an earlier answer, so it took no call and no tokens. Kept out of
+/// `content_check_total`, which counts calls to TypeSafe.
+fn record_reuse_metrics(subject: &str, blocked: &[String]) {
+    let outcome = if blocked.is_empty() { "pass" } else { "block" };
+    counter!("content_check_reused_total", "subject" => subject.to_string(), "outcome" => outcome).increment(1);
 }
 
 async fn store_snapshot(pool: &PgPool, policy: &Policy) -> anyhow::Result<()> {

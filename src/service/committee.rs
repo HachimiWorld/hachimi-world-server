@@ -2,7 +2,7 @@
 //! decide on reports.
 
 use crate::db::committee_member::{CommitteeMember, CommitteeMemberDao};
-use crate::db::user::UserDao;
+use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::contributor;
 use crate::service::errors::{ServiceError, ServiceResult};
@@ -27,13 +27,13 @@ pub enum CommitteeError {
     NotMember,
 }
 
-pub async fn access(state: &AppState, uid: i64) -> anyhow::Result<Access> {
+pub async fn access(state: &AppState, uid: UserId) -> anyhow::Result<Access> {
     let is_contributor = contributor::check_contributor(&state.config, state.redis_conn.clone(), &state.red_lock, &state.sql_pool, uid).await?;
     let is_member = CommitteeMemberDao::get(&state.sql_pool, uid).await?.is_some();
     Ok(Access { can_view: is_contributor || is_member, can_resolve: is_contributor })
 }
 
-pub async fn appoint(state: &AppState, operator_uid: i64, uid: i64) -> ServiceResult<(), CommitteeError> {
+pub async fn appoint(state: &AppState, operator_uid: UserId, uid: UserId) -> ServiceResult<(), CommitteeError> {
     if UserDao::get_by_id(&state.sql_pool, uid).await?.is_none() {
         return Err(ServiceError::BusinessError(CommitteeError::UserNotFound));
     }
@@ -50,7 +50,7 @@ pub async fn appoint(state: &AppState, operator_uid: i64, uid: i64) -> ServiceRe
     Ok(())
 }
 
-pub async fn revoke(state: &AppState, uid: i64) -> ServiceResult<(), CommitteeError> {
+pub async fn revoke(state: &AppState, uid: UserId) -> ServiceResult<(), CommitteeError> {
     if !CommitteeMemberDao::delete(&state.sql_pool, uid).await? {
         return Err(ServiceError::BusinessError(CommitteeError::NotMember));
     }

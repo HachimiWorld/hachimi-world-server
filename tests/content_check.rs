@@ -1,3 +1,5 @@
+use hachimi_world_server::db::playlist::PlaylistId;
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::typesafe::{get_failing_typesafe_client, get_mock_typesafe_client, new_content_checker, TEST_IMAGE_MODEL, TEST_MODEL};
@@ -43,12 +45,12 @@ async fn set_avatar(api: &ApiClient, png: Vec<u8>) -> Result<(), String> {
         .parse_resp::<()>().await.map_err(|e| e.code)
 }
 
-async fn profile(api: &ApiClient, uid: i64) -> PublicUserProfile {
+async fn profile(api: &ApiClient, uid: UserId) -> PublicUserProfile {
     api.get_query("/user/profile", &GetProfileReq { uid }).await.parse_resp().await.unwrap()
 }
 
 /// Oldest first.
-async fn checks(pool: &PgPool, uid: i64) -> Vec<ContentCheck> {
+async fn checks(pool: &PgPool, uid: UserId) -> Vec<ContentCheck> {
     let mut checks = ContentCheckDao::list_by_actor(pool, uid, 50).await.unwrap();
     checks.reverse();
     checks
@@ -71,7 +73,7 @@ async fn ordinary_changes_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["user.bio", "user.username"]);
         for check in &checks {
-            assert_eq!(check.target_id, user.uid);
+            assert_eq!(check.target_id, user.uid.0);
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
             assert!(check.answers.is_some());
@@ -188,6 +190,69 @@ async fn nothing_is_checked_without_content_check() {
     }).await
 }
 
+#[tokio::test]
+async fn text_judged_before_reuses_the_answer() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let first = auth::with_new_random_test_user(&mut env).await;
+        update(&env.api, "哈基米", Some("加群领福利 #spam")).await.unwrap_err();
+        let earlier = checks(&env.pool, first.uid).await.into_iter().find(|c| c.subject == "user.bio").unwrap();
+        assert_eq!(earlier.reused_from, None);
+
+        // Anyone sending the same text gets the same verdict, without asking TypeSafe
+        let second = auth::with_new_random_test_user(&mut env).await;
+        assert_eq!(update(&env.api, "哈基咪", Some("加群领福利 #spam")).await, Err("bio_rejected".to_string()));
+        let reused = checks(&env.pool, second.uid).await.into_iter().find(|c| c.subject == "user.bio").unwrap();
+        assert_eq!(reused.reused_from, Some(earlier.id));
+        assert_eq!(reused.blocked_by, ["spam"]);
+        assert_eq!(reused.content, "加群领福利 #spam");
+        assert_eq!(reused.content_hash, earlier.content_hash);
+        assert_eq!(reused.model, earlier.model);
+        assert_eq!(reused.answers, earlier.answers);
+        assert_eq!(reused.latency_ms, 0);
+
+        // A reused check points at the one that asked, not at another reused one
+        let third = auth::with_new_random_test_user(&mut env).await;
+        update(&env.api, "哈基咩", Some("加群领福利 #spam")).await.unwrap_err();
+        let again = checks(&env.pool, third.uid).await.into_iter().find(|c| c.subject == "user.bio").unwrap();
+        assert_eq!(again.reused_from, Some(earlier.id));
+
+        // Only the same subject counts: a bio that passed says nothing about a playlist description
+        update(&env.api, "哈基咩", Some("喜欢听歌")).await.unwrap();
+        create_playlist(&env.api, "通勤歌单", Some("喜欢听歌")).await.unwrap();
+        let description = checks(&env.pool, third.uid).await.into_iter().find(|c| c.subject == "playlist.description").unwrap();
+        assert_eq!(description.reused_from, None);
+    }).await
+}
+
+#[tokio::test]
+async fn failed_checks_and_other_policies_are_not_reused() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let user = auth::with_new_random_test_user(&mut env).await;
+
+        // Passed only because the call failed, so it's asked again
+        update(&env.api, "名字#down", None).await.unwrap();
+        update(&env.api, "名字", None).await.unwrap();
+        update(&env.api, "名字#down", None).await.unwrap();
+        let checks_now = checks(&env.pool, user.uid).await;
+        assert_eq!(checks_now.len(), 3);
+        assert!(checks_now.iter().all(|c| c.reused_from.is_none()), "{checks_now:?}");
+
+        // Judged as blocked under another policy version, or by another model
+        let hash = hex::encode(Sha256::digest("喜欢听歌".as_bytes()));
+        let policy_version = &checks_now[0].policy_version;
+        for (version, model) in [("earlier", TEST_MODEL), (policy_version.as_str(), "jev-earlier")] {
+            sqlx::query(
+                "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, blocked_by, latency_ms, create_time)
+                 VALUES ('user.bio', 0, 0, '喜欢听歌', $1, $2, $3, '{}', '{sexual}', 0, now())"
+            ).bind(&hash).bind(version).bind(model).execute(&env.pool).await.unwrap();
+        }
+        update(&env.api, "名字", Some("喜欢听歌")).await.unwrap();
+        let bio = checks(&env.pool, user.uid).await.into_iter().find(|c| c.subject == "user.bio").unwrap();
+        assert_eq!(bio.reused_from, None);
+        assert!(bio.blocked_by.is_empty());
+    }).await
+}
+
 fn status(status: StatusCode) -> anyhow::Error {
     TypeSafeStatusError { status, body: "mock".to_string() }.into()
 }
@@ -253,7 +318,7 @@ async fn an_ordinary_avatar_passes_and_is_recorded() {
         assert_eq!(checks.len(), 1);
         let check = &checks[0];
         assert_eq!(check.subject, "user.avatar");
-        assert_eq!(check.target_id, user.uid);
+        assert_eq!(check.target_id, user.uid.0);
         assert_eq!(check.content, key_of(&avatar_url));
         // The hash is of the file as uploaded, not of the copy that was checked
         assert_eq!(check.content_hash, hex::encode(Sha256::digest(&uploaded)));
@@ -303,8 +368,9 @@ async fn avatar_checks_are_limited_per_hour() {
     with_test_environment_with(CHECKS_ON, |mut env| async move {
         let user = auth::with_new_random_test_user(&mut env).await;
 
-        // Encoded first: encoding on the test's only thread holds up Redis replies, unlocks included
-        let pngs = (0..4).map(|_| png(GREY)).collect::<Vec<_>>();
+        // Encoded first: encoding on the test's only thread holds up Redis replies, unlocks included.
+        // Each a little different, since a file judged before isn't limited
+        let pngs = (0..4).map(|i| png([128, 128, 120 + i])).collect::<Vec<_>>();
 
         // Blocked checks count too
         set_avatar(&env.api, png(RED)).await.unwrap_err();
@@ -334,6 +400,45 @@ async fn avatar_checks_are_limited_per_hour() {
 }
 
 #[tokio::test]
+async fn an_image_judged_before_is_blocked_at_once_and_not_limited() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let blocked = png(RED);
+        let passed = png(GREY);
+        let first = auth::with_new_random_test_user(&mut env).await;
+        set_avatar(&env.api, blocked.clone()).await.unwrap_err();
+        set_avatar(&env.api, passed.clone()).await.unwrap();
+        let earlier = checks(&env.pool, first.uid).await;
+
+        // Another user, past the limit, uploads the same files
+        let second = auth::with_new_random_test_user(&mut env).await;
+        for _ in 0..10 {
+            sqlx::query(
+                "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, blocked_by, latency_ms, create_time)
+                 VALUES ('user.avatar', $1, $1, 'earlier', 'earlier', 'earlier', '{}', 0, now() - interval '30 minutes')"
+            ).bind(second.uid).execute(&env.pool).await.unwrap();
+        }
+        assert_eq!(set_avatar(&env.api, blocked).await, Err("avatar_rejected".to_string()));
+        set_avatar(&env.api, passed).await.unwrap();
+        let avatar_url = profile(&env.api, second.uid).await.avatar_url.expect("the avatar should be saved");
+        assert_eq!(set_avatar(&env.api, png([128, 128, 120])).await, Err("rate_limited".to_string()));
+
+        let reused: Vec<_> = checks(&env.pool, second.uid).await.into_iter().filter(|c| c.reused_from.is_some()).collect();
+        assert_eq!(reused.len(), 2);
+        assert_eq!(reused[0].reused_from, Some(earlier[0].id));
+        assert_eq!(reused[0].blocked_by, ["sexual"]);
+        assert!(reused[0].content.starts_with("content-check/blocked/avatar/"), "{}", reused[0].content);
+        assert_eq!(reused[1].reused_from, Some(earlier[1].id));
+        assert_eq!(reused[1].content, key_of(&avatar_url));
+
+        // The same file as a playlist cover is judged on its own
+        let id = create_playlist(&env.api, "通勤歌单", None).await.unwrap();
+        assert_eq!(set_cover(&env.api, id, png(RED)).await, Err("cover_rejected".to_string()));
+        let cover = checks(&env.pool, second.uid).await.into_iter().find(|c| c.subject == "playlist.cover").unwrap();
+        assert_eq!(cover.reused_from, None);
+    }).await
+}
+
+#[tokio::test]
 async fn startup_fails_when_typesafe_rejects_the_image_model() {
     with_test_environment(|env| async move {
         let mut mock = MockTypeSafeClient::default();
@@ -353,7 +458,7 @@ async fn startup_fails_when_typesafe_rejects_the_image_model() {
     }).await
 }
 
-async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>) -> Result<i64, String> {
+async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>) -> Result<PlaylistId, String> {
     api.post("/playlist/create", &CreatePlaylistReq {
         name: name.to_string(),
         description: description.map(str::to_string),
@@ -361,7 +466,7 @@ async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>)
     }).await.parse_resp::<CreatePlaylistResp>().await.map(|x| x.id).map_err(|e| e.code)
 }
 
-async fn update_playlist(api: &ApiClient, id: i64, name: &str, description: Option<&str>) -> Result<(), String> {
+async fn update_playlist(api: &ApiClient, id: PlaylistId, name: &str, description: Option<&str>) -> Result<(), String> {
     api.post("/playlist/update", &UpdatePlaylistReq {
         id,
         name: name.to_string(),
@@ -370,7 +475,7 @@ async fn update_playlist(api: &ApiClient, id: i64, name: &str, description: Opti
     }).await.parse_resp::<()>().await.map_err(|e| e.code)
 }
 
-async fn set_cover(api: &ApiClient, playlist_id: i64, png: Vec<u8>) -> Result<(), String> {
+async fn set_cover(api: &ApiClient, playlist_id: PlaylistId, png: Vec<u8>) -> Result<(), String> {
     let json = serde_json::to_string(&SetCoverReq { playlist_id }).unwrap();
     api.post_raw("/playlist/set_cover")
         .multipart(Form::new().text("json", json).part("file", Part::bytes(png).file_name("cover.png")))
@@ -395,7 +500,7 @@ async fn ordinary_playlists_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["playlist.description", "playlist.name"]);
         for check in &checks {
-            assert_eq!(check.target_id, id);
+            assert_eq!(check.target_id, id.0);
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
         }
@@ -474,7 +579,7 @@ async fn playlist_covers_are_checked() {
 
         let covers: Vec<_> = checks(&env.pool, user.uid).await.into_iter().filter(|c| c.subject == "playlist.cover").collect();
         assert_eq!(covers.len(), 2);
-        assert_eq!(covers[0].target_id, id);
+        assert_eq!(covers[0].target_id, id.0);
         assert_eq!(covers[0].content, key_of(&cover_url));
         assert_eq!(covers[0].content_hash, hex::encode(Sha256::digest(&uploaded)));
         assert_eq!(covers[0].model.as_deref(), Some(TEST_IMAGE_MODEL));

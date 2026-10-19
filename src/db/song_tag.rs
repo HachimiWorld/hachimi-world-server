@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::song::SongId;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
@@ -52,7 +53,7 @@ pub struct SongTagDao;
 pub trait ISongTagDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
     fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
-    fn list_by_song_ids(executor: E, song_ids: &[i64]) -> impl Future<Output = sqlx::Result<HashMap<i64, Vec<i64>>>> + Send;
+    fn list_by_song_ids(executor: E, song_ids: &[SongId]) -> impl Future<Output = sqlx::Result<HashMap<SongId, Vec<i64>>>> + Send;
     fn get_by_name(executor: E, name: &str) -> impl Future<Output = sqlx::Result<Option<SongTag>>> + Send;
     fn search_by_prefix(executor: E, prefix: &str) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
     fn get_random_tags(executor: E, limit: i64) -> impl Future<Output = sqlx::Result<Vec<SongTag>>> + Send;
@@ -61,6 +62,7 @@ where E: PgExecutor<'e> {
 impl <'e, E> CrudDao<'e, E> for SongTagDao
 where E: PgExecutor<'e> {
     type Entity = SongTag;
+    type Id = i64;
 
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         query_song_tags!()
@@ -135,11 +137,11 @@ where E: PgExecutor<'e> {
             .fetch_all(executor).await
     }
 
-    async fn list_by_song_ids(executor: E, song_ids: &[i64]) -> sqlx::Result<HashMap<i64, Vec<i64>>> {
+    async fn list_by_song_ids(executor: E, song_ids: &[SongId]) -> sqlx::Result<HashMap<SongId, Vec<i64>>> {
         if song_ids.is_empty() { return Ok(HashMap::new()) }
-        let rows = sqlx::query!("SELECT song_id, tag_id FROM song_tag_refs WHERE song_id = ANY($1)", song_ids)
+        let rows = sqlx::query!(r#"SELECT song_id as "song_id: SongId", tag_id FROM song_tag_refs WHERE song_id = ANY($1)"#, song_ids as &[SongId])
             .fetch_all(executor).await?;
-        let result: HashMap<i64, Vec<i64>> = rows.into_iter()
+        let result: HashMap<SongId, Vec<i64>> = rows.into_iter()
             .map(|x| (x.song_id, x.tag_id)).into_group_map();
         Ok(result)
     }

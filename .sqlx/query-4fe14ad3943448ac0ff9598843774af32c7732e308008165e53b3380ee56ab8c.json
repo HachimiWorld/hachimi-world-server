@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT song_id as \"song_id: SongId\", tag_id FROM song_tag_refs WHERE song_id = ANY($1)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "song_id: SongId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_tag_refs",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "tag_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_tag_refs",
+            "name": "tag_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "4fe14ad3943448ac0ff9598843774af32c7732e308008165e53b3380ee56ab8c"
+}

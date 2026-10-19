@@ -1,3 +1,5 @@
+use hachimi_world_server::db::song::SongId;
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user, TestUser};
@@ -27,12 +29,12 @@ async fn received_likes(env: &TestEnvironment, req: &ReceivedLikesReq) -> Receiv
     env.api.get_query("/message/received_likes", req).await.parse_resp().await.unwrap()
 }
 
-async fn follow(env: &mut TestEnvironment, follower: &TestUser, target_uid: i64) {
+async fn follow(env: &mut TestEnvironment, follower: &TestUser, target_uid: UserId) {
     env.api.set_token(follower.token.access_token.clone());
     env.api.post("/user/follow", &FollowReq { target_uid }).await.parse_resp::<serde_json::Value>().await.unwrap();
 }
 
-async fn like(env: &mut TestEnvironment, user: &TestUser, song_id: i64) {
+async fn like(env: &mut TestEnvironment, user: &TestUser, song_id: SongId) {
     env.api.set_token(user.token.access_token.clone());
     env.api.post("/song/likes/like", &LikeReq { song_id, playback_position_secs: None }).await
         .parse_resp::<serde_json::Value>().await.unwrap();

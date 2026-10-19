@@ -1,0 +1,64 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                playlist_id as \"playlist_id: _\",\n                song_id as \"song_id: _\",\n                order_index,\n                add_time\n            FROM playlist_songs\n            WHERE playlist_id = $1 ORDER BY order_index",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "playlist_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "playlist_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "order_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "order_index"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "add_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "playlist_songs",
+            "name": "add_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "4446db53d0c011da1fc3332046bbce3bcc5dcf225b4969a05ae36e9dbf2ead51"
+}

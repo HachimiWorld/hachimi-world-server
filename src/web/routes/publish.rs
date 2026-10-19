@@ -4,11 +4,11 @@ pub mod jmid;
 use crate::audio::ParseError;
 use crate::config::Config;
 use crate::db::creator::{Creator, CreatorDao};
-use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongExternalLink, SongId, SongOriginInfo, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_publishing_review_history::{self, SongPublishingReviewHistory, SongPublishingReviewHistoryDao};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
-use crate::db::user::UserDao;
+use crate::db::user::{UserDao, UserId};
 use crate::db::{song_publishing_review, CrudDao};
 use crate::service::contributor::CommunityCfg;
 use crate::service::email_outbox;
@@ -101,7 +101,7 @@ pub struct CreationInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProductionItem {
     pub role: String,
-    pub uid: Option<i64>,
+    pub uid: Option<UserId>,
     pub name: Option<String>,
 }
 
@@ -167,7 +167,7 @@ pub async fn publish(
     let now = Utc::now();
 
     let song = Song {
-        id: 0,
+        id: SongId(0),
         display_id: jmid.to_string(),
         title: req.title.to_string(),
         subtitle: req.subtitle.to_string(),
@@ -319,7 +319,7 @@ async fn build_internal_review_data(
             // Add to batch
             song_origin_infos.push(SongOriginInfo {
                 id: 0,
-                song_id: 0,
+                song_id: SongId(0),
                 origin_type: item.origin_type,
                 origin_song_id: song_ref.map(|x| x.id),
                 origin_title: item.title.clone(),
@@ -341,7 +341,7 @@ async fn build_internal_review_data(
                 .ok_or_else(|| common!("crew_user_not_found", "Crew user not found"))?;
             production_crew.push(SongProductionCrew {
                 id: 0,
-                song_id: 0,
+                song_id: SongId(0),
                 role: member.role.clone(),
                 uid: Some(user.id),
                 person_name: Some(user.username),
@@ -349,7 +349,7 @@ async fn build_internal_review_data(
         } else if let Some(ref name) = member.name {
             production_crew.push(SongProductionCrew {
                 id: 0,
-                song_id: 0,
+                song_id: SongId(0),
                 role: member.role.clone(),
                 uid: None,
                 person_name: Some(name.clone()),
@@ -374,7 +374,7 @@ async fn build_internal_review_data(
 
         let x = SongExternalLink {
             id: 0,
-            song_id: 0,
+            song_id: SongId(0),
             platform: link.platform.clone(),
             url: link.url.clone(),
         };
@@ -402,7 +402,7 @@ async fn build_internal_review_data(
 /// - `used`: Locked or owned by another user.
 async fn check_jmid_prefix_for_publication(
     sql_pool: &PgPool,
-    user_id: i64,
+    user_id: UserId,
     jmid_prefix: &str
 ) -> Result<bool, WebError<CommonError>> {
     let create_new_jmid: bool;
@@ -450,7 +450,7 @@ pub struct ModifyResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModifyReq {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub song_temp_id: Option<String>,
     pub cover_temp_id: Option<String>,
     pub title: String,
@@ -788,7 +788,7 @@ pub struct InternalSongPublishReviewData {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeJmidReq {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub old_jmid: String,
     pub new_jmid: String,
 }
@@ -854,11 +854,11 @@ async fn change_jmid(
 /// Updates the search index and clears the caches of a song after its change is committed.
 /// Failures are only logged: the change is already saved, so the request must not fail. A song
 /// whose index update failed stays out of date in search until it is indexed again.
-pub(crate) async fn refresh_song_search_and_caches(state: &AppState, song_id: i64) {
+pub(crate) async fn refresh_song_search_and_caches(state: &AppState, song_id: SongId) {
     if let Err(e) = search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song_id]).await {
-        error!(song_id, "Failed to update the song search index: {e:?}");
+        error!(song_id = song_id.0, "Failed to update the song search index: {e:?}");
     }
     if let Err(e) = service::recommend_v2::notify_update(song_id, state.redis_conn.clone()).await {
-        error!(song_id, "Failed to clear song caches: {e:?}");
+        error!(song_id = song_id.0, "Failed to clear song caches: {e:?}");
     }
 }
