@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, create_time)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+  "query": "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, reused_from, create_time)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -28,6 +28,7 @@
         "Text",
         "TextArray",
         "Int4",
+        "Int8",
         "Timestamptz"
       ]
     },
@@ -35,5 +36,5 @@
       false
     ]
   },
-  "hash": "d2ddbaf40ee14ead7a93388fa9bd575ecfeab3c916a9edce4e123b8dd4fca2fb"
+  "hash": "f7e4cadba066950bc6504552b0d8973fe606dd56e0d445e4a61d8744c99fa07d"
 }
