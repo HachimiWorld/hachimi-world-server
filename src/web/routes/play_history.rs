@@ -144,6 +144,7 @@ async fn touch_anonymous(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteReq {
+    /// Same value as `PlayHistoryItem.id`, which is the song id
     pub history_id: i64,
 }
 
@@ -152,7 +153,7 @@ async fn delete(
     state: State<AppState>,
     req: Json<DeleteReq>
 ) -> WebResult<()> {
-    SongDao::delete_play(&state.sql_pool, claims.uid(), req.history_id).await?;
+    UserPlayHistoryDao::delete(&state.sql_pool, claims.uid(), req.history_id).await?;
     ok!(())
 }
 

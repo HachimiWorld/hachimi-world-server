@@ -41,6 +41,7 @@ pub trait IUserPlayHistory<'e, E>
 where
     E: PgExecutor<'e>, {
     fn cursor_by_user_id(executor: E, user_id: i64, before_time: DateTime<Utc>, size: usize) -> impl Future<Output = sqlx::Result<Vec<UserPlayHistory>>>;
+    fn delete(executor: E, user_id: i64, song_id: i64) -> impl Future<Output = sqlx::Result<()>>;
 }
 
 pub trait IUserPlayHistoryExt<'e> {
@@ -57,6 +58,15 @@ where
             before_time,
             size as i64
         ).fetch_all(executor).await
+    }
+
+    async fn delete(executor: E, user_id: i64, song_id: i64) -> sqlx::Result<()> {
+        sqlx::query!(
+            "DELETE FROM user_play_history WHERE user_id = $1 AND song_id = $2",
+            user_id,
+            song_id
+        ).execute(executor).await?;
+        Ok(())
     }
 }
 
