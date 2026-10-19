@@ -1,6 +1,7 @@
-use crate::db::playlist::{FavoritePlaylist, IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
-use crate::db::song::SongDao;
+use crate::db::playlist::{FavoritePlaylist, IPlaylistDao, Playlist, PlaylistDao, PlaylistId, PlaylistSong};
+use crate::db::song::{SongDao, SongId};
 use crate::db::CrudDao;
+use crate::db::user::UserId;
 use crate::service::content_check::{self, ContentChecker, ImageUpload, Verdict};
 use crate::service::playlist;
 use crate::service::playlist::{GetDetailError, PlaylistMetadata};
@@ -53,7 +54,7 @@ pub fn router() -> Router<AppState> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailReq {
-    pub id: i64,
+    pub id: PlaylistId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +72,7 @@ pub struct DetailResp {
 /// @since 261008
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnavailableSongItem {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub order_index: i32,
     pub add_time: DateTime<Utc>,
 }
@@ -79,13 +80,13 @@ pub struct UnavailableSongItem {
 // Basic song information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongItem {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub song_display_id: String,
     pub title: String,
     pub subtitle: String,
     pub cover_url: String,
     pub uploader_name: String,
-    pub uploader_uid: i64,
+    pub uploader_uid: UserId,
     pub duration_seconds: i32,
     pub order_index: i32,
     pub add_time: DateTime<Utc>,
@@ -131,7 +132,7 @@ pub struct ListResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistItem {
-    pub id: i64,
+    pub id: PlaylistId,
     pub name: String,
     pub cover_url: Option<String>,
     pub description: Option<String>,
@@ -178,7 +179,7 @@ async fn list(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListPublicByUserReq {
-    pub user_id: i64,
+    pub user_id: UserId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -209,12 +210,12 @@ async fn list_public_by_user(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListContainingReq {
-    pub song_id: i64,
+    pub song_id: SongId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListContainingResp {
-    pub playlist_ids: Vec<i64>,
+    pub playlist_ids: Vec<PlaylistId>,
 }
 
 async fn list_containing(
@@ -243,7 +244,7 @@ pub struct CreatePlaylistReq {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatePlaylistResp {
-    pub id: i64,
+    pub id: PlaylistId,
 }
 
 #[framed]
@@ -269,7 +270,7 @@ async fn create(
     }
 
     let entity = Playlist {
-        id: 0,
+        id: PlaylistId(0),
         name: req.name.clone(),
         description: req.description.clone(),
         user_id: uid,
@@ -308,7 +309,7 @@ async fn create(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdatePlaylistReq {
-    pub id: i64,
+    pub id: PlaylistId,
     pub name: String,
     // pub use_song_cover: bool,
     // pub cover_temp_id: Option<String>,
@@ -366,8 +367,8 @@ async fn update(
 async fn check_playlist_text(
     checker: &ContentChecker,
     pool: &PgPool,
-    uid: i64,
-    playlist_id: i64,
+    uid: UserId,
+    playlist_id: PlaylistId,
     current: Option<&Playlist>,
     name: &str,
     description: Option<&str>,
@@ -376,12 +377,12 @@ async fn check_playlist_text(
         if current.is_some_and(|x| x.name == name) {
             return Ok(Verdict::Pass);
         }
-        checker.check_text(pool, content_check::SUBJECT_PLAYLIST_NAME, uid, playlist_id, name).await
+        checker.check_text(pool, content_check::SUBJECT_PLAYLIST_NAME, uid, playlist_id.0, name).await
     };
     let description_check = async {
         match description {
             Some(desc) if !desc.is_blank() && current.is_none_or(|x| x.description.as_deref() != Some(desc)) => {
-                checker.check_text(pool, content_check::SUBJECT_PLAYLIST_DESCRIPTION, uid, playlist_id, desc).await
+                checker.check_text(pool, content_check::SUBJECT_PLAYLIST_DESCRIPTION, uid, playlist_id.0, desc).await
             }
             _ => Ok(Verdict::Pass),
         }
@@ -398,7 +399,7 @@ async fn check_playlist_text(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeletePlaylistReq {
-    pub id: i64,
+    pub id: PlaylistId,
 }
 
 #[framed]
@@ -417,8 +418,8 @@ async fn delete(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddSongReq {
-    pub playlist_id: i64,
-    pub song_id: i64,
+    pub playlist_id: PlaylistId,
+    pub song_id: SongId,
 }
 
 #[framed]
@@ -462,8 +463,8 @@ async fn add_song(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveSongReq {
-    pub playlist_id: i64,
-    pub song_id: i64,
+    pub playlist_id: PlaylistId,
+    pub song_id: SongId,
 }
 
 #[framed]
@@ -480,8 +481,8 @@ async fn remove_song(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangeOrderReq {
-    pub playlist_id: i64,
-    pub song_id: i64,
+    pub playlist_id: PlaylistId,
+    pub song_id: SongId,
     /// Start from 0
     pub target_order: usize,
 }
@@ -526,7 +527,7 @@ async fn change_order(
 async fn check_ownership(
     claims: &Claims,
     pool: &PgPool,
-    playlist_id: i64,
+    playlist_id: PlaylistId,
 ) -> Result<Playlist, WebError<CommonError>> {
     let playlist = PlaylistDao::get_by_id(pool, playlist_id).await?
         .ok_or_else(|| common!("not_found", "Playlist not found"))?;
@@ -538,7 +539,7 @@ async fn check_ownership(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetCoverReq {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
 }
 
 async fn set_cover(
@@ -579,7 +580,7 @@ async fn set_cover(
         let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
             subject: content_check::SUBJECT_PLAYLIST_COVER,
             actor_uid: claims.uid(),
-            target_id: playlist.id,
+            target_id: playlist.id.0,
             uploaded: &bytes,
             webp: &webp,
             key: &filename,
@@ -617,7 +618,7 @@ pub struct SearchReq {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
     pub sort_by: Option<String>,
-    pub user_id: Option<i64>,
+    pub user_id: Option<UserId>,
 }
 
 type SearchPlaylistItem = PlaylistMetadata;
@@ -661,7 +662,7 @@ async fn search(
     };
 
     let result = search::playlist::search_playlists(state.meilisearch.as_ref(), &search_query).await?;
-    let hit_ids: Vec<i64> = result.hits.into_iter().map(|x| x.id).collect();
+    let hit_ids: Vec<PlaylistId> = result.hits.into_iter().map(|x| x.id).collect();
 
     let hits = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &hit_ids, false).await?
         .into_iter()
@@ -710,11 +711,11 @@ async fn page_favorites(
     if count == 0 {
         ok!(PageFavoritesResp {data: vec![], page_index, page_size, total: 0})
     }
-    let items: HashMap<i64, _> = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?
+    let items: HashMap<PlaylistId, _> = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?
         .into_iter()
         .map(|x| (x.playlist_id, x))
         .collect();
-    let playlist_ids: Vec<i64> = items.keys().copied().collect();
+    let playlist_ids: Vec<PlaylistId> = items.keys().copied().collect();
     let playlists =
         playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?;
     let result = playlists.into_iter().map(|(_, v)| FavoritePlaylistItem {
@@ -727,7 +728,7 @@ async fn page_favorites(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddFavoriteReq {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
 }
 
 async fn add_favorite(
@@ -756,12 +757,12 @@ async fn add_favorite(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddFavoriteResp {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveFavoriteReq {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
 }
 
 async fn remove_favorite(
@@ -775,12 +776,12 @@ async fn remove_favorite(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckFavoriteReq {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckFavoriteResp {
-    pub playlist_id: i64,
+    pub playlist_id: PlaylistId,
     pub is_favorite: bool,
     pub add_time: Option<DateTime<Utc>>,
 }

@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
@@ -10,7 +11,7 @@ macro_rules! query_song_publishing_review_comments {
             SELECT
                 id,
                 review_id,
-                user_id,
+                user_id as "user_id: _",
                 content,
                 create_time,
                 update_time
@@ -24,7 +25,7 @@ macro_rules! query_song_publishing_review_comments {
             SELECT
                 id,
                 review_id,
-                user_id,
+                user_id as "user_id: _",
                 content,
                 create_time,
                 update_time
@@ -39,7 +40,7 @@ macro_rules! query_song_publishing_review_comments {
 pub struct SongPublishingReviewComment {
     pub id: i64,
     pub review_id: i64,
-    pub user_id: i64,
+    pub user_id: UserId,
     pub content: String,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
@@ -67,6 +68,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = SongPublishingReviewComment;
+    type Id = i64;
 
     async fn list(executor: E) -> Result<Vec<Self::Entity>> {
         query_song_publishing_review_comments!("ORDER BY create_time")
@@ -91,7 +93,7 @@ where
         sqlx::query!(
             "UPDATE song_publishing_review_comment SET review_id = $1, user_id = $2, content = $3, create_time = $4, update_time = $5 WHERE id = $6",
             value.review_id,
-            value.user_id,
+            value.user_id as _,
             &value.content,
             value.create_time,
             value.update_time,
@@ -106,7 +108,7 @@ where
         let record = sqlx::query_scalar!(
             "INSERT INTO song_publishing_review_comment (review_id, user_id, content, create_time, update_time) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             value.review_id,
-            value.user_id,
+            value.user_id as _,
             &value.content,
             value.create_time,
             value.update_time

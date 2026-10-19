@@ -1,5 +1,7 @@
-use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistSong};
+use crate::db::song::SongId;
+use crate::db::playlist::{IPlaylistDao, Playlist, PlaylistDao, PlaylistId, PlaylistSong};
 use crate::db::CrudDao;
+use crate::db::user::UserId;
 use crate::service::playlist::GetDetailError::{CreatorUserNotFound, NotFound, NotOwner};
 use crate::service::{song, user};
 use crate::web::routes::playlist::{DetailResp, PlaylistItem, SongItem, UnavailableSongItem};
@@ -15,18 +17,18 @@ use std::collections::HashMap;
 #[derive(thiserror::Error, Debug)]
 pub enum GetDetailError {
     #[error("Playlist {playlist_id} not found")]
-    NotFound { playlist_id: i64 },
+    NotFound { playlist_id: PlaylistId },
     #[error("User {user_id:?} is not the owner of playlist {playlist_id}")]
-    NotOwner { user_id: Option<i64>, playlist_id: i64 },
+    NotOwner { user_id: Option<UserId>, playlist_id: PlaylistId },
     #[error("Creator user of playlist {playlist_id} not found")]
-    CreatorUserNotFound { playlist_id: i64 },
+    CreatorUserNotFound { playlist_id: PlaylistId },
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     #[error(transparent)]
     Other(#[from] anyhow::Error)
 }
 
-pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: i64) -> Result<DetailResp, GetDetailError> {
+pub async fn get_detail(state: &State<AppState>, uid: Option<UserId>, playlist_id: PlaylistId) -> Result<DetailResp, GetDetailError> {
     let playlist = PlaylistDao::get_by_id(&state.sql_pool, playlist_id).await?
         .ok_or_else(|| NotFound { playlist_id })?;
 
@@ -46,7 +48,7 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
 
     let playlist_songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
     let song_ids = playlist_songs.iter().map(|song| song.song_id).collect_vec();
-    let playlist_songs_map: HashMap<i64, PlaylistSong> = playlist_songs.into_iter().map(|x| (x.song_id, x)).collect();
+    let playlist_songs_map: HashMap<SongId, PlaylistSong> = playlist_songs.into_iter().map(|x| (x.song_id, x)).collect();
 
     // Hydrate songs and creator user info
     let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, &song_ids).await?;
@@ -106,8 +108,8 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<i64>, playlist_id: 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistMetadata {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: PlaylistId,
+    pub user_id: UserId,
     pub user_name: String,
     pub user_avatar_url: Option<String>,
     pub name: String,
@@ -121,9 +123,9 @@ pub struct PlaylistMetadata {
 pub async fn list_playlist_metadata(
     redis: ConnectionManager,
     sql_pool: &PgPool,
-    playlist_ids: &[i64],
+    playlist_ids: &[PlaylistId],
     filter_private: bool
-) -> anyhow::Result<HashMap<i64, PlaylistMetadata>> {
+) -> anyhow::Result<HashMap<PlaylistId, PlaylistMetadata>> {
     let mut rows = PlaylistDao::list_by_ids(sql_pool, &playlist_ids).await?;
     // Only list public playlists
     if filter_private {
@@ -133,10 +135,10 @@ pub async fn list_playlist_metadata(
 
     let user_ids = rows.iter().map(|x| x.user_id).collect_vec();
     let counts = PlaylistDao::count_songs(sql_pool, &playlist_ids).await?;
-    let playlists: HashMap<i64, Playlist> = rows.into_iter().map(|p| (p.id, p)).collect();
+    let playlists: HashMap<PlaylistId, Playlist> = rows.into_iter().map(|p| (p.id, p)).collect();
     let users = user::get_common_user_profile(redis, sql_pool, &user_ids).await?;
 
-    let result: HashMap<i64, _> = playlist_ids
+    let result: HashMap<PlaylistId, _> = playlist_ids
         .into_iter()
         .filter_map(|id| playlists.get(&id))
         .map(|p| PlaylistMetadata {
@@ -158,7 +160,7 @@ pub async fn list_playlist_metadata(
 /// Hides or shows a playlist for everyone but its owner, in the caller's transaction. Returns the
 /// playlist if it exists. Call [refresh_after_visibility_change] after committing.
 /// @since 261008
-pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, playlist_id: i64, hidden: bool) -> anyhow::Result<Option<Playlist>> {
+pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, playlist_id: PlaylistId, hidden: bool) -> anyhow::Result<Option<Playlist>> {
     if !PlaylistDao::set_hidden(&mut **tx, playlist_id, hidden).await? {
         return Ok(None);
     }
@@ -174,6 +176,6 @@ pub async fn refresh_after_visibility_change(state: &AppState, playlist: &Playli
         crate::search::playlist::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[playlist.id]).await
     };
     if let Err(e) = result {
-        tracing::warn!(playlist_id = playlist.id, "Failed to update the playlist search index: {e:?}");
+        tracing::warn!(playlist_id = playlist.id.0, "Failed to update the playlist search index: {e:?}");
     }
 }

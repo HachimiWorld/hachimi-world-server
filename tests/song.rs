@@ -1,3 +1,4 @@
+use hachimi_world_server::db::song::SongId;
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
@@ -88,7 +89,7 @@ async fn test_get_recent_songs() {
         assert!(!resp.songs.is_empty(), "Should have recent songs");
 
         // Verify at least one of our songs appears (newest first, so song 4 should be first)
-        let recent_ids: Vec<i64> = resp.songs.iter().map(|s| s.id).collect();
+        let recent_ids: Vec<SongId> = resp.songs.iter().map(|s| s.id).collect();
         assert!(recent_ids.iter().any(|id| song_ids.contains(id)),
             "Created songs should appear in recent");
 
@@ -108,7 +109,7 @@ async fn test_get_recent_songs() {
                 .await.parse_resp().await.unwrap();
 
             // No overlap between pages
-            let page2_ids: std::collections::HashSet<i64> = page2.songs.iter().map(|s| s.id).collect();
+            let page2_ids: std::collections::HashSet<SongId> = page2.songs.iter().map(|s| s.id).collect();
             assert!(page1.songs.iter().all(|s| !page2_ids.contains(&s.id)),
                 "Pages should not overlap");
         }
@@ -244,7 +245,7 @@ async fn test_page_by_users() {
         assert!(!resp2.songs.is_empty(), "Second page should have remaining songs");
 
         // Assert no overlap between pages
-        let resp2_ids: std::collections::HashSet<i64> = resp2.songs.iter().map(|s| s.id).collect();
+        let resp2_ids: std::collections::HashSet<SongId> = resp2.songs.iter().map(|s| s.id).collect();
         assert!(resp.songs.iter().all(|s| !resp2_ids.contains(&s.id)),
             "Pages should not overlap");
     }).await;

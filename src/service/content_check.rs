@@ -3,6 +3,7 @@
 
 use crate::config::Config;
 use crate::db::content_check::{ContentCheck, ContentCheckDao, ContentPolicy, ContentPolicyDao};
+use crate::db::user::UserId;
 use crate::service::upload;
 use crate::util::redlock::RedLockGuard;
 use crate::util::typesafe::{SystemOneResponse, TypeSafeCfg, TypeSafeClient, TypeSafeStatusError};
@@ -308,7 +309,7 @@ impl ContentChecker {
         &self,
         pool: &PgPool,
         subject: &str,
-        actor_uid: i64,
+        actor_uid: UserId,
         target_id: i64,
         text: &str,
     ) -> anyhow::Result<Verdict> {
@@ -331,7 +332,7 @@ impl ContentChecker {
         &self,
         pool: &PgPool,
         subject: &str,
-        actor_uid: i64,
+        actor_uid: UserId,
         target_id: i64,
         uploaded: &[u8],
         jpeg: &[u8],
@@ -353,7 +354,7 @@ impl ContentChecker {
         &self,
         pool: &PgPool,
         subject: &str,
-        actor_uid: i64,
+        actor_uid: UserId,
         target_id: i64,
         uploaded: &[u8],
         passed_key: &str,
@@ -369,7 +370,7 @@ impl ContentChecker {
     /// Callers hold a lock per user around this and the check, or uploads at the same time would
     /// all see the count from before any of them was recorded.
     /// @since 261018
-    pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: i64) -> anyhow::Result<bool> {
+    pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: UserId) -> anyhow::Result<bool> {
         let since = Utc::now() - Duration::hours(1);
         let count = ContentCheckDao::count_by_actor_and_subject_since(pool, actor_uid, subject, since).await?;
         Ok(count >= IMAGE_CHECKS_PER_HOUR)
@@ -439,7 +440,7 @@ impl ContentChecker {
             Err(e) => (None, None, Some(format!("{e:#}")), Vec::new()),
         };
         if let Some(e) = &error {
-            warn!(subject, actor_uid, "Content check failed, passing the content: {e}");
+            warn!(subject, actor_uid = actor_uid.0, "Content check failed, passing the content: {e}");
         }
         record_metrics(subject, error.is_some(), &blocked, input_tokens, elapsed);
 
@@ -468,7 +469,7 @@ impl ContentChecker {
 /// @since 261018
 pub struct ImageUpload<'a> {
     pub subject: &'a str,
-    pub actor_uid: i64,
+    pub actor_uid: UserId,
     pub target_id: i64,
     /// The file as the user sent it.
     pub uploaded: &'a [u8],
@@ -513,7 +514,7 @@ pub async fn check_image_upload(
     if verdict != Verdict::Pass {
         // The check is recorded either way; losing the copy only makes a wrong block harder to see
         if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
-            warn!(subject, actor_uid, "Failed to store a blocked image: {e:#}");
+            warn!(subject, actor_uid = actor_uid.0, "Failed to store a blocked image: {e:#}");
         }
     }
     Ok((verdict, lock))
@@ -522,7 +523,7 @@ pub async fn check_image_upload(
 /// Who and what a check is about, for its record.
 struct Record<'a> {
     subject: &'a str,
-    actor_uid: i64,
+    actor_uid: UserId,
     target_id: i64,
     content_hash: String,
 }

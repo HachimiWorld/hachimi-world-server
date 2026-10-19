@@ -1,6 +1,6 @@
 use crate::common;
 use crate::config::Config;
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::util::redlock::RedLock;
 use crate::web::result::{CommonError, WebError};
 use crate::web::state::AppState;
@@ -21,7 +21,7 @@ pub struct CommunityCfg {
 
 pub async fn ensure_contributor(
     state: &AppState,
-    uid: i64,
+    uid: UserId,
 ) -> Result<(), WebError<CommonError>> {
     let config = state.config.clone();
     let pool = &state.sql_pool;
@@ -40,7 +40,7 @@ pub async fn check_contributor(
     mut redis: ConnectionManager,
     red_lock: &RedLock,
     pool: &PgPool,
-    uid: i64,
+    uid: UserId,
 ) -> anyhow::Result<bool> {
     if let Some(uids) = get_contributors_from_cache(&mut redis).await?
         && uids.contains(&uid) {
@@ -75,10 +75,10 @@ pub async fn check_contributor(
     Ok(contributor_uids.contains(&uid))
 }
 
-async fn get_contributors_from_cache(redis: &mut ConnectionManager) -> anyhow::Result<Option<Vec<i64>>> {
+async fn get_contributors_from_cache(redis: &mut ConnectionManager) -> anyhow::Result<Option<Vec<UserId>>> {
     let contributors_cache = redis.get("contributors").await?;
     if let Some(contributors) = contributors_cache {
-        let contributor_uids: Vec<i64> = serde_json::from_str(&contributors)?;
+        let contributor_uids: Vec<UserId> = serde_json::from_str(&contributors)?;
         counter!("check_contributor_cache_hit_count").increment(1);
         Ok(Some(contributor_uids))
     } else {

@@ -1,3 +1,4 @@
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::{assert_is_err, auth, CommonParse, TestEnvironment};
@@ -9,7 +10,7 @@ use hachimi_world_server::web::routes::user::{
 };
 
 /// Helper: follow user and assert success, returning follower_count.
-async fn do_follow(env: &mut TestEnvironment, target_uid: i64) -> i64 {
+async fn do_follow(env: &mut TestEnvironment, target_uid: UserId) -> i64 {
     let resp = env
         .api
         .post("/user/follow", &FollowReq { target_uid })
@@ -21,7 +22,7 @@ async fn do_follow(env: &mut TestEnvironment, target_uid: i64) -> i64 {
 }
 
 /// Helper: unfollow user and assert success.
-async fn do_unfollow(env: &mut TestEnvironment, target_uid: i64) -> i64 {
+async fn do_unfollow(env: &mut TestEnvironment, target_uid: UserId) -> i64 {
     let resp = env
         .api
         .post("/user/unfollow", &FollowReq { target_uid })
@@ -155,7 +156,7 @@ async fn test_follow_nonexistent_user() {
 
         let resp = env
             .api
-            .post("/user/follow", &FollowReq { target_uid: 99999999 })
+            .post("/user/follow", &FollowReq { target_uid: UserId(99999999) })
             .await;
         assert_is_err(resp).await;
     })
@@ -269,7 +270,7 @@ async fn test_following_list() {
             .unwrap();
 
         assert_eq!(resp.items.len(), 2);
-        let uids: Vec<i64> = resp.items.iter().map(|i| i.user.uid).collect();
+        let uids: Vec<UserId> = resp.items.iter().map(|i| i.user.uid).collect();
         assert!(uids.contains(&user_b.uid));
         assert!(uids.contains(&user_c.uid));
     })
@@ -347,7 +348,7 @@ async fn test_followers_list() {
             .unwrap();
 
         assert_eq!(resp.items.len(), 2);
-        let uids: Vec<i64> = resp.items.iter().map(|i| i.user.uid).collect();
+        let uids: Vec<UserId> = resp.items.iter().map(|i| i.user.uid).collect();
         assert!(uids.contains(&user_b.uid));
         assert!(uids.contains(&user_c.uid));
     })

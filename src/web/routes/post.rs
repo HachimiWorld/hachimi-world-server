@@ -1,5 +1,6 @@
 use crate::db::post::{Post, PostDao};
 use crate::db::CrudDao;
+use crate::db::user::UserId;
 use crate::service::upload::{upload_cover_image_as_temp_id, ImageProcessOptions, ResizeType};
 use crate::service::user::PublicUserProfile;
 use crate::service::{contributor, upload, user};
@@ -72,7 +73,7 @@ pub async fn page(
             id: p.id,
             author: users.get(&p.author_uid).cloned()
                 .unwrap_or_else(|| PublicUserProfile {
-                    uid: 0,
+                    uid: UserId(0),
                     username: "Unknown".to_string(),
                     avatar_url: None,
                     bio: None,
@@ -110,7 +111,7 @@ pub async fn detail(
         let user = user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &[p.author_uid], None).await?
             .remove(&p.author_uid)
             .unwrap_or_else(|| PublicUserProfile {
-                uid: 0,
+                uid: UserId(0),
                 username: "Unknown".to_string(),
                 avatar_url: None,
                 bio: None,

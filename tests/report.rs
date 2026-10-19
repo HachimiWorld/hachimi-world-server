@@ -1,3 +1,5 @@
+use hachimi_world_server::db::song::SongId;
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user, TestUser};
@@ -60,12 +62,12 @@ async fn decide(
 }
 
 /// (type, body) of a user's governance notifications, oldest first.
-async fn governance_notifications(env: &TestEnvironment, uid: i64) -> Vec<(String, String)> {
+async fn governance_notifications(env: &TestEnvironment, uid: UserId) -> Vec<(String, String)> {
     sqlx::query_as("SELECT notification_type, body FROM notifications WHERE recipient_uid = $1 AND notification_type LIKE 'governance.%' ORDER BY create_time, id")
         .bind(uid).fetch_all(&env.pool).await.unwrap()
 }
 
-async fn report_notifications(env: &TestEnvironment, uid: i64) -> Vec<String> {
+async fn report_notifications(env: &TestEnvironment, uid: UserId) -> Vec<String> {
     sqlx::query_scalar("SELECT body FROM notifications WHERE recipient_uid = $1 AND notification_type = 'governance.report_resolved' ORDER BY create_time")
         .bind(uid).fetch_all(&env.pool).await.unwrap()
 }
@@ -84,26 +86,26 @@ async fn test_submit_validation() {
         let reporter = with_new_random_test_user(&mut env).await;
 
         login(&mut env, &reporter);
-        assert_eq!(submit(&env, &report_req("comment", song.id, "spam", None)).await.unwrap_err(), "invalid_target_type");
+        assert_eq!(submit(&env, &report_req("comment", song.id.0, "spam", None)).await.unwrap_err(), "invalid_target_type");
         assert_eq!(submit(&env, &report_req("song", -1, "spam", None)).await.unwrap_err(), "target_not_found");
-        assert_eq!(submit(&env, &report_req("song", song.id, "boring", None)).await.unwrap_err(), "invalid_reason");
-        assert_eq!(submit(&env, &report_req("song", song.id, "other", Some("  "))).await.unwrap_err(), "detail_required");
-        assert_eq!(submit(&env, &report_req("user", reporter.uid, "spam", None)).await.unwrap_err(), "cannot_report_self");
+        assert_eq!(submit(&env, &report_req("song", song.id.0, "boring", None)).await.unwrap_err(), "invalid_reason");
+        assert_eq!(submit(&env, &report_req("song", song.id.0, "other", Some("  "))).await.unwrap_err(), "detail_required");
+        assert_eq!(submit(&env, &report_req("user", reporter.uid.0, "spam", None)).await.unwrap_err(), "cannot_report_self");
 
-        let first = submit(&env, &report_req("song", song.id, "spam", None)).await.unwrap();
+        let first = submit(&env, &report_req("song", song.id.0, "spam", None)).await.unwrap();
         assert!(!first.already_reviewed);
         wait_lock().await;
-        assert_eq!(submit(&env, &report_req("song", song.id, "abuse", None)).await.unwrap_err(), "already_reported");
+        assert_eq!(submit(&env, &report_req("song", song.id.0, "abuse", None)).await.unwrap_err(), "already_reported");
 
         login(&mut env, &owner);
-        assert_eq!(submit(&env, &report_req("song", song.id, "spam", None)).await.unwrap_err(), "cannot_report_self");
+        assert_eq!(submit(&env, &report_req("song", song.id.0, "spam", None)).await.unwrap_err(), "cannot_report_self");
 
         // A private playlist can't be seen, so it can't be reported
         let playlist: CreatePlaylistResp = env.api.post("/playlist/create", &CreatePlaylistReq {
             name: "Private".into(), description: None, is_public: false,
         }).await.parse_resp().await.unwrap();
         login(&mut env, &reporter);
-        assert_eq!(submit(&env, &report_req("playlist", playlist.id, "spam", None)).await.unwrap_err(), "target_not_found");
+        assert_eq!(submit(&env, &report_req("playlist", playlist.id.0, "spam", None)).await.unwrap_err(), "target_not_found");
     }).await
 }
 
@@ -119,7 +121,7 @@ async fn test_reports_merge_into_one_case() {
 
         for (user, reason) in [(&a, "spam"), (&b, "spam"), (&c, "nsfw")] {
             login(&mut env, user);
-            submit(&env, &report_req("song", song.id, reason, None)).await.unwrap();
+            submit(&env, &report_req("song", song.id.0, reason, None)).await.unwrap();
             wait_lock().await;
         }
 
@@ -127,14 +129,14 @@ async fn test_reports_merge_into_one_case() {
         let q = queue(&env, None).await.unwrap();
         assert_eq!(q.items.len(), 1);
         let item = &q.items[0];
-        assert_eq!((item.target_type.as_str(), item.target_id, item.pending_count), ("song", song.id, 3));
+        assert_eq!((item.target_type.as_str(), item.target_id, item.pending_count), ("song", song.id.0, 3));
         assert!(item.target.as_ref().unwrap().title.starts_with("Reported"));
         assert_eq!(item.target.as_ref().unwrap().owner.as_ref().unwrap().uid, owner.uid);
         let reasons: Vec<(&str, i64)> = item.reasons.iter().map(|x| (x.reason.as_str(), x.count)).collect();
         assert_eq!(reasons, vec![("spam", 2), ("nsfw", 1)]);
 
-        let detail = case(&env, "song", song.id).await;
-        let reporters: Vec<i64> = detail.pending_reports.iter().map(|x| x.reporter.as_ref().unwrap().uid).collect();
+        let detail = case(&env, "song", song.id.0).await;
+        let reporters: Vec<UserId> = detail.pending_reports.iter().map(|x| x.reporter.as_ref().unwrap().uid).collect();
         assert_eq!(reporters, vec![a.uid, b.uid, c.uid]);
         assert_eq!(detail.verdicts, vec!["agree", "disagree", "ignore"]);
         let actions: Vec<(&str, &str)> = detail.content_actions.iter().map(|x| (x.action.as_str(), x.verdict.as_str())).collect();
@@ -152,27 +154,27 @@ async fn test_resolve_and_reopen() {
         let c = with_new_random_test_user(&mut env).await;
 
         login(&mut env, &a);
-        let first = submit(&env, &report_req("user", target.uid, "abuse", None)).await.unwrap();
+        let first = submit(&env, &report_req("user", target.uid.0, "abuse", None)).await.unwrap();
         wait_lock().await;
 
         // Upholding reports must do something
         login(&mut env, &contributor);
-        assert_eq!(resolve(&env, "user", target.uid, "agree", false, first.report_id).await.unwrap_err(), "content_action_required");
+        assert_eq!(resolve(&env, "user", target.uid.0, "agree", false, first.report_id).await.unwrap_err(), "content_action_required");
         wait_lock().await;
 
         // A report arriving after the operator looked stays pending
         login(&mut env, &b);
-        let second = submit(&env, &report_req("user", target.uid, "spam", None)).await.unwrap();
+        let second = submit(&env, &report_req("user", target.uid.0, "spam", None)).await.unwrap();
         wait_lock().await;
         login(&mut env, &contributor);
-        let r = resolve(&env, "user", target.uid, "disagree", false, first.report_id).await.unwrap();
+        let r = resolve(&env, "user", target.uid.0, "disagree", false, first.report_id).await.unwrap();
         assert_eq!((r.status.as_str(), r.pending_count), ("pending", 1));
         assert_eq!(report_notifications(&env, a.uid).await.len(), 1);
         assert!(report_notifications(&env, a.uid).await[0].contains("未发现违规"));
         assert!(report_notifications(&env, b.uid).await.is_empty());
         wait_lock().await;
 
-        let r = resolve(&env, "user", target.uid, "ignore", false, second.report_id).await.unwrap();
+        let r = resolve(&env, "user", target.uid.0, "ignore", false, second.report_id).await.unwrap();
         assert_eq!((r.status.as_str(), r.pending_count), ("resolved", 0));
         assert!(report_notifications(&env, b.uid).await[0].contains("未采取措施"));
         assert!(queue(&env, None).await.unwrap().items.is_empty());
@@ -181,22 +183,22 @@ async fn test_resolve_and_reopen() {
 
         // Reported again: the same case reopens, and the reporter can report again
         login(&mut env, &a);
-        let third = submit(&env, &report_req("user", target.uid, "abuse", None)).await.unwrap();
+        let third = submit(&env, &report_req("user", target.uid.0, "abuse", None)).await.unwrap();
         assert!(!third.already_reviewed);
         wait_lock().await;
         login(&mut env, &contributor);
         let q = queue(&env, None).await.unwrap();
         assert_eq!((q.items.len(), q.items[0].pending_count), (1, 1));
-        let detail = case(&env, "user", target.uid).await;
+        let detail = case(&env, "user", target.uid.0).await;
         assert_eq!(detail.case.case_id, q.items[0].case_id);
         assert_eq!(detail.actions.len(), 2);
         assert_eq!(detail.actions[0].verdict, "ignore");
 
         // Ignore further reports: they are recorded without reopening the case
-        resolve(&env, "user", target.uid, "disagree", true, third.report_id).await.unwrap();
+        resolve(&env, "user", target.uid.0, "disagree", true, third.report_id).await.unwrap();
         wait_lock().await;
         login(&mut env, &c);
-        let fourth = submit(&env, &report_req("user", target.uid, "abuse", None)).await.unwrap();
+        let fourth = submit(&env, &report_req("user", target.uid.0, "abuse", None)).await.unwrap();
         assert!(fourth.already_reviewed);
         login(&mut env, &contributor);
         assert!(queue(&env, None).await.unwrap().items.is_empty());
@@ -207,11 +209,11 @@ async fn test_resolve_and_reopen() {
         wait_lock().await;
 
         // The case can take reports again, and then has nothing left to decide on
-        assert_eq!(case(&env, "user", target.uid).await.verdicts, vec!["ignore"]);
-        resolve(&env, "user", target.uid, "ignore", false, fourth.report_id).await.unwrap();
+        assert_eq!(case(&env, "user", target.uid.0).await.verdicts, vec!["ignore"]);
+        resolve(&env, "user", target.uid.0, "ignore", false, fourth.report_id).await.unwrap();
         wait_lock().await;
-        assert!(case(&env, "user", target.uid).await.verdicts.is_empty());
-        assert_eq!(resolve(&env, "user", target.uid, "ignore", false, fourth.report_id).await.unwrap_err(), "invalid_verdict");
+        assert!(case(&env, "user", target.uid.0).await.verdicts.is_empty());
+        assert_eq!(resolve(&env, "user", target.uid.0, "ignore", false, fourth.report_id).await.unwrap_err(), "invalid_verdict");
     }).await
 }
 
@@ -237,18 +239,18 @@ async fn test_committee() {
         wait_lock().await;
         let err = env.api.post("/committee/appoint", &MemberReq { uid: member.uid }).await.parse_resp::<()>().await.unwrap_err();
         assert_eq!(err.code, "already_member");
-        let err = env.api.post("/committee/appoint", &MemberReq { uid: -1 }).await.parse_resp::<()>().await.unwrap_err();
+        let err = env.api.post("/committee/appoint", &MemberReq { uid: UserId(-1) }).await.parse_resp::<()>().await.unwrap_err();
         assert_eq!(err.code, "user_not_found");
 
         // Members read the queue but can't decide
         login(&mut env, &user);
-        let report = submit(&env, &report_req("user", contributor.uid, "spam", None)).await.unwrap();
+        let report = submit(&env, &report_req("user", contributor.uid.0, "spam", None)).await.unwrap();
         wait_lock().await;
         login(&mut env, &member);
         let me: MeResp = env.api.get("/committee/me").await.parse_resp().await.unwrap();
         assert!(me.can_view && !me.can_resolve);
         assert_eq!(queue(&env, None).await.unwrap().items.len(), 1);
-        assert_eq!(resolve(&env, "user", contributor.uid, "ignore", false, report.report_id).await.unwrap_err(), "permission_denied");
+        assert_eq!(resolve(&env, "user", contributor.uid.0, "ignore", false, report.report_id).await.unwrap_err(), "permission_denied");
         let list: MembersResp = env.api.get("/committee/members").await.parse_resp().await.unwrap();
         assert_eq!(list.members.len(), 1);
         assert_eq!(list.members[0].user.uid, member.uid);
@@ -263,7 +265,7 @@ async fn test_committee() {
     }).await
 }
 
-async fn song_detail(env: &TestEnvironment, song_id: i64) -> Result<SongDetail, String> {
+async fn song_detail(env: &TestEnvironment, song_id: SongId) -> Result<SongDetail, String> {
     env.api.get_query("/song/detail_by_id", &DetailByIdReq { id: song_id }).await.parse_resp().await.map_err(|e| e.code)
 }
 
@@ -287,19 +289,19 @@ async fn test_hide_and_restore_song() {
             .parse_resp::<serde_json::Value>().await.unwrap();
 
         login(&mut env, &reporter);
-        let report = submit(&env, &report_req("song", song.id, "nsfw", None)).await.unwrap();
+        let report = submit(&env, &report_req("song", song.id.0, "nsfw", None)).await.unwrap();
         wait_lock().await;
 
         login(&mut env, &contributor);
-        assert_eq!(decide(&env, "song", song.id, "agree", &[], None, false, report.report_id).await.unwrap_err(), "content_action_required");
+        assert_eq!(decide(&env, "song", song.id.0, "agree", &[], None, false, report.report_id).await.unwrap_err(), "content_action_required");
         wait_lock().await;
-        assert_eq!(decide(&env, "song", song.id, "agree", &["hide"], None, false, report.report_id).await.unwrap_err(), "author_reason_required");
+        assert_eq!(decide(&env, "song", song.id.0, "agree", &["hide"], None, false, report.report_id).await.unwrap_err(), "author_reason_required");
         wait_lock().await;
-        assert_eq!(decide(&env, "song", song.id, "disagree", &["hide"], None, false, report.report_id).await.unwrap_err(), "invalid_content_action");
+        assert_eq!(decide(&env, "song", song.id.0, "disagree", &["hide"], None, false, report.report_id).await.unwrap_err(), "invalid_content_action");
         wait_lock().await;
-        assert_eq!(decide(&env, "song", song.id, "agree", &["restore"], Some("x"), false, report.report_id).await.unwrap_err(), "invalid_content_action");
+        assert_eq!(decide(&env, "song", song.id.0, "agree", &["restore"], Some("x"), false, report.report_id).await.unwrap_err(), "invalid_content_action");
         wait_lock().await;
-        decide(&env, "song", song.id, "agree", &["hide"], Some("封面不适合公开展示"), false, report.report_id).await.unwrap();
+        decide(&env, "song", song.id.0, "agree", &["hide"], Some("封面不适合公开展示"), false, report.report_id).await.unwrap();
         wait_lock().await;
 
         // Only the owner can still see it
@@ -309,7 +311,7 @@ async fn test_hide_and_restore_song() {
         assert_eq!(song_detail(&env, song.id).await.unwrap_err(), "not_found");
         login(&mut env, &owner);
         assert!(song_detail(&env, song.id).await.unwrap().is_hidden);
-        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id })
+        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id.0 })
             .await.parse_resp().await.unwrap();
         assert!(notice.hidden);
         assert_eq!(notice.reason.as_deref(), Some("封面不适合公开展示"));
@@ -323,12 +325,12 @@ async fn test_hide_and_restore_song() {
         let likes: MyLikesResp = env.api.get_query("/song/likes/page_my_likes", &MyLikesReq { page_index: 0, page_size: 20 }).await.parse_resp().await.unwrap();
         assert!(likes.data.is_empty());
         assert_eq!(likes.unavailable.iter().map(|x| x.song_id).collect::<Vec<_>>(), vec![song.id]);
-        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id })
+        let notice: HiddenReasonResp = env.api.get_query("/report/hidden_reason", &HiddenReasonReq { target_type: "song".into(), target_id: song.id.0 })
             .await.parse_resp().await.unwrap();
         assert!(!notice.hidden && notice.reason.is_none());
 
         // A hidden song can't be reported or added to playlists
-        assert_eq!(submit(&env, &report_req("song", song.id, "spam", None)).await.unwrap_err(), "target_not_found");
+        assert_eq!(submit(&env, &report_req("song", song.id.0, "spam", None)).await.unwrap_err(), "target_not_found");
         let err = env.api.post("/playlist/add_song", &AddSongReq { playlist_id: playlist.id, song_id: song.id }).await
             .parse_resp::<serde_json::Value>().await.unwrap_err();
         assert_eq!(err.code, "song_not_found");
@@ -341,11 +343,11 @@ async fn test_hide_and_restore_song() {
 
         // Without pending reports, it can only be restored
         login(&mut env, &contributor);
-        let detail = case(&env, "song", song.id).await;
+        let detail = case(&env, "song", song.id.0).await;
         assert_eq!(detail.verdicts, vec!["disagree"]);
         let actions: Vec<(&str, &str)> = detail.content_actions.iter().map(|x| (x.action.as_str(), x.verdict.as_str())).collect();
         assert_eq!(actions, vec![("restore", "disagree")]);
-        decide(&env, "song", song.id, "disagree", &["restore"], None, false, 0).await.unwrap();
+        decide(&env, "song", song.id.0, "disagree", &["restore"], None, false, 0).await.unwrap();
 
         env.api.clear_token();
         assert!(!song_detail(&env, song.id).await.unwrap().is_hidden);
@@ -364,10 +366,10 @@ async fn test_modification_lifts_hide() {
         let song = create_approved_song(&mut env, &owner.token.access_token, &contributor.token.access_token, "Fixable").await;
         let reporter = with_new_random_test_user(&mut env).await;
         login(&mut env, &reporter);
-        let report = submit(&env, &report_req("song", song.id, "copyright", None)).await.unwrap();
+        let report = submit(&env, &report_req("song", song.id.0, "copyright", None)).await.unwrap();
         wait_lock().await;
         login(&mut env, &contributor);
-        decide(&env, "song", song.id, "agree", &["hide"], Some("歌词侵权"), false, report.report_id).await.unwrap();
+        decide(&env, "song", song.id.0, "agree", &["hide"], Some("歌词侵权"), false, report.report_id).await.unwrap();
 
         login(&mut env, &owner);
         let template = publish_template(&env).await;
@@ -410,10 +412,10 @@ async fn test_hide_playlist() {
         }).await.parse_resp().await.unwrap();
 
         login(&mut env, &reporter);
-        let report = submit(&env, &report_req("playlist", playlist.id, "spam", None)).await.unwrap();
+        let report = submit(&env, &report_req("playlist", playlist.id.0, "spam", None)).await.unwrap();
         wait_lock().await;
         login(&mut env, &contributor);
-        decide(&env, "playlist", playlist.id, "agree", &["hide"], Some("引流"), false, report.report_id).await.unwrap();
+        decide(&env, "playlist", playlist.id.0, "agree", &["hide"], Some("引流"), false, report.report_id).await.unwrap();
 
         login(&mut env, &reporter);
         let err = env.api.get_query("/playlist/detail", &PlaylistDetailReq { id: playlist.id }).await
@@ -441,13 +443,13 @@ async fn test_reset_profile() {
             .bind(target.uid).execute(&env.pool).await.unwrap();
 
         login(&mut env, &reporter);
-        let report = submit(&env, &report_req("user", target.uid, "abuse", None)).await.unwrap();
+        let report = submit(&env, &report_req("user", target.uid.0, "abuse", None)).await.unwrap();
         wait_lock().await;
         login(&mut env, &contributor);
-        let detail = case(&env, "user", target.uid).await;
+        let detail = case(&env, "user", target.uid.0).await;
         let actions: Vec<&str> = detail.content_actions.iter().map(|x| x.action.as_str()).collect();
         assert_eq!(actions, vec!["reset_avatar", "reset_bio", "reset_username"]);
-        decide(&env, "user", target.uid, "agree", &["reset_bio", "reset_username"], Some("简介含辱骂内容"), false, report.report_id).await.unwrap();
+        decide(&env, "user", target.uid.0, "agree", &["reset_bio", "reset_username"], Some("简介含辱骂内容"), false, report.report_id).await.unwrap();
 
         let (username, bio, avatar): (String, Option<String>, Option<String>) =
             sqlx::query_as("SELECT username, bio, avatar_url FROM users WHERE id = $1").bind(target.uid).fetch_one(&env.pool).await.unwrap();

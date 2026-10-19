@@ -1,6 +1,6 @@
-use crate::db::song::{ISongDao, Song, SongDao, SongOriginInfo, SongProductionCrew};
+use crate::db::song::{ISongDao, Song, SongDao, SongId, SongOriginInfo, SongProductionCrew};
 use crate::db::song_tag::{ISongTagDao, SongTagDao};
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::song_like;
 use crate::web::routes::song::TagItem;
@@ -18,7 +18,7 @@ use tracing::{debug, warn};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicSongDetail {
-    pub id: i64,
+    pub id: SongId,
     pub display_id: String,
     pub title: String,
     pub subtitle: String,
@@ -32,7 +32,7 @@ pub struct PublicSongDetail {
     /// 0: original, 1: derivative work, 2: tertiary work
     pub creation_type: i32,
     pub origin_infos: Vec<CreationTypeInfo>,
-    pub uploader_uid: i64,
+    pub uploader_uid: UserId,
     pub uploader_name: String,
     pub play_count: i64,
     pub like_count: i64,
@@ -128,8 +128,8 @@ pub async fn get_detail_with_cache_by_display_id(
 pub async fn get_public_detail_with_cache(
     redis: ConnectionManager,
     sql_pool: &PgPool,
-    song_id_list: &[i64],
-) -> Result<HashMap<i64, PublicSongDetail>, anyhow::Error> {
+    song_id_list: &[SongId],
+) -> Result<HashMap<SongId, PublicSongDetail>, anyhow::Error> {
     let mut songs = get_detail_with_cache(redis, sql_pool, song_id_list).await?;
     songs.retain(|_, x| !x.is_hidden);
     Ok(songs)
@@ -139,17 +139,17 @@ pub async fn get_public_detail_with_cache(
 pub async fn get_detail_with_cache(
     mut redis: ConnectionManager,
     sql_pool: &PgPool,
-    song_id_list: &[i64],
-) -> Result<HashMap<i64, PublicSongDetail>, anyhow::Error> {
+    song_id_list: &[SongId],
+) -> Result<HashMap<SongId, PublicSongDetail>, anyhow::Error> {
     if song_id_list.is_empty() { return Ok(HashMap::new()) }
     let start = Instant::now();
     let cache_keys = song_id_list.iter().map(|id| format!("song:detail:{}", id))
         .collect::<Vec<_>>();
 
     let cache: Vec<Option<String>> = redis.mget(&cache_keys).await?;
-    let mut cached: HashMap<i64, PublicSongDetail> = HashMap::with_capacity(song_id_list.len());
+    let mut cached: HashMap<SongId, PublicSongDetail> = HashMap::with_capacity(song_id_list.len());
 
-    let mut missed_ids: Vec<i64> = vec![];
+    let mut missed_ids: Vec<SongId> = vec![];
     for (idx, x) in cache.iter().enumerate() {
         let song_id = song_id_list[idx];
         match x {
@@ -216,7 +216,7 @@ pub async fn get_detail_with_cache(
 pub async fn get_public_detail_with_cache_legacy(
     mut redis: ConnectionManager,
     sql_pool: &PgPool,
-    song_id_list: &[i64],
+    song_id_list: &[SongId],
 ) -> Result<Vec<Option<PublicSongDetail>>, anyhow::Error> {
     if song_id_list.is_empty() { 
         return Ok(vec![]);
@@ -290,7 +290,7 @@ async fn get_from_db_by_display_id(
 async fn get_from_db_by_id(
     redis: &ConnectionManager,
     sql_pool: &PgPool,
-    song_id: i64,
+    song_id: SongId,
 ) -> anyhow::Result<Option<PublicSongDetail>> {
     let song = if let Some(x) = SongDao::get_by_id(sql_pool, song_id).await? {
         x
@@ -303,7 +303,7 @@ async fn get_from_db_by_id(
 
 async fn get_from_db_by_ids(
     sql_pool: &PgPool,
-    song_ids: &[i64],
+    song_ids: &[SongId],
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     if song_ids.is_empty() {
         return Ok(vec![]);
@@ -553,7 +553,7 @@ pub fn generate_song_display_id() -> String {
 /// Hides or shows a song for everyone but its uploader, in the caller's transaction. Returns the
 /// song if it exists. Call [refresh_after_visibility_change] after committing.
 /// @since 261008
-pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, song_id: i64, hidden: bool) -> anyhow::Result<Option<Song>> {
+pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, song_id: SongId, hidden: bool) -> anyhow::Result<Option<Song>> {
     if !SongDao::set_hidden(&mut **tx, song_id, hidden).await? {
         return Ok(None);
     }
@@ -570,14 +570,14 @@ pub async fn refresh_after_visibility_change(state: &crate::web::state::AppState
         crate::search::song::add_or_replace_document(&state.meilisearch, &state.sql_pool, &[song.id]).await
     };
     if let Err(e) = index_result {
-        warn!(song_id = song.id, "Failed to update the song search index: {e:?}");
+        warn!(song_id = song.id.0, "Failed to update the song search index: {e:?}");
     }
     let mut redis = state.redis_conn.clone();
     let keys = [format!("song:detail:{}", song.id), format!("song:detail:{}", song.display_id)];
     if let Err(e) = redis.del(&keys).await {
-        warn!(song_id = song.id, "Failed to clear the song detail cache: {e:?}");
+        warn!(song_id = song.id.0, "Failed to clear the song detail cache: {e:?}");
     }
     if let Err(e) = crate::service::recommend_v2::notify_update(song.id, state.redis_conn.clone()).await {
-        warn!(song_id = song.id, "Failed to clear song list caches: {e:?}");
+        warn!(song_id = song.id.0, "Failed to clear song list caches: {e:?}");
     }
 }

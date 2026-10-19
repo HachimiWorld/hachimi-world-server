@@ -1,3 +1,4 @@
+use crate::db::user::UserId;
 use crate::db::user_connection_accounts::{IUserConnectionAccountDao, UserConnectionAccount, UserConnectionAccountDao};
 use crate::util::bilibili;
 use crate::util::redlock::RedLock;
@@ -19,7 +20,7 @@ pub struct ConnectionAccount {
     pub public: bool,
 }
 
-pub async fn list_connections(sql: &PgPool, mut redis: ConnectionManager, uid: i64, public: bool) -> anyhow::Result<Vec<ConnectionAccount>> {
+pub async fn list_connections(sql: &PgPool, mut redis: ConnectionManager, uid: UserId, public: bool) -> anyhow::Result<Vec<ConnectionAccount>> {
     let cache = get_connections_from_cache(&mut redis, uid, public).await?;
     if let Some(cached) = cache {
         return Ok(cached);
@@ -42,7 +43,7 @@ pub async fn list_connections(sql: &PgPool, mut redis: ConnectionManager, uid: i
     Ok(mapped)
 }
 
-async fn get_connections_from_cache(redis: &mut ConnectionManager, uid: i64, public: bool) -> anyhow::Result<Option<Vec<ConnectionAccount>>> {
+async fn get_connections_from_cache(redis: &mut ConnectionManager, uid: UserId, public: bool) -> anyhow::Result<Option<Vec<ConnectionAccount>>> {
     let cache_key = format!("user_account_connections:uid={},public={}", uid, public);
     if let Some(cached) = redis.get(&cache_key).await? &&
         let Ok(parsed) = serde_json::from_str::<Vec<ConnectionAccount>>(&cached)
@@ -53,13 +54,13 @@ async fn get_connections_from_cache(redis: &mut ConnectionManager, uid: i64, pub
     }
 }
 
-async fn save_connections_to_cache(redis: &mut ConnectionManager, uid: i64, public: bool, connections: &[ConnectionAccount]) -> anyhow::Result<()> {
+async fn save_connections_to_cache(redis: &mut ConnectionManager, uid: UserId, public: bool, connections: &[ConnectionAccount]) -> anyhow::Result<()> {
     let cache_key = format!("user_account_connections:uid={},public={}", uid, public);
     redis.set_ex(cache_key, serde_json::to_string(connections)?, 3000).await?;
     Ok(())
 }
 
-async fn invalidate_connections_cache(redis: &mut ConnectionManager, uid: i64) -> anyhow::Result<()> {
+async fn invalidate_connections_cache(redis: &mut ConnectionManager, uid: UserId) -> anyhow::Result<()> {
     let cache_key_public = format!("user_account_connections:uid={},public=true", uid);
     let cache_key_private = format!("user_account_connections:uid={},public=false", uid);
 
@@ -71,7 +72,7 @@ async fn invalidate_connections_cache(redis: &mut ConnectionManager, uid: i64) -
 #[derive(Debug, Serialize, Deserialize)]
 struct ChallengeCacheData {
     challenge_id: String,
-    uid: i64,
+    uid: UserId,
     provider_type: String,
     provider_account_id: String,
     challenge: String,
@@ -112,7 +113,7 @@ pub enum GenerateChallengeError {
 pub async fn generate_challenge(
     bili: &impl bilibili::BilibiliClient,
     mut redis: ConnectionManager,
-    uid: i64, provider_type: &str, provider_account_id: &str,
+    uid: UserId, provider_type: &str, provider_account_id: &str,
 ) -> Result<Challenge, GenerateChallengeError> {
     match provider_type {
         "bilibili" => generate_challenge_for_bilibili(bili, &mut redis, uid, provider_account_id).await,
@@ -123,7 +124,7 @@ pub async fn generate_challenge(
 async fn generate_challenge_for_bilibili(
     bili: &impl bilibili::BilibiliClient,
     redis: &mut ConnectionManager,
-    uid: i64, bili_uid: &str,
+    uid: UserId, bili_uid: &str,
 ) -> Result<Challenge, GenerateChallengeError> {
     let bili_int_id = bili_uid.parse::<i64>()
         .map_err(|_| GenerateChallengeError::InvalidProviderAccountId)?;
@@ -169,7 +170,7 @@ pub enum VerifyChallengeError {
 pub async fn verify_challenge_and_link(
     bili: &impl bilibili::BilibiliClient,
     sql: &PgPool, red_lock: RedLock, mut redis: ConnectionManager,
-    uid: i64, challenge_id: &str,
+    uid: UserId, challenge_id: &str,
 ) -> Result<(), VerifyChallengeError> {
     let mutex = red_lock.try_lock(&format!("verify_challenge_and_link:{}", uid)).await?
         .ok_or_else(|| anyhow!("Operating"))?;
@@ -178,7 +179,7 @@ pub async fn verify_challenge_and_link(
         .ok_or_else(|| VerifyChallengeError::ChallengeNotFound)?;
 
     if challenge.uid != uid {
-        warn!(challenge_id=challenge.challenge_id, challenge_uid=challenge.uid, uid=uid, "Challenge uid mismatch");
+        warn!(challenge_id=challenge.challenge_id, challenge_uid=challenge.uid.0, uid=uid.0, "Challenge uid mismatch");
         Err(VerifyChallengeError::ChallengeNotFound)?
     }
 
@@ -217,7 +218,7 @@ pub async fn verify_challenge_and_link(
 pub async fn unlink(
     sql: &PgPool,
     mut redis: ConnectionManager,
-    uid: i64,
+    uid: UserId,
     provider_type: &str,
 ) -> anyhow::Result<()> {
     UserConnectionAccountDao::delete(sql, uid, provider_type).await?;
@@ -227,7 +228,7 @@ pub async fn unlink(
 
 async fn link_account(
     sql: &PgPool,
-    uid: i64,
+    uid: UserId,
     provider_type: &str,
     provider_account_id: &str,
     provider_account_name: &str,
@@ -279,7 +280,7 @@ fn generate_challenge_cache_key(challenge_id: &str) -> String {
 pub async fn sync(
     bili: &impl bilibili::BilibiliClient,
     sql: &PgPool,
-    uid: i64,
+    uid: UserId,
     provider_type: &String
 ) -> anyhow::Result<()> {
     match provider_type.as_str() {
@@ -302,11 +303,11 @@ pub async fn sync(
                         }
                     }
                     Ok(None) => {
-                        warn!(user_id=uid, provider_type=provider_type, provider_account_id=connection.provider_account_id, "Provider account not found during sync");
+                        warn!(user_id=uid.0, provider_type=provider_type, provider_account_id=connection.provider_account_id, "Provider account not found during sync");
                         bail!("Provider account not found");
                     }
                     Err(e) => {
-                        warn!(user_id=uid, provider_type=provider_type, provider_account_id=connection.provider_account_id, error=?e, "Failed to get provider account info during sync");
+                        warn!(user_id=uid.0, provider_type=provider_type, provider_account_id=connection.provider_account_id, error=?e, "Failed to get provider account info during sync");
                         bail!("Failed to call provider API");
                     }
                 }

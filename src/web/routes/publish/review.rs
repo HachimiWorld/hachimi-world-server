@@ -4,7 +4,7 @@ use crate::db::song::{Song, SongDao, SongProductionCrew};
 use crate::db::song_publishing_review::{ISongPublishingReviewDao, SongPublishingReview, SongPublishingReviewDao};
 use crate::db::song_publishing_review_comment::{ISongPublishingReviewCommentDao, SongPublishingReviewComment, SongPublishingReviewCommentDao};
 use crate::db::song_publishing_review_history::{ISongPublishingReviewHistoryDao, SongPublishingReviewHistory, SongPublishingReviewHistoryDao};
-use crate::db::user::{User, UserDao};
+use crate::db::user::{User, UserDao, UserId};
 use crate::db::{song_publishing_review, song_publishing_review_history, CrudDao};
 use crate::service::contributor::{check_contributor, ensure_contributor, CommunityCfg};
 use crate::service::mailer::NotificationEmail;
@@ -138,7 +138,7 @@ pub struct PublishSongPublishReviewData {
     pub description: String,
     pub duration_seconds: i32,
     pub lyrics: String,
-    pub uploader_uid: i64,
+    pub uploader_uid: UserId,
     pub uploader_name: String,
     pub audio_url: String,
     pub cover_url: String,
@@ -635,7 +635,7 @@ pub async fn review_history_list(
 async fn ensure_review_visible(
     state: &AppState,
     review: &SongPublishingReview,
-    uid: i64,
+    uid: UserId,
 ) -> Result<(), WebError<CommonError>> {
     if review.user_id == uid {
         return Ok(());
@@ -658,7 +658,7 @@ async fn ensure_review_visible(
 async fn ensure_review_comment_create_permission(
     state: &AppState,
     review: &SongPublishingReview,
-    uid: i64,
+    uid: UserId,
 ) -> Result<(), WebError<CommonError>> {
     if review.user_id == uid {
         return Ok(());
@@ -680,7 +680,7 @@ async fn ensure_review_comment_create_permission(
 async fn ensure_review_comment_delete_permission(
     state: &AppState,
     comment: &SongPublishingReviewComment,
-    uid: i64,
+    uid: UserId,
 ) -> Result<(), WebError<CommonError>> {
     if comment.user_id == uid {
         return Ok(());

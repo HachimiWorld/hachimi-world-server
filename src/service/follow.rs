@@ -1,5 +1,5 @@
 use crate::db::follow::FollowDao;
-use crate::db::user::UserDao;
+use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::errors::{ServiceError, ServiceResult};
 use crate::service::user::PublicUserProfile;
@@ -22,11 +22,11 @@ pub enum FollowError {
     TargetUserBanned,
 }
 
-fn gen_profile_cache_key(uid: i64) -> String {
+fn gen_profile_cache_key(uid: UserId) -> String {
     format!("user_profile:uid={}", uid)
 }
 
-fn gen_follow_cache_key(follower_id: i64, followed_id: i64) -> String {
+fn gen_follow_cache_key(follower_id: UserId, followed_id: UserId) -> String {
     format!("user:follow:{}:{}", follower_id, followed_id)
 }
 
@@ -34,8 +34,8 @@ fn gen_follow_cache_key(follower_id: i64, followed_id: i64) -> String {
 pub async fn follow_user(
     mut redis: ConnectionManager,
     pool: &PgPool,
-    my_uid: i64,
-    target_uid: i64,
+    my_uid: UserId,
+    target_uid: UserId,
 ) -> ServiceResult<i64, FollowError> {
     if my_uid == target_uid {
         return Err(ServiceError::BusinessError(FollowError::CannotFollowYourself));
@@ -69,7 +69,7 @@ pub async fn follow_user(
 
     if inserted {
         metrics::counter!("follow_total").increment(1);
-        info!(follower_id = my_uid, followed_id = target_uid, "user followed");
+        info!(follower_id = my_uid.0, followed_id = target_uid.0, "user followed");
     }
 
     Ok(follower_count)
@@ -79,8 +79,8 @@ pub async fn follow_user(
 pub async fn unfollow_user(
     mut redis: ConnectionManager,
     pool: &PgPool,
-    my_uid: i64,
-    target_uid: i64,
+    my_uid: UserId,
+    target_uid: UserId,
 ) -> ServiceResult<i64, FollowError> {
     if my_uid == target_uid {
         return Err(ServiceError::BusinessError(FollowError::CannotUnfollowYourself));
@@ -107,7 +107,7 @@ pub async fn unfollow_user(
     let follower_count = updated_target.follower_count.unwrap_or(0);
 
     metrics::counter!("unfollow_total").increment(1);
-    info!(follower_id = my_uid, followed_id = target_uid, "user unfollowed");
+    info!(follower_id = my_uid.0, followed_id = target_uid.0, "user unfollowed");
 
     Ok(follower_count)
 }
@@ -116,7 +116,7 @@ pub async fn unfollow_user(
 pub async fn get_following(
     redis: ConnectionManager,
     pool: &PgPool,
-    my_uid: i64,
+    my_uid: UserId,
     cursor: Option<&str>,
     limit: i64,
 ) -> anyhow::Result<(Vec<FollowingItem>, Option<String>)> {
@@ -130,8 +130,8 @@ pub async fn get_following(
         rows.truncate(limit as usize);
     }
 
-    let followed_ids: Vec<i64> = rows.iter().map(|r| r.uid).collect();
-    let mutual_ids_set: HashSet<i64> = FollowDao::filter_following_back(pool, my_uid, &followed_ids).await?;
+    let followed_ids: Vec<UserId> = rows.iter().map(|r| r.uid).collect();
+    let mutual_ids_set: HashSet<UserId> = FollowDao::filter_following_back(pool, my_uid, &followed_ids).await?;
     let profiles = crate::service::user::get_common_user_profile(redis, pool, &followed_ids).await?;
 
     let items: Vec<FollowingItem> = rows
@@ -168,7 +168,7 @@ pub async fn get_following(
 pub async fn get_followers(
     redis: ConnectionManager,
     pool: &PgPool,
-    my_uid: i64,
+    my_uid: UserId,
     cursor: Option<&str>,
     limit: i64,
 ) -> anyhow::Result<(Vec<FollowerItem>, Option<String>)> {
@@ -182,9 +182,9 @@ pub async fn get_followers(
         rows.truncate(limit as usize);
     }
 
-    let follower_ids: Vec<i64> = rows.iter().map(|r| r.uid).collect();
+    let follower_ids: Vec<UserId> = rows.iter().map(|r| r.uid).collect();
     let mutual_ids = FollowDao::filter_following_back(pool, my_uid, &follower_ids).await?;
-    let mutual_ids_set: HashSet<i64> = mutual_ids.into_iter().collect();
+    let mutual_ids_set: HashSet<UserId> = mutual_ids.into_iter().collect();
     let profiles = crate::service::user::get_common_user_profile(redis, pool, &follower_ids).await?;
 
     let items: Vec<FollowerItem> = rows
@@ -235,8 +235,8 @@ pub struct FollowerItem {
 /// Returns (is_following, is_followed_by).
 pub async fn check_follow_relationship(
     pool: &PgPool,
-    viewer_uid: i64,
-    profile_uid: i64,
+    viewer_uid: UserId,
+    profile_uid: UserId,
 ) -> anyhow::Result<(bool, bool)> {
     if viewer_uid == profile_uid {
         return Ok((false, false));

@@ -1,5 +1,5 @@
 use crate::db::report::{ReportCase, STATUS_PENDING, STATUS_RESOLVED};
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::service::committee;
 use crate::service::errors::ServiceError;
 use crate::service::report::{self, CaseSummary, Decision, ReportError, Verdict};
@@ -29,7 +29,7 @@ pub fn router() -> Router<AppState> {
 /// @since 261008
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserBrief {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub avatar_url: Option<String>,
 }
@@ -133,7 +133,7 @@ async fn queue(claims: Claims, state: State<AppState>, req: Query<QueueReq>) -> 
     let limit = req.limit.unwrap_or(20).clamp(1, 50);
     let (cases, has_more) = report::list_cases(&state.sql_pool, status, before, limit).await?;
 
-    let uids: Vec<i64> = cases.iter().filter_map(|x| x.target.as_ref().map(|t| t.owner_uid)).collect();
+    let uids: Vec<UserId> = cases.iter().filter_map(|x| x.target.as_ref().map(|t| t.owner_uid)).collect();
     let users = load_users(&state.sql_pool, &uids).await?;
     let items = cases.into_iter().map(|x| case_item(x, &users)).collect();
     ok!(QueueResp { items, has_more })
@@ -211,7 +211,7 @@ async fn case(claims: Claims, state: State<AppState>, req: Query<CaseReq>) -> We
         err!("case_not_found", "This target has no reports")
     };
 
-    let mut uids: Vec<i64> = detail.pending_reports.iter().map(|x| x.reporter_uid).collect();
+    let mut uids: Vec<UserId> = detail.pending_reports.iter().map(|x| x.reporter_uid).collect();
     uids.extend(detail.actions.iter().map(|x| x.operator_uid));
     uids.extend(detail.summary.target.as_ref().map(|x| x.owner_uid));
     let users = load_users(&state.sql_pool, &uids).await?;
@@ -335,7 +335,7 @@ async fn hidden_reason(claims: Claims, state: State<AppState>, req: Query<Hidden
     })
 }
 
-async fn require_view(state: &AppState, uid: i64) -> Result<(), WebError<CommonError>> {
+async fn require_view(state: &AppState, uid: UserId) -> Result<(), WebError<CommonError>> {
     if committee::access(state, uid).await?.can_view {
         Ok(())
     } else {
@@ -343,7 +343,7 @@ async fn require_view(state: &AppState, uid: i64) -> Result<(), WebError<CommonE
     }
 }
 
-pub async fn load_users(pool: &PgPool, uids: &[i64]) -> anyhow::Result<HashMap<i64, UserBrief>> {
+pub async fn load_users(pool: &PgPool, uids: &[UserId]) -> anyhow::Result<HashMap<UserId, UserBrief>> {
     let mut uids = uids.to_vec();
     uids.sort_unstable();
     uids.dedup();
@@ -353,7 +353,7 @@ pub async fn load_users(pool: &PgPool, uids: &[i64]) -> anyhow::Result<HashMap<i
         .collect())
 }
 
-fn case_item(x: CaseSummary, users: &HashMap<i64, UserBrief>) -> CaseItem {
+fn case_item(x: CaseSummary, users: &HashMap<UserId, UserBrief>) -> CaseItem {
     let CaseSummary { case, target, reasons } = x;
     let ReportCase { id, target_type, target_id, status, pending_count, last_report_time, .. } = case;
     CaseItem {
@@ -368,7 +368,7 @@ fn case_item(x: CaseSummary, users: &HashMap<i64, UserBrief>) -> CaseItem {
     }
 }
 
-fn target_info(t: UgcTarget, users: &HashMap<i64, UserBrief>) -> TargetInfo {
+fn target_info(t: UgcTarget, users: &HashMap<UserId, UserBrief>) -> TargetInfo {
     TargetInfo {
         owner: users.get(&t.owner_uid).cloned(),
         title: t.title,

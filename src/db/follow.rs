@@ -1,19 +1,20 @@
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Follow {
-    pub follower_id: i64,
-    pub followed_id: i64,
+    pub follower_id: UserId,
+    pub followed_id: UserId,
     pub create_time: DateTime<Utc>,
 }
 
 /// Row type for listing users that a follower follows.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FollowingRow {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
@@ -24,7 +25,7 @@ pub struct FollowingRow {
 /// Row type for listing followers of a user.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FollowerRow {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
@@ -37,42 +38,42 @@ pub struct FollowDao;
 impl FollowDao {
     /// Insert a follow relationship.  Returns true if a new row was inserted,
     /// false if the relationship already existed.
-    pub async fn insert_ignore<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<bool>
+    pub async fn insert_ignore<'e, E>(executor: E, follower_id: UserId, followed_id: UserId) -> Result<bool>
     where
         E: PgExecutor<'e>,
     {
         let result = sqlx::query!(
             r#"INSERT INTO follows (follower_id, followed_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
-            follower_id,
-            followed_id
+            follower_id as _,
+            followed_id as _
         )
             .execute(executor)
             .await?;
         Ok(result.rows_affected() > 0)
     }
 
-    pub async fn delete<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<()>
+    pub async fn delete<'e, E>(executor: E, follower_id: UserId, followed_id: UserId) -> Result<()>
     where
         E: PgExecutor<'e>,
     {
         sqlx::query!(
             "DELETE FROM follows WHERE follower_id = $1 AND followed_id = $2",
-            follower_id,
-            followed_id
+            follower_id as _,
+            followed_id as _
         )
             .execute(executor)
             .await?;
         Ok(())
     }
 
-    pub async fn exists<'e, E>(executor: E, follower_id: i64, followed_id: i64) -> Result<bool>
+    pub async fn exists<'e, E>(executor: E, follower_id: UserId, followed_id: UserId) -> Result<bool>
     where
         E: PgExecutor<'e>,
     {
         let result = sqlx::query!(
             r#"SELECT 1 as "exists: bool" FROM follows WHERE follower_id = $1 AND followed_id = $2"#,
-            follower_id,
-            followed_id
+            follower_id as _,
+            followed_id as _
         )
             .fetch_optional(executor)
             .await?;
@@ -82,7 +83,7 @@ impl FollowDao {
     /// Get the list of users that `follower_id` is following, with cursor pagination.
     pub async fn list_following<'e, E>(
         executor: E,
-        follower_id: i64,
+        follower_id: UserId,
         cursor: Option<DateTime<Utc>>,
         limit: i64,
     ) -> Result<Vec<FollowingRow>>
@@ -92,13 +93,13 @@ impl FollowDao {
         let cursor = cursor.unwrap_or(DateTime::<Utc>::MAX_UTC);
         sqlx::query_as!(
             FollowingRow,
-            r#"SELECT u.id as uid, u.username, u.avatar_url, u.bio, u.is_banned, f.create_time as followed_at
+            r#"SELECT u.id as "uid: _", u.username, u.avatar_url, u.bio, u.is_banned, f.create_time as followed_at
                FROM follows f
                JOIN users u ON f.followed_id = u.id
                WHERE f.follower_id = $1 AND f.create_time < $2
                ORDER BY f.create_time DESC
                LIMIT $3"#,
-            follower_id,
+            follower_id as _,
             cursor,
             limit
         )
@@ -109,7 +110,7 @@ impl FollowDao {
     /// Get the list of followers of `followed_id`, with cursor pagination.
     pub async fn list_followers<'e, E>(
         executor: E,
-        followed_id: i64,
+        followed_id: UserId,
         cursor: Option<DateTime<Utc>>,
         limit: i64,
     ) -> Result<Vec<FollowerRow>>
@@ -119,13 +120,13 @@ impl FollowDao {
         let cursor = cursor.unwrap_or(DateTime::<Utc>::MAX_UTC);
         sqlx::query_as!(
             FollowerRow,
-            r#"SELECT u.id as uid, u.username, u.avatar_url, u.bio, u.is_banned, f.create_time as followed_at
+            r#"SELECT u.id as "uid: _", u.username, u.avatar_url, u.bio, u.is_banned, f.create_time as followed_at
                FROM follows f
                JOIN users u ON f.follower_id = u.id
                WHERE f.followed_id = $1 AND f.create_time < $2
                ORDER BY f.create_time DESC
                LIMIT $3"#,
-            followed_id,
+            followed_id as _,
             cursor,
             limit
         )
@@ -135,34 +136,34 @@ impl FollowDao {
 
     /// Followers of `followed_id` who followed after `after`.
     /// @since 261006
-    pub async fn count_followers_after<'e, E>(executor: E, followed_id: i64, after: DateTime<Utc>) -> Result<i64>
+    pub async fn count_followers_after<'e, E>(executor: E, followed_id: UserId, after: DateTime<Utc>) -> Result<i64>
     where
         E: PgExecutor<'e>,
     {
         sqlx::query!(
             r#"SELECT COUNT(*) AS "count!" FROM follows WHERE followed_id = $1 AND create_time > $2"#,
-            followed_id, after
+            followed_id as _, after
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
-    pub async fn increase_following_count<'e, E>(executor: E, uid: i64, delta: i64) -> Result<()>
+    pub async fn increase_following_count<'e, E>(executor: E, uid: UserId, delta: i64) -> Result<()>
     where
         E: PgExecutor<'e>,
     {
         sqlx::query!(
             "UPDATE users SET following_count = COALESCE(following_count, 0) + $1 WHERE id = $2",
-            delta, uid
+            delta, uid as _
         ).execute(executor).await?;
         Ok(())
     }
 
-    pub async fn increase_follower_count<'e, E>(executor: E, uid: i64, delta: i64) -> Result<()>
+    pub async fn increase_follower_count<'e, E>(executor: E, uid: UserId, delta: i64) -> Result<()>
     where
         E: PgExecutor<'e>,
     {
         sqlx::query!(
             "UPDATE users SET follower_count = COALESCE(follower_count, 0) + $1 WHERE id = $2",
-            delta, uid
+            delta, uid as _
         ).execute(executor).await?;
         Ok(())
     }
@@ -170,7 +171,7 @@ impl FollowDao {
     // Given a list of candidate user IDs, return which ones are also following back `uid`.
     // "following back" = candidate follows uid, i.e., candidate appears as follower_id
     // where followed_id = uid.
-    pub async fn filter_following_back<'e, E>(executor: E, uid: i64, candidate_ids: &[i64]) -> Result<HashSet<i64>>
+    pub async fn filter_following_back<'e, E>(executor: E, uid: UserId, candidate_ids: &[UserId]) -> Result<HashSet<UserId>>
     where
         E: PgExecutor<'e>,
     {
@@ -178,9 +179,9 @@ impl FollowDao {
             return Ok(HashSet::new());
         }
         let rows = sqlx::query!(
-            r#"SELECT follower_id FROM follows WHERE followed_id = $1 AND follower_id = ANY($2)"#,
-            uid,
-            candidate_ids
+            r#"SELECT follower_id as "follower_id: UserId" FROM follows WHERE followed_id = $1 AND follower_id = ANY($2)"#,
+            uid as _,
+            candidate_ids as _
         ).fetch_all(executor).await?;
         Ok(rows.into_iter().map(|r| r.follower_id).collect())
     }

@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor};
 
@@ -9,7 +10,7 @@ macro_rules! query_creators {
             Creator, r#"
             SELECT
                 id,
-                user_id,
+                user_id as "user_id: _",
                 jmid_prefix,
                 active,
                 create_time,
@@ -23,7 +24,7 @@ macro_rules! query_creators {
             Creator, r#"
             SELECT
                 id,
-                user_id,
+                user_id as "user_id: _",
                 jmid_prefix,
                 active,
                 create_time,
@@ -38,7 +39,7 @@ macro_rules! query_creators {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct Creator {
     pub id: i64,
-    pub user_id: i64,
+    pub user_id: UserId,
     pub jmid_prefix: String,
     pub active: bool,
     pub create_time: DateTime<Utc>,
@@ -52,6 +53,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = Creator;
+    type Id = i64;
 
     async fn list(_executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()
@@ -76,7 +78,7 @@ where
                 create_time = $4,
                 update_time = $5
             WHERE id = $6",
-            value.user_id,
+            value.user_id as _,
             value.jmid_prefix,
             value.active,
             value.create_time,
@@ -89,7 +91,7 @@ where
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO creators (user_id, jmid_prefix, active, create_time, update_time) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-            value.user_id,
+            value.user_id as _,
             value.jmid_prefix,
             value.active,
             value.create_time,
@@ -108,8 +110,8 @@ where
 
 impl<'e> CreatorDao {
 
-    pub async fn get_by_user_id(executor: impl PgExecutor<'e>, user_id: i64) -> sqlx::Result<Option<Creator>> {
-        query_creators!("WHERE user_id = $1", user_id)
+    pub async fn get_by_user_id(executor: impl PgExecutor<'e>, user_id: UserId) -> sqlx::Result<Option<Creator>> {
+        query_creators!("WHERE user_id = $1", user_id as _)
             .fetch_optional(executor)
             .await
     }

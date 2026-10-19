@@ -72,6 +72,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = Version;
+    type Id = i64;
 
     async fn list(_executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         todo!()

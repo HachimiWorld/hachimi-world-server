@@ -3,7 +3,7 @@
 //! See `docs/specs/governance/README.md`.
 
 use crate::db::report::{ModerationAction, ModerationActionDao, Report, ReportCase, ReportCaseDao, ReportDao, STATUS_PENDING, STATUS_RESOLVED};
-use crate::db::user::UserDao;
+use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::errors::{ServiceError, ServiceResult};
 use crate::service::notification::{send_notification, to_plain_text, NewNotification};
@@ -131,7 +131,7 @@ async fn lock_case(red_lock: &RedLock, kind: UgcKind, target_id: i64) -> anyhow:
 pub async fn submit(
     pool: &PgPool,
     red_lock: &RedLock,
-    reporter_uid: i64,
+    reporter_uid: UserId,
     kind: UgcKind,
     target_id: i64,
     reason: &str,
@@ -209,7 +209,7 @@ pub async fn submit(
                 report.action_id = Some(action.id);
                 already_reviewed = true;
             } else {
-                case.target_owner_uid = target.owner_uid;
+                case.target_owner_uid = target.owner_uid as _;
                 case.status = STATUS_PENDING.to_string();
                 case.pending_count += 1;
                 case.last_report_time = now;
@@ -321,7 +321,7 @@ pub struct Decision<'a> {
 /// and tells the reporters and the owner.
 pub async fn resolve(
     state: &AppState,
-    operator_uid: i64,
+    operator_uid: UserId,
     kind: UgcKind,
     target_id: i64,
     decision: Decision<'_>,
@@ -416,7 +416,7 @@ pub struct HiddenReason {
 }
 
 /// For the owner of a hidden song or playlist: the decision that hid it.
-pub async fn hidden_reason(pool: &PgPool, uid: i64, kind: UgcKind, target_id: i64) -> sqlx::Result<Option<HiddenReason>> {
+pub async fn hidden_reason(pool: &PgPool, uid: UserId, kind: UgcKind, target_id: i64) -> sqlx::Result<Option<HiddenReason>> {
     let Some(target) = kind.load(pool, target_id).await? else {
         return Ok(None);
     };
@@ -442,7 +442,7 @@ async fn load_target(pool: &PgPool, case: &ReportCase) -> sqlx::Result<Option<Ug
 }
 
 fn report_resolved_notification(
-    recipient_uid: i64,
+    recipient_uid: UserId,
     kind: UgcKind,
     target: Option<&UgcTarget>,
     verdict: Verdict,

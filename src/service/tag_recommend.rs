@@ -1,11 +1,12 @@
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use itertools::Itertools;
 use sqlx::PgPool;
 
 #[derive(Debug, Clone)]
 pub struct RecommendTagQuery {
-    pub user_id: i64,
+    pub user_id: UserId,
     pub limit: i64,
     pub since: DateTime<Utc>,
 }
@@ -33,7 +34,7 @@ pub async fn recommend_tags_by_play_history(
         ORDER BY cnt DESC, str.tag_id ASC
         LIMIT $3
         "#,
-        query.user_id,
+        query.user_id as _,
         query.since,
         limit,
     )
@@ -60,7 +61,7 @@ pub async fn recommend_tags_by_play_history(
 /// - Liked songs ever (weight 0.5)
 pub async fn recommend_tags(
     pool: &PgPool,
-    user_id: i64,
+    user_id: UserId,
     limit: i64,
     since: DateTime<Utc>,
 ) -> anyhow::Result<Vec<(SongTag, i64)>> {
@@ -75,7 +76,7 @@ pub async fn recommend_tags(
         WHERE sp.user_id = $1 AND sp.create_time >= $2
         GROUP BY str.tag_id
         "#,
-        user_id,
+        user_id as _,
         since,
     )
     .fetch_all(pool)
@@ -90,7 +91,7 @@ pub async fn recommend_tags(
         WHERE sl.user_id = $1
         GROUP BY str.tag_id
         "#,
-        user_id,
+        user_id as _,
     )
     .fetch_all(pool)
     .await?;

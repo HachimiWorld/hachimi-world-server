@@ -1,3 +1,4 @@
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::{auth, CommonParse, TestEnvironment};
@@ -14,7 +15,7 @@ use hachimi_world_server::web::routes::notification::{
 use serde_json::{json, Map};
 use uuid::Uuid;
 
-fn new_notification(recipient_uid: i64, title: &str) -> NewNotification {
+fn new_notification(recipient_uid: UserId, title: &str) -> NewNotification {
     NewNotification {
         id: Uuid::now_v7(),
         recipient_uid,
@@ -34,7 +35,7 @@ async fn send(env: &TestEnvironment, n: NewNotification) -> Result<SendOutcome, 
 }
 
 /// Sends a notification titled `title` and returns its id.
-async fn send_titled(env: &TestEnvironment, recipient_uid: i64, title: &str) -> Uuid {
+async fn send_titled(env: &TestEnvironment, recipient_uid: UserId, title: &str) -> Uuid {
     let n = new_notification(recipient_uid, title);
     let id = n.id;
     assert_eq!(send(env, n).await.unwrap(), SendOutcome::Created);

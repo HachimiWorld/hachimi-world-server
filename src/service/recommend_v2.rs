@@ -1,4 +1,4 @@
-use crate::db::song::{ISongDao, SongDao};
+use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
 use crate::util;
@@ -116,7 +116,7 @@ async fn get_recent_from_db(redis: ConnectionManager, pool: &PgPool, cursor: Opt
     Ok(songs_ordered)
 }
 
-pub async fn notify_update(song_id: i64, mut redis: ConnectionManager) -> anyhow::Result<()> {
+pub async fn notify_update(song_id: SongId, mut redis: ConnectionManager) -> anyhow::Result<()> {
     // Just delete the cache
     // TODO: Use event based notification
     let keys: AsyncIter<String> = redis.scan_match("songs:recent_v2:cursor=latest:*").await?;
@@ -150,23 +150,23 @@ pub async fn get_recommend_anonymous(
 
 /// Return random 30 songs for a user in one day
 async fn get_recommend_unfiltered(
-    user_id: i64,
+    cache_key: i64,
     lock: RedLock,
     redis: ConnectionManager,
     pool: &PgPool,
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     // Refresh at 06:00+8
     let date = Utc::now().with_timezone(&chrono_tz::Asia::Shanghai).sub(TimeDelta::hours(6)).date_naive();
-    let cache = get_from_cache_recommend(redis.clone(), user_id, &date).await?;
+    let cache = get_from_cache_recommend(redis.clone(), cache_key, &date).await?;
     match cache {
         Some(cache) => Ok(cache),
         None => {
             let guard = lock.lock_with_timeout(
-                &format!("lock:songs:recommend:{}", user_id),
+                &format!("lock:songs:recommend:{}", cache_key),
                 Duration::from_secs(10),
             ).await?;
 
-            let cache = get_from_cache_recommend(redis.clone(), user_id, &date).await?;
+            let cache = get_from_cache_recommend(redis.clone(), cache_key, &date).await?;
             if let Some(cache) = cache {
                 return Ok(cache);
             }
@@ -174,7 +174,7 @@ async fn get_recommend_unfiltered(
             let mut songs = get_from_db_recommend(redis.clone(), pool).await?;
             songs.shuffle(&mut rand::rng());
 
-            save_cache_recommend(redis, user_id, &songs, &date).await?;
+            save_cache_recommend(redis, cache_key, &songs, &date).await?;
             drop(guard);
             Ok(songs)
         }
@@ -183,10 +183,10 @@ async fn get_recommend_unfiltered(
 
 async fn get_from_cache_recommend(
     mut redis: ConnectionManager,
-    user_id: i64,
+    cache_key: i64,
     date: &NaiveDate,
 ) -> anyhow::Result<Option<Vec<PublicSongDetail>>> {
-    let cache: Option<String> = redis.get(format!("songs:recommend:{}:{}", user_id, date)).await?;
+    let cache: Option<String> = redis.get(format!("songs:recommend:{}:{}", cache_key, date)).await?;
     match cache {
         Some(cache) => match serde_json::from_str::<RecommendRedisCache>(&cache) {
             Ok(x) => Ok(Some(x.songs)),
@@ -201,7 +201,7 @@ async fn get_from_cache_recommend(
 
 async fn save_cache_recommend(
     mut redis: ConnectionManager,
-    user_id: i64,
+    cache_key: i64,
     songs: &[PublicSongDetail],
     date: &NaiveDate,
 ) -> anyhow::Result<()> {
@@ -213,7 +213,7 @@ async fn save_cache_recommend(
 
     // Cache for 1 day
     let _: () = redis
-        .set_ex(format!("songs:recommend:{}:{}", user_id, date.to_string()), value, 86400)
+        .set_ex(format!("songs:recommend:{}:{}", cache_key, date.to_string()), value, 86400)
         .await?;
     Ok(())
 }
@@ -223,7 +223,7 @@ async fn get_from_db_recommend(
     pool: &PgPool,
 ) -> anyhow::Result<Vec<PublicSongDetail>> {
     let start = Instant::now();
-    let random_song_ids: Vec<i64> = SongDao::list_random(pool, 30).await?;
+    let random_song_ids: Vec<SongId> = SongDao::list_random(pool, 30).await?;
 
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, &random_song_ids).await?
         .into_iter()
@@ -284,7 +284,7 @@ async fn save_cache_hot(mut redis: ConnectionManager, songs: &[PublicSongDetail]
 async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
     let time_ago = Utc::now().sub(TimeDelta::days(day_delta));
     let result = sqlx::query!("
-        SELECT s.title, sp.song_id, count(*) AS play_count
+        SELECT s.title, sp.song_id AS \"song_id: SongId\", count(*) AS play_count
         FROM song_plays sp
                  JOIN songs s ON sp.song_id = s.id
         WHERE sp.create_time > $1
@@ -301,7 +301,7 @@ async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>
 }
 /// Songs hidden after a list was cached are dropped when it's read.
 async fn retain_visible(redis: &ConnectionManager, pool: &PgPool, mut songs: Vec<PublicSongDetail>) -> anyhow::Result<Vec<PublicSongDetail>> {
-    let ids: Vec<i64> = songs.iter().map(|x| x.id).collect();
+    let ids: Vec<SongId> = songs.iter().map(|x| x.id).collect();
     let visible = song::get_public_detail_with_cache(redis.clone(), pool, &ids).await?;
     songs.retain(|x| visible.contains_key(&x.id));
     Ok(songs)
@@ -317,8 +317,9 @@ pub async fn get_recent_songs(
     retain_visible(&redis, pool, songs).await
 }
 
-pub async fn get_recommend(user_id: i64, lock: RedLock, redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
-    let songs = get_recommend_unfiltered(user_id, lock, redis.clone(), pool).await?;
+/// `cache_key` is the user id, or a negative group number for anonymous users.
+pub async fn get_recommend(cache_key: i64, lock: RedLock, redis: ConnectionManager, pool: &PgPool) -> anyhow::Result<Vec<PublicSongDetail>> {
+    let songs = get_recommend_unfiltered(cache_key, lock, redis.clone(), pool).await?;
     retain_visible(&redis, pool, songs).await
 }
 

@@ -1,3 +1,5 @@
+use hachimi_world_server::db::playlist::PlaylistId;
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::typesafe::{get_failing_typesafe_client, get_mock_typesafe_client, new_content_checker, TEST_IMAGE_MODEL, TEST_MODEL};
@@ -43,12 +45,12 @@ async fn set_avatar(api: &ApiClient, png: Vec<u8>) -> Result<(), String> {
         .parse_resp::<()>().await.map_err(|e| e.code)
 }
 
-async fn profile(api: &ApiClient, uid: i64) -> PublicUserProfile {
+async fn profile(api: &ApiClient, uid: UserId) -> PublicUserProfile {
     api.get_query("/user/profile", &GetProfileReq { uid }).await.parse_resp().await.unwrap()
 }
 
 /// Oldest first.
-async fn checks(pool: &PgPool, uid: i64) -> Vec<ContentCheck> {
+async fn checks(pool: &PgPool, uid: UserId) -> Vec<ContentCheck> {
     let mut checks = ContentCheckDao::list_by_actor(pool, uid, 50).await.unwrap();
     checks.reverse();
     checks
@@ -71,7 +73,7 @@ async fn ordinary_changes_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["user.bio", "user.username"]);
         for check in &checks {
-            assert_eq!(check.target_id, user.uid);
+            assert_eq!(check.target_id, user.uid.0);
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
             assert!(check.answers.is_some());
@@ -316,7 +318,7 @@ async fn an_ordinary_avatar_passes_and_is_recorded() {
         assert_eq!(checks.len(), 1);
         let check = &checks[0];
         assert_eq!(check.subject, "user.avatar");
-        assert_eq!(check.target_id, user.uid);
+        assert_eq!(check.target_id, user.uid.0);
         assert_eq!(check.content, key_of(&avatar_url));
         // The hash is of the file as uploaded, not of the copy that was checked
         assert_eq!(check.content_hash, hex::encode(Sha256::digest(&uploaded)));
@@ -456,7 +458,7 @@ async fn startup_fails_when_typesafe_rejects_the_image_model() {
     }).await
 }
 
-async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>) -> Result<i64, String> {
+async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>) -> Result<PlaylistId, String> {
     api.post("/playlist/create", &CreatePlaylistReq {
         name: name.to_string(),
         description: description.map(str::to_string),
@@ -464,7 +466,7 @@ async fn create_playlist(api: &ApiClient, name: &str, description: Option<&str>)
     }).await.parse_resp::<CreatePlaylistResp>().await.map(|x| x.id).map_err(|e| e.code)
 }
 
-async fn update_playlist(api: &ApiClient, id: i64, name: &str, description: Option<&str>) -> Result<(), String> {
+async fn update_playlist(api: &ApiClient, id: PlaylistId, name: &str, description: Option<&str>) -> Result<(), String> {
     api.post("/playlist/update", &UpdatePlaylistReq {
         id,
         name: name.to_string(),
@@ -473,7 +475,7 @@ async fn update_playlist(api: &ApiClient, id: i64, name: &str, description: Opti
     }).await.parse_resp::<()>().await.map_err(|e| e.code)
 }
 
-async fn set_cover(api: &ApiClient, playlist_id: i64, png: Vec<u8>) -> Result<(), String> {
+async fn set_cover(api: &ApiClient, playlist_id: PlaylistId, png: Vec<u8>) -> Result<(), String> {
     let json = serde_json::to_string(&SetCoverReq { playlist_id }).unwrap();
     api.post_raw("/playlist/set_cover")
         .multipart(Form::new().text("json", json).part("file", Part::bytes(png).file_name("cover.png")))
@@ -498,7 +500,7 @@ async fn ordinary_playlists_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["playlist.description", "playlist.name"]);
         for check in &checks {
-            assert_eq!(check.target_id, id);
+            assert_eq!(check.target_id, id.0);
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
         }
@@ -577,7 +579,7 @@ async fn playlist_covers_are_checked() {
 
         let covers: Vec<_> = checks(&env.pool, user.uid).await.into_iter().filter(|c| c.subject == "playlist.cover").collect();
         assert_eq!(covers.len(), 2);
-        assert_eq!(covers[0].target_id, id);
+        assert_eq!(covers[0].target_id, id.0);
         assert_eq!(covers[0].content, key_of(&cover_url));
         assert_eq!(covers[0].content_hash, hex::encode(Sha256::digest(&uploaded)));
         assert_eq!(covers[0].model.as_deref(), Some(TEST_IMAGE_MODEL));

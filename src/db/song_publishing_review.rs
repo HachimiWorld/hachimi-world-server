@@ -1,5 +1,6 @@
 use crate::db::CrudDao;
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{query, FromRow, PgExecutor};
@@ -10,7 +11,7 @@ macro_rules! query_song_publishing_reviews {
             SongPublishingReview, r#"
             SELECT
                 id,
-                user_id,
+                user_id as "user_id: _",
                 song_display_id,
                 data,
                 submit_time,
@@ -29,7 +30,7 @@ macro_rules! query_song_publishing_reviews {
             SongPublishingReview, r#"
             SELECT
                 id,
-                user_id,
+                user_id as "user_id: _",
                 song_display_id,
                 data,
                 submit_time,
@@ -49,7 +50,7 @@ macro_rules! query_song_publishing_reviews {
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct SongPublishingReview {
     pub id: i64,
-    pub user_id: i64,
+    pub user_id: UserId,
     pub song_display_id: String,
     pub data: Value,
     pub submit_time: DateTime<Utc>,
@@ -79,9 +80,9 @@ where
     E: PgExecutor<'e>,
 {
     fn count(executor: E) -> impl Future<Output = sqlx::Result<i64>> + Send;
-    fn page_by_user(executor: E, user_id: i64, page_size: i64, page_index: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
-    fn count_by_user(executor: E, user_id: i64) -> impl Future<Output = sqlx::Result<i64>> + Send;
-    fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn page_by_user(executor: E, user_id: UserId, page_size: i64, page_index: i64) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
+    fn count_by_user(executor: E, user_id: UserId) -> impl Future<Output = sqlx::Result<i64>> + Send;
+    fn count_by_user_and_status(executor: E, user_id: UserId, status: i32) -> impl Future<Output = sqlx::Result<i64>> + Send;
     fn list_by_jmid(executor: E, jmid: &str) -> impl Future<Output = sqlx::Result<Vec<Self::Entity>>> + Send;
     fn swap_jmid(executor: E, old_jmid: &str, new_jmid: &str) -> impl Future<Output = sqlx::Result<u64>> + Send;
 }
@@ -91,6 +92,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = SongPublishingReview;
+    type Id = i64;
 
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         query_song_publishing_reviews!()
@@ -121,7 +123,7 @@ where
                 type = $9,
                 comment = $10
             WHERE id = $11",
-            value.user_id,
+            value.user_id as _,
             value.song_display_id,
             value.data,
             value.submit_time,
@@ -140,7 +142,7 @@ where
         query!("INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status, type, comment)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id",
-            value.user_id, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status, value.r#type, value.comment
+            value.user_id as _, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status, value.r#type, value.comment
         ).fetch_one(executor).await.map(|r| r.id)
     }
 
@@ -160,21 +162,21 @@ where
             .map(|r| r.count.unwrap_or(0))
     }
 
-    async fn page_by_user(executor: E, user_id: i64, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
+    async fn page_by_user(executor: E, user_id: UserId, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         query_song_publishing_reviews!(
             "WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
-            user_id, page_size, page_index * page_size
+            user_id as _, page_size, page_index * page_size
         ).fetch_all(executor).await
     }
 
-    async fn count_by_user(executor: E, user_id: i64) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1", user_id)
+    async fn count_by_user(executor: E, user_id: UserId) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1", user_id as _)
             .fetch_one(executor).await
             .map(|r| r.count.unwrap_or(0))
     }
 
-    async fn count_by_user_and_status(executor: E, user_id: i64, status: i32) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1 AND status = $2", user_id, status)
+    async fn count_by_user_and_status(executor: E, user_id: UserId, status: i32) -> sqlx::Result<i64> {
+        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1 AND status = $2", user_id as _, status)
             .fetch_one(executor).await
             .map(|r| r.count.unwrap_or(0))
     }

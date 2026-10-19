@@ -1,5 +1,5 @@
 use crate::db::refresh_token::{IRefreshTokenDao, RefreshToken, RefreshTokenDao};
-use crate::db::user::{IUserDao, User, UserDao};
+use crate::db::user::{IUserDao, User, UserDao, UserId};
 use crate::db::CrudDao;
 use crate::search::user::UserDocument;
 use crate::service::captcha::verify_captcha;
@@ -58,7 +58,7 @@ pub struct EmailRegisterReq {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EmailRegisterResp {
-    pub uid: i64,
+    pub uid: UserId,
     pub generated_username: String,
     pub token: TokenPair,
 }
@@ -98,7 +98,7 @@ async fn email_register(
 
         // 3. Create user
         let mut entity = User {
-            id: 0,
+            id: UserId(0),
             username: username.clone(),
             email: req.email.clone(),
             password_hash,
@@ -147,7 +147,7 @@ pub struct LoginReq {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LoginResp {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub token: TokenPair,
 }
@@ -443,7 +443,7 @@ async fn reset_password(
 
 async fn generate_token_pairs_and_save(
     ip: String,
-    uid: i64,
+    uid: UserId,
     ua: String,
     device_info: String,
     sql_pool: &PgPool,

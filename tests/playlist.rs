@@ -1,6 +1,8 @@
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
 use crate::common::publish::create_approved_song;
 use crate::common::{with_test_environment, CommonParse, TestEnvironment};
+use hachimi_world_server::db::playlist::PlaylistId;
+use hachimi_world_server::db::song::SongId;
 use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
     CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
@@ -122,7 +124,7 @@ async fn test_playlist_list_containing() {
             .parse_resp::<ListContainingResp>().await.unwrap();
         assert_eq!(containing.playlist_ids, vec![playlist_id]);
 
-        let not_containing = env.api.get_query("/playlist/list_containing", &ListContainingReq { song_id: 0 }).await
+        let not_containing = env.api.get_query("/playlist/list_containing", &ListContainingReq { song_id: SongId(0) }).await
             .parse_resp::<ListContainingResp>().await.unwrap();
         assert!(not_containing.playlist_ids.is_empty());
     }).await;
@@ -254,7 +256,7 @@ async fn test_favorite_playlists() {
         assert!(favorite.add_time.is_some());
 
         // Not favorite playlist should return false
-        let not_favorite = env.api.get_query("/playlist/favorite/check", &CheckFavoriteReq { playlist_id: 0 }).await
+        let not_favorite = env.api.get_query("/playlist/favorite/check", &CheckFavoriteReq { playlist_id: PlaylistId(0) }).await
             .parse_resp::<CheckFavoriteResp>().await.unwrap();
         assert_eq!(not_favorite.is_favorite, false);
 
@@ -293,7 +295,7 @@ async fn create_playlist(
     name: &str,
     description: Option<&str>,
     is_public: bool,
-) -> i64 {
+) -> PlaylistId {
     env.api.post(
         "/playlist/create",
         &CreatePlaylistReq {
@@ -304,7 +306,7 @@ async fn create_playlist(
     ).await.parse_resp::<CreatePlaylistResp>().await.unwrap().id
 }
 
-async fn add_song_to_playlist(env: &TestEnvironment, playlist_id: i64, song_id: i64) {
+async fn add_song_to_playlist(env: &TestEnvironment, playlist_id: PlaylistId, song_id: SongId) {
     env.api.post(
         "/playlist/add_song",
         &AddSongReq {
@@ -317,7 +319,7 @@ async fn add_song_to_playlist(env: &TestEnvironment, playlist_id: i64, song_id: 
 async fn wait_for_playlist_search_hit(
     env: &TestEnvironment,
     query: &str,
-    playlist_id: i64,
+    playlist_id: PlaylistId,
 ) -> SearchResp {
     let deadline = Instant::now() + Duration::from_secs(5);
 
