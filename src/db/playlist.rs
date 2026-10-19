@@ -116,7 +116,6 @@ pub struct Playlist {
     pub cover_url: Option<String>,
     /// Whether the owner uploaded the cover.
     /// @since 261019
-    #[serde(default)]
     pub custom_cover: bool,
     pub is_public: bool,
     /// Hidden by the platform: only the owner can see it, and only [PlaylistDao::set_hidden]
