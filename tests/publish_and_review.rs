@@ -1,3 +1,4 @@
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
@@ -10,7 +11,7 @@ use hachimi_world_server::web::routes::publish::jmid::JmidGetNextResp;
 use hachimi_world_server::web::routes::publish::review::{ApproveReviewReq, RejectReviewReq, ReviewHistoryListReq, ReviewHistoryListResp, ReviewModifyReq};
 use hachimi_world_server::web::routes::publish::{review, CreationInfo, ModifyReq, ModifyResp, PageReq, PageResp, ProductionItem, PublishReq, PublishResp, UploadAudioFileResp, UploadImageResp};
 use hachimi_world_server::web::routes::notification::{ListReq as NotificationListReq, ListResp as NotificationListResp, NotificationItem};
-use hachimi_world_server::db::song::{ISongDao, SongDao};
+use hachimi_world_server::db::song::{ISongDao, SongDao, SongId};
 use hachimi_world_server::web::routes::song::{DetailReq, DetailResp, TagCreateReq, TagCreateResp, TagItem, TagSearchReq, TagSearchResp};
 use image::ImageFormat;
 use itertools::Itertools;
@@ -196,7 +197,7 @@ async fn publish_test_song(
     jmid: Option<String>,
     tag_id: i64,
     title: &str,
-    additional_author_uid: Option<i64>,
+    additional_author_uid: Option<UserId>,
 ) -> ApiResult<PublishResp> {
     // Upload a song
     let test_mp3_bytes = read_test_mp3();
@@ -783,7 +784,7 @@ async fn notifications(api: &ApiClient) -> Vec<NotificationItem> {
         .items
 }
 
-fn modify_request(song_id: i64, req: &PublishReq) -> ModifyReq {
+fn modify_request(song_id: SongId, req: &PublishReq) -> ModifyReq {
     ModifyReq {
         song_id,
         song_temp_id: None,

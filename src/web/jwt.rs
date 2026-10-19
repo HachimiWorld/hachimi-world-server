@@ -1,3 +1,4 @@
+use crate::db::user::UserId;
 use crate::web::state::AppState;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -122,8 +123,8 @@ impl FromRequestParts<AppState> for OptionalClaims {
 }
 
 impl Claims {
-    pub fn uid(&self) -> i64 {
-        self.sub.parse().unwrap()
+    pub fn uid(&self) -> UserId {
+        UserId(self.sub.parse().unwrap())
     }
 }
 

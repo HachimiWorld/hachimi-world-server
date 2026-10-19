@@ -1,5 +1,6 @@
-use crate::db::song::{ISongDao, SongDao};
+use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::db::CrudDao;
+use crate::db::user::UserId;
 use itertools::Itertools;
 use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
@@ -12,7 +13,7 @@ use tracing::{error, info, info_span, warn, Instrument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SongDocument {
-    pub id: i64,
+    pub id: SongId,
     pub display_id: String,
     pub title: String,
     pub subtitle: String,
@@ -21,7 +22,7 @@ pub struct SongDocument {
     pub artist: String,
     // pub lyrics: String, -- No, lyrics should not be store because the hachimi lyrics are too much similar
     pub duration_seconds: i32,
-    pub uploader_uid: i64,
+    pub uploader_uid: UserId,
     pub creation_type: i32,
     pub play_count: i64,
     pub like_count: i64,
@@ -35,7 +36,7 @@ pub struct SongDocument {
 pub async fn add_or_replace_document(
     client: &Client,
     pool: &PgPool,
-    song_ids: &[i64]
+    song_ids: &[SongId]
 ) -> anyhow::Result<()> {
     let documents = get_documents_batch(pool, song_ids).await?;
     client.index("songs")
@@ -46,7 +47,7 @@ pub async fn add_or_replace_document(
 
 pub async fn delete_song_document(
     client: &Client,
-    song_ids: &[i64],
+    song_ids: &[SongId],
 ) -> Result<(), meilisearch_sdk::errors::Error> {
     client.index("songs")
         .delete_documents(song_ids)
@@ -250,26 +251,26 @@ async fn fully_index_songs(
 
 pub async fn get_documents_batch(
     pool: &PgPool,
-    song_ids: &[i64]
+    song_ids: &[SongId]
 ) -> anyhow::Result<Vec<SongDocument>> {
     let mut documents: Vec<SongDocument> = vec![];
     // Hidden songs stay out of the index
-    let songs: HashMap<i64, _> = SongDao::list_by_ids(pool, &song_ids).await?.into_iter()
+    let songs: HashMap<SongId, _> = SongDao::list_by_ids(pool, &song_ids).await?.into_iter()
         .filter(|x| !x.is_hidden)
         .map(|x| (x.id, x))
         .collect();
-    let mut crews: HashMap<i64, _> = query!(
-            "SELECT song_id AS \"song_id!\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
+    let mut crews: HashMap<SongId, _> = query!(
+            r#"SELECT song_id AS "song_id!: SongId", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
                LEFT JOIN users u ON u.id = c.uid
-               WHERE song_id = ANY($1)", &song_ids)
+               WHERE song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
-    let mut origin_infos: HashMap<i64, _> = query!(
+    let mut origin_infos: HashMap<SongId, _> = query!(
             // FIXME: The `AS song_id!` is a workaround for the bug of nullable inference in sqlx.
-            "SELECT o.song_id AS \"song_id!\",
-                s.title AS \"internal_title?\",
-                s.artist AS \"internal_artist?\",
+            r#"SELECT o.song_id AS "song_id!: SongId",
+                s.title AS "internal_title?",
+                s.artist AS "internal_artist?",
                 o.origin_type,
                 o.origin_song_id,
                 o.origin_title,
@@ -277,16 +278,16 @@ pub async fn get_documents_batch(
                 o.origin_url
             FROM song_origin_info o
                  LEFT JOIN songs s ON s.id = o.origin_song_id
-            WHERE o.song_id = ANY($1)", &song_ids)
+            WHERE o.song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
-    let mut tags: HashMap<i64, _> = query!(
+    let mut tags: HashMap<SongId, _> = query!(
             // FIXME: Nullability inference bug workaround for sqlx
-            "SELECT r.song_id AS \"song_id!\", t.name AS \"name?\"
+            r#"SELECT r.song_id AS "song_id!: SongId", t.name AS "name?"
             FROM song_tag_refs r
                 LEFT JOIN song_tags t ON t.id = r.tag_id
-            WHERE r.song_id = ANY($1)", &song_ids)
+            WHERE r.song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 

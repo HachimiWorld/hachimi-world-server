@@ -1,0 +1,268 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                display_id,\n                title,\n                subtitle,\n                description,\n                artist,\n                file_url,\n                cover_art_url,\n                lyrics,\n                duration_seconds,\n                uploader_uid as \"uploader_uid: _\",\n                creation_type,\n                play_count,\n                like_count,\n                is_private,\n                is_hidden,\n                release_time,\n                create_time,\n                update_time,\n                explicit,\n                gain\n            FROM songs\n            WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "display_id",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "display_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "title",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "subtitle",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "subtitle"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "description",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "description"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "artist",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "artist"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "file_url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "file_url"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "cover_art_url",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "cover_art_url"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "lyrics",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "lyrics"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "duration_seconds",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "duration_seconds"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "uploader_uid: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "uploader_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "creation_type",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "creation_type"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "play_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "play_count"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "like_count",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "like_count"
+          }
+        }
+      },
+      {
+        "ordinal": 14,
+        "name": "is_private",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "is_private"
+          }
+        }
+      },
+      {
+        "ordinal": 15,
+        "name": "is_hidden",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "is_hidden"
+          }
+        }
+      },
+      {
+        "ordinal": 16,
+        "name": "release_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "release_time"
+          }
+        }
+      },
+      {
+        "ordinal": 17,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 18,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "update_time"
+          }
+        }
+      },
+      {
+        "ordinal": 19,
+        "name": "explicit",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "explicit"
+          }
+        }
+      },
+      {
+        "ordinal": 20,
+        "name": "gain",
+        "type_info": "Float4",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "gain"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "2bac2f4b67b36a976bc269a28ca52b3c19cb95505d6bf8c75a9d2f9b1b2b9c9a"
+}

@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT s.title, sp.song_id AS \"song_id: SongId\", count(*) AS play_count\n        FROM song_plays sp\n                 JOIN songs s ON sp.song_id = s.id\n        WHERE sp.create_time > $1\n        GROUP BY sp.song_id, s.title\n        ORDER BY play_count DESC\n        LIMIT $2\n    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "title",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "songs",
+            "name": "title"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "song_id: SongId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "song_plays",
+            "name": "song_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "play_count",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "a8a25ab1476abd7c29191ff31f7e06244103bc1048b0b6de76e79034cafe7ad7"
+}

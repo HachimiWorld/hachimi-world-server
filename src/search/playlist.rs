@@ -1,5 +1,6 @@
-use crate::db::playlist::{IPlaylistDao, PlaylistDao};
+use crate::db::playlist::{IPlaylistDao, PlaylistDao, PlaylistId};
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use itertools::Itertools;
 use meilisearch_sdk::client::{Client, SwapIndexes};
 use meilisearch_sdk::errors::{Error, ErrorCode};
@@ -11,8 +12,8 @@ use tracing::{error, info, info_span, Instrument};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlaylistDocument {
-    pub id: i64,
-    pub user_id: i64,
+    pub id: PlaylistId,
+    pub user_id: UserId,
     pub title: String,
     pub description: Option<String>,
     pub create_time: DateTime<Utc>,
@@ -30,7 +31,7 @@ pub struct SearchResult {
 pub async fn add_or_replace_document(
     client: &Client,
     pool: &PgPool,
-    playlist_ids: &[i64]
+    playlist_ids: &[PlaylistId]
 ) -> anyhow::Result<()> {
     let documents = get_documents_batch(pool, playlist_ids).await?;
     client.index("playlists")
@@ -41,7 +42,7 @@ pub async fn add_or_replace_document(
 
 pub async fn delete_playlist_document(
     client: &Client,
-    playlist_ids: &[i64],
+    playlist_ids: &[PlaylistId],
 ) -> Result<(), meilisearch_sdk::errors::Error> {
     client.index("playlists")
         .delete_documents(playlist_ids)
@@ -172,7 +173,7 @@ async fn fully_index_playlists(
     let new_index_name = format!("playlists_{}", time.format("%Y%m%d%H%M%S"));
 
     // Only public playlists are indexed.
-    let ids = sqlx::query!("SELECT id FROM playlists WHERE is_public = true")
+    let ids = sqlx::query!(r#"SELECT id as "id: PlaylistId" FROM playlists WHERE is_public = true"#)
         .fetch_all(pool).await?
         .into_iter()
         .map(|x| x.id)
@@ -212,7 +213,7 @@ async fn fully_index_playlists(
     Ok(())
 }
 
-async fn get_documents_batch(pool: &PgPool, playlist_ids: &[i64]) -> anyhow::Result<Vec<PlaylistDocument>> {
+async fn get_documents_batch(pool: &PgPool, playlist_ids: &[PlaylistId]) -> anyhow::Result<Vec<PlaylistDocument>> {
     let rows = PlaylistDao::list_by_ids(pool, playlist_ids).await?;
     let docs = rows.into_iter()
         .filter(|x| x.is_public && !x.is_hidden)

@@ -1,6 +1,7 @@
 //! Report cases, the reports in them, and the moderation actions taken on them.
 
 use chrono::{DateTime, Utc};
+use crate::db::user::UserId;
 use serde::{Deserialize, Serialize};
 use sqlx::PgExecutor;
 
@@ -12,7 +13,7 @@ macro_rules! query_report_cases {
                 id,
                 target_type,
                 target_id,
-                target_owner_uid,
+                target_owner_uid as "target_owner_uid: _",
                 status,
                 ignore_reports,
                 pending_count,
@@ -33,7 +34,7 @@ macro_rules! query_reports {
             SELECT
                 id,
                 case_id,
-                reporter_uid,
+                reporter_uid as "reporter_uid: _",
                 reason,
                 detail,
                 action_id,
@@ -52,7 +53,7 @@ macro_rules! query_moderation_actions {
             SELECT
                 id,
                 case_id,
-                operator_uid,
+                operator_uid as "operator_uid: _",
                 verdict,
                 note,
                 ignore_reports,
@@ -79,7 +80,7 @@ pub struct ReportCase {
     /// `song`, `playlist` or `user`
     pub target_type: String,
     pub target_id: i64,
-    pub target_owner_uid: i64,
+    pub target_owner_uid: UserId,
     /// `pending` or `resolved`
     pub status: String,
     /// New reports are recorded but don't reopen the case.
@@ -95,7 +96,7 @@ pub struct ReportCase {
 pub struct Report {
     pub id: i64,
     pub case_id: i64,
-    pub reporter_uid: i64,
+    pub reporter_uid: UserId,
     pub reason: String,
     pub detail: Option<String>,
     /// The action that handled it; `None` while pending.
@@ -108,7 +109,7 @@ pub struct Report {
 pub struct ModerationAction {
     pub id: i64,
     pub case_id: i64,
-    pub operator_uid: i64,
+    pub operator_uid: UserId,
     /// `agree`, `disagree` or `ignore`
     pub verdict: String,
     pub note: Option<String>,
@@ -149,7 +150,7 @@ impl ReportCaseDao {
         sqlx::query!(
             "INSERT INTO report_cases (target_type, target_id, target_owner_uid, status, ignore_reports, pending_count, last_report_time, create_time, update_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-            value.target_type, value.target_id, value.target_owner_uid, value.status, value.ignore_reports,
+            value.target_type, value.target_id, value.target_owner_uid as UserId, value.status, value.ignore_reports,
             value.pending_count, value.last_report_time, value.create_time, value.update_time
         ).fetch_one(executor).await.map(|x| x.id)
     }
@@ -158,7 +159,7 @@ impl ReportCaseDao {
         sqlx::query!(
             "UPDATE report_cases SET target_owner_uid = $2, status = $3, ignore_reports = $4, pending_count = $5, last_report_time = $6, update_time = $7
             WHERE id = $1",
-            value.id, value.target_owner_uid, value.status, value.ignore_reports, value.pending_count, value.last_report_time, value.update_time
+            value.id, value.target_owner_uid as UserId, value.status, value.ignore_reports, value.pending_count, value.last_report_time, value.update_time
         ).execute(executor).await?;
         Ok(())
     }
@@ -187,19 +188,19 @@ impl ReportDao {
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Report) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO reports (case_id, reporter_uid, reason, detail, action_id, create_time) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-            value.case_id, value.reporter_uid, value.reason, value.detail, value.action_id, value.create_time
+            value.case_id, value.reporter_uid as UserId, value.reason, value.detail, value.action_id, value.create_time
         ).fetch_one(executor).await.map(|x| x.id)
     }
 
-    pub async fn list_by_case_and_reporter<'e>(executor: impl PgExecutor<'e>, case_id: i64, reporter_uid: i64) -> sqlx::Result<Vec<Report>> {
-        query_reports!("WHERE case_id = $1 AND reporter_uid = $2 ORDER BY id", case_id, reporter_uid)
+    pub async fn list_by_case_and_reporter<'e>(executor: impl PgExecutor<'e>, case_id: i64, reporter_uid: UserId) -> sqlx::Result<Vec<Report>> {
+        query_reports!("WHERE case_id = $1 AND reporter_uid = $2 ORDER BY id", case_id, reporter_uid as UserId)
             .fetch_all(executor).await
     }
 
-    pub async fn count_by_reporter_since<'e>(executor: impl PgExecutor<'e>, reporter_uid: i64, since: DateTime<Utc>) -> sqlx::Result<i64> {
+    pub async fn count_by_reporter_since<'e>(executor: impl PgExecutor<'e>, reporter_uid: UserId, since: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query!(
             r#"SELECT COUNT(*) AS "count!" FROM reports WHERE reporter_uid = $1 AND create_time > $2"#,
-            reporter_uid, since
+            reporter_uid as UserId, since
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
@@ -230,9 +231,9 @@ impl ReportDao {
 
     /// Marks pending reports of a case up to `up_to_report_id` as handled by `action_id`, and
     /// returns their reporters.
-    pub async fn resolve_up_to<'e>(executor: impl PgExecutor<'e>, case_id: i64, up_to_report_id: i64, action_id: i64) -> sqlx::Result<Vec<i64>> {
+    pub async fn resolve_up_to<'e>(executor: impl PgExecutor<'e>, case_id: i64, up_to_report_id: i64, action_id: i64) -> sqlx::Result<Vec<UserId>> {
         sqlx::query!(
-            "UPDATE reports SET action_id = $3 WHERE case_id = $1 AND id <= $2 AND action_id IS NULL RETURNING reporter_uid",
+            r#"UPDATE reports SET action_id = $3 WHERE case_id = $1 AND id <= $2 AND action_id IS NULL RETURNING reporter_uid as "reporter_uid: UserId""#,
             case_id, up_to_report_id, action_id
         ).fetch_all(executor).await.map(|x| x.into_iter().map(|r| r.reporter_uid).collect())
     }
@@ -245,7 +246,7 @@ impl ModerationActionDao {
         sqlx::query!(
             "INSERT INTO moderation_actions (case_id, operator_uid, verdict, note, ignore_reports, up_to_report_id, target_snapshot, content_actions, author_reason, create_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
-            value.case_id, value.operator_uid, value.verdict, value.note, value.ignore_reports,
+            value.case_id, value.operator_uid as UserId, value.verdict, value.note, value.ignore_reports,
             value.up_to_report_id, value.target_snapshot, &value.content_actions, value.author_reason, value.create_time
         ).fetch_one(executor).await.map(|x| x.id)
     }

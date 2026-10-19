@@ -1,3 +1,4 @@
+use hachimi_world_server::db::user::UserId;
 mod common;
 
 use crate::common::{auth, CommonParse, TestEnvironment};
@@ -14,7 +15,7 @@ use hachimi_world_server::web::routes::notification::{
 use serde_json::{json, Map};
 use uuid::Uuid;
 
-fn new_notification(recipient_uid: i64, title: &str) -> NewNotification {
+fn new_notification(recipient_uid: UserId, title: &str) -> NewNotification {
     NewNotification {
         id: Uuid::now_v7(),
         recipient_uid,
@@ -34,7 +35,7 @@ async fn send(env: &TestEnvironment, n: NewNotification) -> Result<SendOutcome, 
 }
 
 /// Sends a notification titled `title` and returns its id.
-async fn send_titled(env: &TestEnvironment, recipient_uid: i64, title: &str) -> Uuid {
+async fn send_titled(env: &TestEnvironment, recipient_uid: UserId, title: &str) -> Uuid {
     let n = new_notification(recipient_uid, title);
     let id = n.id;
     assert_eq!(send(env, n).await.unwrap(), SendOutcome::Created);
@@ -329,7 +330,7 @@ async fn test_content_intent() {
         assert_eq!(item.content_intent, Some(ContentIntent::new("song.comment.view", data)));
 
         // A malformed stored intent is returned as null, and the text is still shown
-        sqlx::query("UPDATE notifications SET content_intent = '{\"action\": 1}'::jsonb WHERE id = $1")
+        sqlx::query(r#"UPDATE notifications SET content_intent = '{"action": 1}'::jsonb WHERE id = $1"#)
             .bind(id)
             .execute(&env.pool).await.unwrap();
         let item = detail(&env, &id.to_string()).await.unwrap();

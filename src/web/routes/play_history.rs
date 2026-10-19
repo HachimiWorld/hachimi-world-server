@@ -1,4 +1,4 @@
-use crate::db::song::{ISongDao, SongDao, SongPlay};
+use crate::db::song::{ISongDao, SongDao, SongId, SongPlay};
 use crate::db::user_play_history::{IUserPlayHistory, IUserPlayHistoryExt, UserPlayHistoryDao};
 use crate::service::song;
 use crate::service::song::PublicSongDetail;
@@ -41,7 +41,7 @@ pub struct CursorResp {
 pub struct PlayHistoryItem {
     /// @deprecated since 260331
     /// @remove in 260901
-    pub id: i64,
+    pub id: SongId,
     pub song_info: PublicSongDetail,
     pub play_time: DateTime<Utc>
 }
@@ -58,7 +58,7 @@ async fn cursor(
     let history = UserPlayHistoryDao::cursor_by_user_id(&state.sql_pool, claims.uid(), before_time, req.size).await?;
 
     let song_ids_distinct = history.iter().map(|x| x.song_id)
-        .collect::<HashSet<i64>>().into_iter().collect_vec();
+        .collect::<HashSet<SongId>>().into_iter().collect_vec();
     let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, song_ids_distinct.as_slice()).await?;
 
     let result = history.into_iter()
@@ -78,7 +78,7 @@ async fn cursor(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TouchReq {
-    pub song_id: i64
+    pub song_id: SongId
 }
 
 async fn touch(
@@ -86,7 +86,7 @@ async fn touch(
     mut state: State<AppState>,
     req: Json<TouchReq>
 ) -> WebResult<()> {
-    if cooldown(claims.uid(), req.song_id, &mut state.redis_conn).await? {
+    if cooldown(claims.uid().0, req.song_id, &mut state.redis_conn).await? {
         err!("cooldown", "Please wait 60 seconds before touching again");
     }
     let mut tx = state.sql_pool.begin().await?;
@@ -145,7 +145,7 @@ async fn touch_anonymous(
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteReq {
     /// Same value as `PlayHistoryItem.id`, which is the song id
-    pub history_id: i64,
+    pub history_id: SongId,
 }
 
 async fn delete(
@@ -157,12 +157,13 @@ async fn delete(
     ok!(())
 }
 
+/// `uid` is the user id, or the anonymous uid for anonymous users.
 async fn cooldown(
-    user_id: i64,
-    song_id: i64,
+    uid: i64,
+    song_id: SongId,
     redis: &mut ConnectionManager
 ) -> anyhow::Result<bool> {
-    let cooldown_key = format!("play:touch_cooldown:{}:{}", user_id, song_id);
+    let cooldown_key = format!("play:touch_cooldown:{}:{}", uid, song_id);
     let cooldown_absent: bool = redis.set_options(
         cooldown_key, 0,
         SetOptions::default().conditional_set(ExistenceCheck::NX)

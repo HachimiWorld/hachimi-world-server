@@ -1,6 +1,7 @@
-use crate::db::song::{ISongDao, SongDao};
+use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::db::song_tag::{ISongTagDao, SongTag, SongTagDao};
 use crate::db::CrudDao;
+use crate::db::user::UserId;
 use crate::service::song::PublicSongDetail;
 use crate::service::tag_recommend;
 use crate::service::{recommend_v2, song, song_like};
@@ -87,7 +88,7 @@ fn visible_to(song: &DetailResp, claims: &OptionalClaims) -> bool {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DetailByIdReq {
-    pub id: i64,
+    pub id: SongId,
 }
 
 /// A hidden song is only returned to its uploader.
@@ -110,7 +111,7 @@ async fn detail_by_id(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PageByUserReq {
-    pub user_id: i64,
+    pub user_id: UserId,
     pub page: Option<i64>,
     pub size: Option<i64>,
 }
@@ -124,7 +125,7 @@ pub struct PageByUserResp {
 }
 
 pub struct DeleteReq {
-    pub song_id: i64,
+    pub song_id: SongId,
 }
 
 #[framed]
@@ -150,7 +151,7 @@ async fn page_by_user(
     }
 
     let songs = SongDao::page_by_user(&state.sql_pool, req.user_id, false, page, size).await?;
-    let song_ids = songs.iter().map(|x| x.id).collect::<Vec<i64>>();
+    let song_ids = songs.iter().map(|x| x.id).collect::<Vec<SongId>>();
     let total = SongDao::count_by_user(&state.sql_pool, req.user_id, false).await?;
 
     let songs = song::get_public_detail_with_cache(
@@ -168,7 +169,7 @@ async fn page_by_user(
     ok!(resp)
 }
 
-async fn page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page: i64, size: i64) -> anyhow::Result<Option<PageByUserResp>> {
+async fn page_by_user_cache(mut redis: ConnectionManager, user_id: UserId, page: i64, size: i64) -> anyhow::Result<Option<PageByUserResp>> {
     let cache_key = format!("user_songs:{}:{}:{}", user_id, page, size);
     if let Some(cached) = redis.get::<_, Option<String>>(&cache_key).await? {
         match serde_json::from_str::<PageByUserResp>(&cached) {
@@ -185,7 +186,7 @@ async fn page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page: i6
     }
 }
 
-async fn set_page_by_user_cache(mut redis: ConnectionManager, user_id: i64, page: i64, size: i64, resp: PageByUserResp) -> anyhow::Result<()> {
+async fn set_page_by_user_cache(mut redis: ConnectionManager, user_id: UserId, page: i64, size: i64, resp: PageByUserResp) -> anyhow::Result<()> {
     let cache_key = format!("user_songs:{}:{}:{}", user_id, page, size);
     let _: () = redis.set_ex(&cache_key, serde_json::to_string(&resp)?, 300).await?;
     Ok(())
@@ -213,7 +214,7 @@ pub struct SearchResp {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchSongItem {
-    pub id: i64,
+    pub id: SongId,
     pub display_id: String,
     pub title: String,
     pub subtitle: String,
@@ -226,7 +227,7 @@ pub struct SearchSongItem {
     /// Deprecated since 260114.
     /// Use detail endpoint to get audio URL
     pub audio_url: String,
-    pub uploader_uid: i64,
+    pub uploader_uid: UserId,
     pub uploader_name: String,
     /// since 251105
     pub explicit: Option<bool>,
@@ -266,7 +267,7 @@ async fn search(
     };
 
     let result = search::song::search_songs(state.meilisearch.as_ref(), &search_query).await?;
-    let hit_ids: Vec<i64> = result.hits.into_iter().map(|x| x.id).collect();
+    let hit_ids: Vec<SongId> = result.hits.into_iter().map(|x| x.id).collect();
 
     let details = song::get_public_detail_with_cache(
         state.redis_conn.clone(),
@@ -368,7 +369,7 @@ async fn recommend(
     claims: Claims,
     state: State<AppState>,
 ) -> WebResult<RecommendResp> {
-    let recommend = recommend_v2::get_recommend(claims.uid(), state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
+    let recommend = recommend_v2::get_recommend(claims.uid().0, state.red_lock.clone(), state.redis_conn.clone(), &state.sql_pool).await?;
     let resp = RecommendResp { songs: recommend };
     ok!(resp)
 }
@@ -384,7 +385,7 @@ async fn recommend_anonymous(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LikeReq {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub playback_position_secs: Option<i32>,
 }
 
@@ -404,7 +405,7 @@ async fn like(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UnlikeReq {
-    pub song_id: i64,
+    pub song_id: SongId,
 }
 
 #[framed]
@@ -423,7 +424,7 @@ async fn unlike(
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LikeStatusReq {
-    pub song_id: i64,
+    pub song_id: SongId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -466,7 +467,7 @@ pub struct MyLikesResp {
 /// @since 261008
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnavailableLikeItem {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub liked_time: DateTime<Utc>,
 }
 

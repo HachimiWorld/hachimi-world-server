@@ -1,4 +1,4 @@
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::connection_account::{GenerateChallengeError, VerifyChallengeError};
 use crate::service::content_check::{self, ContentChecker, ImageUpload, Verdict};
@@ -51,7 +51,7 @@ async fn greet() -> WebResult<&'static str> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetProfileReq {
-    pub uid: i64,
+    pub uid: UserId,
 }
 
 #[axum::debug_handler]
@@ -137,12 +137,12 @@ async fn check_profile_content(
         if req.username == user.username {
             return Ok(Verdict::Pass);
         }
-        checker.check_text(pool, content_check::SUBJECT_USERNAME, uid, uid, &req.username).await
+        checker.check_text(pool, content_check::SUBJECT_USERNAME, uid, uid.0, &req.username).await
     };
     let bio = async {
         match &req.bio {
             Some(bio) if !bio.is_blank() && req.bio != user.bio => {
-                checker.check_text(pool, content_check::SUBJECT_BIO, uid, uid, bio).await
+                checker.check_text(pool, content_check::SUBJECT_BIO, uid, uid.0, bio).await
             }
             _ => Ok(Verdict::Pass),
         }
@@ -198,7 +198,7 @@ async fn set_avatar(
         let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
             subject: content_check::SUBJECT_AVATAR,
             actor_uid: user.id,
-            target_id: user.id,
+            target_id: user.id.0,
             uploaded: &bytes,
             webp: &webp,
             key: &filename,
@@ -257,7 +257,7 @@ async fn search(
         Some(offset as usize),
     ).await?;
 
-    let user_ids: Vec<i64> = result.hits.iter().map(|u| u.id).collect();
+    let user_ids: Vec<UserId> = result.hits.iter().map(|u| u.id).collect();
     let users = service::user::get_public_profile(state.redis_conn.clone(), &state.sql_pool, &user_ids, None).await?
         .into_iter().map(|(_, v)| v)
         .collect_vec();
@@ -429,7 +429,7 @@ async fn connection_sync(
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FollowReq {
-    pub target_uid: i64,
+    pub target_uid: UserId,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

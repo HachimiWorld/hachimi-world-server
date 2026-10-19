@@ -1,6 +1,6 @@
 use crate::common::res_utils::generate_test_image;
 use crate::common::{CommonParse, TestEnvironment};
-use hachimi_world_server::db::song::{ISongDao, SongDao};
+use hachimi_world_server::db::song::{ISongDao, SongDao, SongId};
 use hachimi_world_server::service::song::{generate_song_display_id, CreationTypeInfo};
 use hachimi_world_server::web::routes::publish::jmid::JmidGetNextResp;
 use hachimi_world_server::web::routes::publish::review::ApproveReviewReq;
@@ -63,7 +63,7 @@ pub fn unique_jmid() -> String {
 }
 
 pub struct ApprovedSong {
-    pub id: i64,
+    pub id: SongId,
     pub jmid: String,
 }
 

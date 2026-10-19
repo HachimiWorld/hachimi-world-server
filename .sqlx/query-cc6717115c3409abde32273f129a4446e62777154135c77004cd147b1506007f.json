@@ -1,0 +1,65 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                user_id as \"user_id: _\",\n                playlist_id as \"playlist_id: _\",\n                order_index,\n                add_time\n            FROM favorite_playlists\n            WHERE user_id = $1 AND playlist_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favorite_playlists",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "playlist_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "favorite_playlists",
+            "name": "playlist_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "order_index",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "favorite_playlists",
+            "name": "order_index"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "add_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "favorite_playlists",
+            "name": "add_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "cc6717115c3409abde32273f129a4446e62777154135c77004cd147b1506007f"
+}

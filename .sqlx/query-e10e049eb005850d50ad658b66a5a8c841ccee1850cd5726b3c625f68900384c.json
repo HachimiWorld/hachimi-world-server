@@ -1,0 +1,185 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                subject,\n                target_id,\n                actor_uid as \"actor_uid: _\",\n                content,\n                content_hash,\n                policy_version,\n                model,\n                answers,\n                error,\n                blocked_by,\n                latency_ms,\n                reused_from,\n                create_time\n            FROM content_checks\n            WHERE actor_uid = $1 ORDER BY create_time DESC, id DESC LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "target_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "actor_uid: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "actor_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "content_hash",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "content_hash"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "policy_version",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "policy_version"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "model",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "model"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "answers",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "answers"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "error"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "blocked_by",
+        "type_info": "TextArray",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "blocked_by"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "latency_ms",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "latency_ms"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "reused_from",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "reused_from"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content_checks",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "e10e049eb005850d50ad658b66a5a8c841ccee1850cd5726b3c625f68900384c"
+}

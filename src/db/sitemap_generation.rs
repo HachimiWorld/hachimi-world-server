@@ -62,6 +62,7 @@ where
     E: PgExecutor<'e>,
 {
     type Entity = SitemapGeneration;
+    type Id = i64;
 
     async fn list(executor: E) -> sqlx::Result<Vec<Self::Entity>> {
         query_sitemap_generations!("ORDER BY start_time DESC, id DESC")

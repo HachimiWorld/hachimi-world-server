@@ -1,7 +1,7 @@
 //! Users as report targets: their profile is the content.
 
 use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
-use crate::db::user::UserDao;
+use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::user::{self, ProfileField};
@@ -35,7 +35,7 @@ impl UgcAdapter for UserAdapter {
     }
 
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
-        Ok(UserDao::get_by_id(pool, id).await?.map(|x| UgcTarget {
+        Ok(UserDao::get_by_id(pool, UserId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.id,
             title: x.username,
             cover_url: x.avatar_url,
@@ -55,12 +55,12 @@ impl UgcAdapter for UserAdapter {
             .filter(|(action, _, _)| actions.contains(action))
             .map(|(_, field, _)| *field)
             .collect();
-        user::reset_profile(tx, id, &fields).await?;
+        user::reset_profile(tx, UserId(id), &fields).await?;
         Ok(())
     }
 
     async fn refresh(&self, state: &AppState, id: i64) {
-        match UserDao::get_by_id(&state.sql_pool, id).await {
+        match UserDao::get_by_id(&state.sql_pool, UserId(id)).await {
             Ok(Some(x)) => user::refresh_after_profile_change(state, &x).await,
             Ok(None) => {}
             Err(e) => warn!(uid = id, "Failed to load the user to refresh: {e:?}"),

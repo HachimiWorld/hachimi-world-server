@@ -2,7 +2,7 @@ use std::time::Duration;
 use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use sqlx::PgPool;
-use crate::db::song::{ISongDao, SongDao};
+use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::service::errors::ServiceResult;
 use crate::util::redlock::RedLock;
 
@@ -10,7 +10,7 @@ pub async fn get_play_count(
     redis: &mut ConnectionManager,
     red_lock: &RedLock,
     sql_pool: &PgPool,
-    song_id: i64
+    song_id: SongId
 ) -> ServiceResult<i64, ()> {
     let cache = get_plays_cache(redis, song_id).await?;
     if let Some(x) = cache {
@@ -29,11 +29,11 @@ pub async fn get_play_count(
     Ok(likes_db)
 }
 
-async fn get_plays_cache(redis: &mut ConnectionManager, song_id: i64) -> anyhow::Result<Option<i64>> {
+async fn get_plays_cache(redis: &mut ConnectionManager, song_id: SongId) -> anyhow::Result<Option<i64>> {
     Ok(redis.get(format!("song:plays:{}", song_id)).await?)
 }
 
-async fn set_plays_cache(redis: &mut ConnectionManager, song_id: i64, value: i64) -> anyhow::Result<()> {
+async fn set_plays_cache(redis: &mut ConnectionManager, song_id: SongId, value: i64) -> anyhow::Result<()> {
     let _: () = redis.set_ex(format!("song:likes:{}", song_id), value, 300).await?;
     Ok(())
 }

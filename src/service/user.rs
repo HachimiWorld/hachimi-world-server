@@ -1,4 +1,4 @@
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::service::connection_account;
 use crate::service::connection_account::ConnectionAccount;
 use itertools::Itertools;
@@ -12,7 +12,7 @@ use std::collections::HashMap;
 /// `is_following` / `is_followed_by` are `None` unless enriched via `get_user_profile`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicUserProfile {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub avatar_url: Option<String>,
     pub bio: Option<String>,
@@ -42,9 +42,9 @@ pub struct ConnectedAccountItem {
 pub async fn get_public_profile(
     redis: ConnectionManager,
     sql_pool: &PgPool,
-    user_ids: &[i64],
-    viewer_uid: Option<i64>,
-) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+    user_ids: &[UserId],
+    viewer_uid: Option<UserId>,
+) -> anyhow::Result<HashMap<UserId, PublicUserProfile>> {
     let mut profiles = get_common_user_profile(redis, sql_pool, user_ids).await?;
 
     if let Some(vid) = viewer_uid {
@@ -66,8 +66,8 @@ pub async fn get_public_profile(
 pub(crate) async fn get_common_user_profile(
     redis: ConnectionManager,
     sql_pool: &PgPool,
-    user_ids: &[i64],
-) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+    user_ids: &[UserId],
+) -> anyhow::Result<HashMap<UserId, PublicUserProfile>> {
     if user_ids.is_empty() { 
         return Ok(HashMap::new());
     }
@@ -83,7 +83,7 @@ pub(crate) async fn get_common_user_profile(
     let users = UserDao::list_by_ids(sql_pool, &missed_ids).await?;
 
     // parallel get connections for each user and fill in the profile, but for now just return empty connections
-    let connections: HashMap<i64, Vec<ConnectionAccount>> = futures::future::join_all(users.iter().map(|u| {
+    let connections: HashMap<UserId, Vec<ConnectionAccount>> = futures::future::join_all(users.iter().map(|u| {
         connection_account::list_connections(sql_pool, redis.clone(), u.id, true)
     })).await.into_iter()
         .zip(users.iter())
@@ -119,18 +119,18 @@ pub(crate) async fn get_common_user_profile(
     Ok(cached_profiles)
 }
 
-fn gen_cache_key(uid: i64) -> String {
+fn gen_cache_key(uid: UserId) -> String {
     format!("user_profile:uid={}", uid)
 }
 
-async fn get_from_cache(mut redis: ConnectionManager, user_ids: &[i64]) -> anyhow::Result<HashMap<i64, PublicUserProfile>> {
+async fn get_from_cache(mut redis: ConnectionManager, user_ids: &[UserId]) -> anyhow::Result<HashMap<UserId, PublicUserProfile>> {
     if user_ids.is_empty() { 
         return Ok(HashMap::new());
     }
     // mget
     let keys: Vec<String> = user_ids.iter().map(|uid| gen_cache_key(*uid)).collect();
     let values: Vec<Option<String>> = redis.mget(&keys).await?;
-    let result: HashMap<i64, PublicUserProfile> = user_ids.iter().cloned().zip(values.into_iter())
+    let result: HashMap<UserId, PublicUserProfile> = user_ids.iter().cloned().zip(values.into_iter())
         .filter_map(|(uid, value)| {
             value.and_then(|v| serde_json::from_str::<PublicUserProfile>(&v).ok()).map(|profile| (uid, profile))
         })
@@ -138,7 +138,7 @@ async fn get_from_cache(mut redis: ConnectionManager, user_ids: &[i64]) -> anyho
     Ok(result)
 }
 
-async fn save_to_cache(mut redis: ConnectionManager, profiles: &HashMap<i64, PublicUserProfile>) -> anyhow::Result<()> {
+async fn save_to_cache(mut redis: ConnectionManager, profiles: &HashMap<UserId, PublicUserProfile>) -> anyhow::Result<()> {
     if profiles.is_empty() { 
         return Ok(());
     }
@@ -205,7 +205,7 @@ pub enum ProfileField {
 /// @since 261008
 pub async fn reset_profile(
     tx: &mut sqlx::PgTransaction<'_>,
-    uid: i64,
+    uid: UserId,
     fields: &[ProfileField],
 ) -> anyhow::Result<Option<crate::db::user::User>> {
     use crate::db::CrudDao;
@@ -240,11 +240,11 @@ pub async fn refresh_after_profile_change(state: &crate::web::state::AppState, u
         name: user.username.clone(),
         follower_count: user.follower_count.unwrap_or(0),
     }).await {
-        tracing::warn!(uid = user.id, "Failed to update the user search index: {e:?}");
+        tracing::warn!(uid = user.id.0, "Failed to update the user search index: {e:?}");
     }
     let mut redis = state.redis_conn.clone();
     if let Err(e) = redis.del(gen_cache_key(user.id)).await {
-        tracing::warn!(uid = user.id, "Failed to clear the cached profile: {e:?}");
+        tracing::warn!(uid = user.id.0, "Failed to clear the cached profile: {e:?}");
     }
 }
 

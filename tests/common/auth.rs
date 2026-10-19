@@ -1,4 +1,5 @@
 use crate::common::{ApiClient, CommonParse, TestEnvironment};
+use hachimi_world_server::db::user::UserId;
 use hachimi_world_server::service;
 use hachimi_world_server::web::routes::auth::{EmailRegisterReq, EmailRegisterResp, GenerateCaptchaResp, TokenPair};
 use redis::aio::ConnectionManager;
@@ -6,7 +7,7 @@ use tracing::info;
 
 #[allow(dead_code)]
 pub struct TestUser {
-    pub uid: i64,
+    pub uid: UserId,
     pub email: String,
     pub token: TokenPair,
     pub name: String

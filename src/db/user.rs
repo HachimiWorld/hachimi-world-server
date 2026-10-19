@@ -3,11 +3,16 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{FromRow, PgExecutor, Result};
 
+define_id!(
+    /// `users.id`
+    UserId
+);
+
 macro_rules! query_users {
     () => {
         sqlx::query_as!(
             User, r#"
-            SELECT id,
+            SELECT id as "id: _",
                 username,
                 email,
                 password_hash,
@@ -27,7 +32,7 @@ macro_rules! query_users {
     ($extra:literal $(, $arg:expr)* $(,)?) => {
         sqlx::query_as!(
             User, r#"
-            SELECT id,
+            SELECT id as "id: _",
                 username,
                 email,
                 password_hash,
@@ -49,7 +54,7 @@ macro_rules! query_users {
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
 pub struct User {
-    pub id: i64,
+    pub id: UserId,
     pub username: String,
     pub email: String,
     pub password_hash: String,
@@ -68,7 +73,7 @@ pub struct UserDao;
 
 pub trait IUserDao<'e, E>: CrudDao<'e, E>
 where E: PgExecutor<'e> {
-    fn list_by_ids(executor: E, ids: &[i64]) -> impl Future<Output = Result<Vec<User>>>;
+    fn list_by_ids(executor: E, ids: &[UserId]) -> impl Future<Output = Result<Vec<User>>>;
     fn get_by_email(executor: E, email: &str) -> impl Future<Output = Result<Option<User>>>;
     fn get_by_username(executor: E, username: &str) -> impl Future<Output = Result<Option<User>>>;
 }
@@ -76,6 +81,7 @@ where E: PgExecutor<'e> {
 impl <'e, E> CrudDao<'e, E> for UserDao
 where E: PgExecutor<'e> {
     type Entity = User;
+    type Id = UserId;
 
     async fn list(executor: E) -> Result<Vec<User>> {
         query_users!()
@@ -89,15 +95,15 @@ where E: PgExecutor<'e> {
             .await?)
     }
 
-    async fn get_by_id(executor: E, id: i64) -> Result<Option<User>> {
-        Ok(query_users!("WHERE id = $1", id)
+    async fn get_by_id(executor: E, id: UserId) -> Result<Option<User>> {
+        Ok(query_users!("WHERE id = $1", id as UserId)
             .fetch_optional(executor)
             .await?)
     }
 
-    async fn insert(executor: E, value: &User) -> Result<i64> {
+    async fn insert(executor: E, value: &User) -> Result<UserId> {
         let result = sqlx::query!(
-            "INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time, follower_count, following_count) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id",
+            r#"INSERT INTO users(username, email, password_hash, avatar_url, bio, gender, is_banned, last_login_time, create_time, update_time, follower_count, following_count) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id as "id: UserId""#,
             value.username,
             value.email,
             value.password_hash,
@@ -128,13 +134,13 @@ where E: PgExecutor<'e> {
             value.last_login_time,
             value.create_time,
             value.update_time,
-            value.id
+            value.id as UserId
         ).execute(executor).await?;
         Ok(())
     }
 
-    async fn delete_by_id(executor: E, id: i64) -> Result<()> {
-        sqlx::query!("DELETE FROM users WHERE id = $1", id)
+    async fn delete_by_id(executor: E, id: UserId) -> Result<()> {
+        sqlx::query!("DELETE FROM users WHERE id = $1", id as UserId)
             .execute(executor)
             .await?;
         Ok(())
@@ -143,9 +149,9 @@ where E: PgExecutor<'e> {
 
 impl <'e, E> IUserDao<'e, E> for UserDao 
 where E: PgExecutor<'e> {
-    async fn list_by_ids(executor: E, ids: &[i64]) -> Result<Vec<User>> {
+    async fn list_by_ids(executor: E, ids: &[UserId]) -> Result<Vec<User>> {
         if ids.is_empty() { return Ok(vec![]) }
-        query_users!("WHERE id = ANY($1)", ids)
+        query_users!("WHERE id = ANY($1)", ids as &[UserId])
             .fetch_all(executor)
             .await
     }

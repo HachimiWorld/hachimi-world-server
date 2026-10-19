@@ -1,4 +1,5 @@
 use crate::db::committee_member::CommitteeMemberDao;
+use crate::db::user::UserId;
 use crate::service::committee::{self, CommitteeError};
 use crate::service::errors::ServiceError;
 use crate::web::jwt::Claims;
@@ -55,7 +56,7 @@ async fn members(claims: Claims, state: State<AppState>) -> WebResult<MembersRes
         err!("permission_denied", "Only the committee and contributors can view members")
     }
     let members = CommitteeMemberDao::list_all(&state.sql_pool).await?;
-    let uids: Vec<i64> = members.iter().flat_map(|x| [x.uid, x.appointed_by_uid]).collect();
+    let uids: Vec<UserId> = members.iter().flat_map(|x| [x.uid, x.appointed_by_uid]).collect();
     let users = load_users(&state.sql_pool, &uids).await?;
     let members = members.into_iter()
         .filter_map(|x| Some(MemberItem {
@@ -70,7 +71,7 @@ async fn members(claims: Claims, state: State<AppState>) -> WebResult<MembersRes
 /// @since 261008
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemberReq {
-    pub uid: i64,
+    pub uid: UserId,
 }
 
 async fn appoint(claims: Claims, state: State<AppState>, req: Json<MemberReq>) -> WebResult<()> {
@@ -85,7 +86,7 @@ async fn revoke(claims: Claims, state: State<AppState>, req: Json<MemberReq>) ->
     ok!(())
 }
 
-async fn require_contributor(state: &AppState, uid: i64) -> Result<(), WebError<CommonError>> {
+async fn require_contributor(state: &AppState, uid: UserId) -> Result<(), WebError<CommonError>> {
     if committee::access(state, uid).await?.can_resolve {
         Ok(())
     } else {

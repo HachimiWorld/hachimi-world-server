@@ -6,8 +6,8 @@
 use crate::db::follow::FollowDao;
 use crate::db::message_read_mark::{MessageReadMark, MessageReadMarkDao};
 use crate::db::received_like::ReceivedLikeDao;
-use crate::db::song::{ISongDao, Song, SongDao};
-use crate::db::user::{IUserDao, UserDao};
+use crate::db::song::{ISongDao, Song, SongDao, SongId};
+use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::service::notification;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
@@ -56,7 +56,7 @@ pub struct Summary {
     pub follow_read_time: DateTime<Utc>,
 }
 
-pub async fn summary(pool: &PgPool, uid: i64) -> sqlx::Result<Summary> {
+pub async fn summary(pool: &PgPool, uid: UserId) -> sqlx::Result<Summary> {
     let marks: HashMap<String, DateTime<Utc>> = MessageReadMarkDao::list_by_uid(pool, uid).await?
         .into_iter()
         .map(|x| (x.channel, x.read_time))
@@ -76,7 +76,7 @@ pub async fn summary(pool: &PgPool, uid: i64) -> sqlx::Result<Summary> {
 }
 
 /// Marks everything in `channel` up to now read. Returns the new read time.
-pub async fn mark_read(pool: &PgPool, uid: i64, channel: Channel) -> sqlx::Result<DateTime<Utc>> {
+pub async fn mark_read(pool: &PgPool, uid: UserId, channel: Channel) -> sqlx::Result<DateTime<Utc>> {
     // PostgreSQL keeps microseconds; return what is stored
     let now = Utc::now().trunc_subsecs(6);
     let mark = MessageReadMark {
@@ -102,7 +102,7 @@ pub async fn mark_read(pool: &PgPool, uid: i64, channel: Channel) -> sqlx::Resul
 /// @since 261006
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Liker {
-    pub uid: i64,
+    pub uid: UserId,
     pub username: String,
     pub avatar_url: Option<String>,
 }
@@ -111,7 +111,7 @@ pub struct Liker {
 /// @since 261006
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReceivedLikeItem {
-    pub song_id: i64,
+    pub song_id: SongId,
     pub song_display_id: String,
     pub song_title: String,
     pub cover_url: String,
@@ -126,26 +126,26 @@ pub struct ReceivedLikeItem {
 /// there are more.
 pub async fn received_likes(
     pool: &PgPool,
-    uid: i64,
-    before: Option<(DateTime<Utc>, i64)>,
+    uid: UserId,
+    before: Option<(DateTime<Utc>, SongId)>,
     limit: i64,
 ) -> sqlx::Result<(Vec<ReceivedLikeItem>, bool)> {
     let mut liked = ReceivedLikeDao::list_liked_songs(pool, uid, before, limit + 1).await?;
     let has_more = liked.len() as i64 > limit;
     liked.truncate(limit as usize);
 
-    let song_ids: Vec<i64> = liked.iter().map(|x| x.song_id).collect();
-    let mut songs: HashMap<i64, Song> = SongDao::list_by_ids(pool, &song_ids).await?
+    let song_ids: Vec<SongId> = liked.iter().map(|x| x.song_id).collect();
+    let mut songs: HashMap<SongId, Song> = SongDao::list_by_ids(pool, &song_ids).await?
         .into_iter()
         .map(|x| (x.id, x))
         .collect();
     let latest = ReceivedLikeDao::list_latest_by_songs(pool, &song_ids, LATEST_LIKERS).await?;
-    let user_ids: Vec<i64> = latest.iter().map(|x| x.user_id).collect();
-    let users: HashMap<i64, Liker> = UserDao::list_by_ids(pool, &user_ids).await?
+    let user_ids: Vec<UserId> = latest.iter().map(|x| x.user_id).collect();
+    let users: HashMap<UserId, Liker> = UserDao::list_by_ids(pool, &user_ids).await?
         .into_iter()
         .map(|x| (x.id, Liker { uid: x.id, username: x.username, avatar_url: x.avatar_url }))
         .collect();
-    let mut likers: HashMap<i64, Vec<Liker>> = HashMap::new();
+    let mut likers: HashMap<SongId, Vec<Liker>> = HashMap::new();
     for like in latest {
         if let Some(user) = users.get(&like.user_id) {
             likers.entry(like.song_id).or_default().push(user.clone());
