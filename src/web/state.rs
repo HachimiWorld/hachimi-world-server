@@ -13,7 +13,7 @@ pub struct AppState {
     pub config: Arc<Config>,
     pub sql_pool: Pool<Postgres>,
     pub file_host: Arc<dyn FileHost>,
-    pub meilisearch: Arc<meilisearch_sdk::client::Client>,
+    pub meilisearch: Arc<crate::search::SearchClient>,
     pub red_lock: RedLock,
     pub bili_client: Arc<dyn BilibiliClient>,
     /// `None` when `content_check` isn't configured: content isn't checked.

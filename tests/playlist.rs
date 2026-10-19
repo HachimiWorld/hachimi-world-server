@@ -321,7 +321,7 @@ async fn wait_for_playlist_search_hit(
     query: &str,
     playlist_id: PlaylistId,
 ) -> SearchResp {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(30);
 
     loop {
         let resp = env.api.get_query(

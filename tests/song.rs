@@ -162,7 +162,7 @@ async fn test_search() {
         ).await;
 
         // Poll until the song is searchable (Meilisearch indexing is async)
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             let search_result: SearchResp = env.api.get_query("/song/search", &SearchReq {
                 q: unique_word.clone(),

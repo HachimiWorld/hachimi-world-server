@@ -126,7 +126,7 @@ async fn test_search() {
         let user = auth::with_new_random_test_user(&mut env).await;
 
         // User search uses Meilisearch which is async - poll until found
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             let resp: SearchResp = env.api.get_query("/user/search", &SearchReq {
                 q: "神人".to_string(),

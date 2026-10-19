@@ -8,8 +8,10 @@ pub mod publish;
 pub mod images;
 pub mod typesafe;
 pub mod postgres;
+pub mod meilisearch;
 
-use crate::common::images::{Meilisearch1_32, Redis8};
+use crate::common::images::Redis8;
+use crate::common::meilisearch::TestMeilisearch;
 use crate::common::postgres::TestPostgres;
 use async_trait::async_trait;
 use axum::http::HeaderMap;
@@ -79,10 +81,11 @@ where
     let ((redis_instance, redis_conn), (postgres_instance, sql_pool), (ms_instance, ms_client)) = tokio::join!(
         get_test_redis_conn(),
         TestPostgres::start(),
-        get_test_meilisearch(),
+        TestMeilisearch::start(),
     );
 
-    setup_meilisearch_indexes(&ms_client, &sql_pool).await.unwrap();
+    setup_meilisearch_indexes(&ms_client, &sql_pool, false).await.unwrap();
+    TestMeilisearch::wait_for_indexes(&ms_client).await;
 
     let content_checker = if options.content_check {
         Some(Arc::new(typesafe::get_test_content_checker(&sql_pool).await))
@@ -93,7 +96,7 @@ where
     let app_state = AppState {
         sql_pool: sql_pool,
         file_host: Arc::new(get_test_file_host().await),
-        meilisearch: Arc::new(ms_client),
+        meilisearch: Arc::new(ms_client.clone()),
         redis_conn: redis_conn.clone(),
         config: Arc::new(get_test_config()),
         red_lock: RedLock::new(redis_conn).unwrap(),
@@ -123,7 +126,7 @@ where
     // Hold the instances until the end of the test to make sure the connections are still valid
     drop(redis_instance);
     postgres_instance.cleanup(app_state.sql_pool).await;
-    drop(ms_instance);
+    ms_instance.cleanup(&ms_client).await;
 }
 
 async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
@@ -134,15 +137,6 @@ async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
     info!("Open test redis instance at {}", redis_url);
     let redis = redis::Client::open(redis_url).unwrap();
     (redis_instance, redis.get_connection_manager().await.unwrap())
-}
-
-async fn get_test_meilisearch() -> (ContainerAsync<Meilisearch1_32>, meilisearch_sdk::client::Client) {
-    let instance = Meilisearch1_32::default().start().await.unwrap();
-    let host_ip = instance.get_host().await.unwrap();
-    let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
-    let url = format!("http://{host_ip}:{host_port}");
-    info!("Open test meilisearch instance at {}", url);
-    (instance, meilisearch_sdk::client::Client::new(url, Some("12345678")).unwrap())
 }
 
 async fn get_test_file_host() -> impl FileHost {
