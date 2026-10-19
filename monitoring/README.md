@@ -62,7 +62,10 @@ across the instances that run side by side during a rollout. Give every new hist
 | `content_check_duration_seconds` | histogram, 0.05–5 s | `subject`, `outcome` |
 | `content_check_input_tokens_total` | counter | `subject` |
 | `content_check_policy_info` | gauge, 1 while checks are on | `version`, `model` |
+| `content_check_reused_total` | counter | `subject`, `outcome` (`pass`, `block`) |
 
-`error` means TypeSafe failed or its answer didn't match the policy; the content was let through. The
+`error` means TypeSafe failed or its answer didn't match the policy; the content was let through. A
+check of content already judged under the same policy and model reuses that answer: it counts in
+`content_check_reused_total` only, not in the others, which are about calls to TypeSafe. The
 alerts need a minimum number of checks before they fire, because profile edits are few; with no
 checks at all there's no data, which counts as OK.
