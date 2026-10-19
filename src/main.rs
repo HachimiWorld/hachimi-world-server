@@ -213,12 +213,12 @@ struct MeiliCfg {
     pub api_key: String,
 }
 
-async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result<meilisearch_sdk::client::Client> {
+async fn get_meilisearch_client(config: Config, pool: &PgPool) -> anyhow::Result<search::SearchClient> {
     let cfg: MeiliCfg = config.get_and_parse("meilisearch")?;
-    let client = meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?;
+    let client = search::SearchClient::new(meilisearch_sdk::client::Client::new(cfg.host, Some(cfg.api_key))?, "");
     let span = info_span!("search");
     async {
-        search::setup_meilisearch_indexes(&client, pool).await
+        search::setup_meilisearch_indexes(&client, pool, true).await
     }.instrument(span).await?;
     Ok(client)
 }

@@ -1,6 +1,7 @@
 use crate::db::user::UserId;
 use crate::search::song::SearchResultHitsInfo;
-use meilisearch_sdk::client::{Client, SwapIndexes};
+use crate::search::SearchClient;
+use meilisearch_sdk::client::SwapIndexes;
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
 use metrics::counter;
@@ -37,7 +38,7 @@ pub struct SearchResult {
 ///
 /// Returns a Result containing a vector of UserDocument matches
 pub async fn search_users(
-    client: &Client,
+    client: &SearchClient,
     query: &str,
     limit: Option<usize>,
     offset: Option<usize>,
@@ -63,15 +64,16 @@ pub async fn search_users(
     Ok(r)
 }
 
-pub async fn update_user_document(client: &Client, document: UserDocument) -> anyhow::Result<()> {
+pub async fn update_user_document(client: &SearchClient, document: UserDocument) -> anyhow::Result<()> {
     client.index("users")
         .add_documents(&[document], Some("id"))
         .await?;
     Ok(())
 }
 
-pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(), meilisearch_sdk::errors::Error> {
-    let exists = match client.get_index("users").await {
+/// Creates the index if it is missing. With `fill`, also fills it from the database in the background.
+pub async fn setup_search_index(client: &SearchClient, pg_pool: &PgPool, fill: bool) -> Result<(), meilisearch_sdk::errors::Error> {
+    let exists = match client.client().get_index(client.index_name("users")).await {
         Ok(_) => { true }
         Err(Error::Meilisearch(err)) => {
             if err.error_code == ErrorCode::IndexNotFound {
@@ -85,28 +87,30 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
 
     if !exists {
         info!("Setting up users index");
-        setup_search_index_with_name(client, "users").await?;
+        setup_search_index_with_name(client, &client.index_name("users")).await?;
 
         // Startup indexing
-        tokio::spawn({
-            let client = client.clone();
-            let pool = pg_pool.clone();
-            async move {
-                match fully_index_users(&client, &pool).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!("Failed to index users: {:?}", err);
-                    }
-                };
-            }.instrument(info_span!("full_index_users"))
-        });
+        if fill {
+            tokio::spawn({
+                let client = client.clone();
+                let pool = pg_pool.clone();
+                async move {
+                    match fully_index_users(&client, &pool).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            error!("Failed to index users: {:?}", err);
+                        }
+                    };
+                }.instrument(info_span!("full_index_users"))
+            });
+        }
     }
 
     Ok(())
 }
 
-async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
-    let index = client.index(index_name);
+async fn setup_search_index_with_name(client: &SearchClient, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
+    let index = client.client().index(index_name);
 
     // Set searchable attributes
     index.set_searchable_attributes(["name"]).await?;
@@ -116,7 +120,7 @@ async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Resu
 }
 
 async fn fully_index_users(
-    client: &Client,
+    client: &SearchClient,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
     counter!("full_index_user_count").increment(1);
@@ -127,7 +131,7 @@ async fn fully_index_users(
     .fetch_all(pool)
     .await?;
     let time = chrono::Utc::now();
-    let new_index_name = format!("users_{}", time.format("%Y%m%d%H%M%S"));
+    let new_index_name = client.index_name(&format!("users_{}", time.format("%Y%m%d%H%M%S")));
     let new_index = setup_search_index_with_name(client, &new_index_name).await?;
     let chunks = users.chunks(1024).collect::<Vec<_>>();
 
@@ -143,18 +147,18 @@ async fn fully_index_users(
 
         info!("syncing chunk {} to MeiliSearch: {:?}", index, documents.len());
         let _ = new_index.add_documents(&documents, Some("id")).await?
-            .wait_for_completion(&client, None, None)
+            .wait_for_completion(client.client(), None, None)
             .await?;
         info!("sync chunk {index} successfully");
     }
 
     info!("sync all chunk successfully, swapping indexes");
 
-    let _ = client.swap_indexes([&SwapIndexes {
-        indexes: ("users".to_string(), new_index_name),
+    let _ = client.client().swap_indexes([&SwapIndexes {
+        indexes: (client.index_name("users"), new_index_name),
         rename: None,
     }]).await?
-        .wait_for_completion(&client, None, None);
+        .wait_for_completion(client.client(), None, None);
     info!("swapping indexes successfully");
     new_index.delete().await?;
 
