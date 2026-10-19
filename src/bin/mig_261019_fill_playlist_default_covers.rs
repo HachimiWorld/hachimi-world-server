@@ -1,6 +1,11 @@
 //! Gives playlists without a custom cover the cover of their most recently added song that isn't
-//! hidden, as adding or removing a song does since playlists got default covers. Run it after the
-//! `add_playlist_custom_cover` migration, which marks the covers set before as custom.
+//! hidden, as adding or removing a song does since playlists got default covers. Run it once every
+//! server runs the new version.
+//!
+//! The `add_playlist_custom_cover` migration marks the covers set before it as custom, but servers
+//! still on the old version keep saving uploads without marking them. So first, covers uploaded to
+//! `images/playlist/` (see `/playlist/set_cover`) that aren't marked are marked as custom; song
+//! covers are never stored there.
 //!
 //! Dry run by default: counts what would change. Pass `--apply` to update the playlists.
 //! Reads `db` from the config at `$CONFIG_PATH` (default `config.yaml`).
@@ -33,7 +38,19 @@ async fn main() -> anyhow::Result<()> {
         println!("Dry run. Pass --apply to update the playlists.");
     }
 
-    // The same pick as `PlaylistDao::refresh_default_covers`, to count before changing anything
+    let unmarked = sqlx::query_scalar!(
+        r#"SELECT p.id as "id: PlaylistId" FROM playlists p
+        WHERE NOT p.custom_cover AND p.cover_url LIKE '%/images/playlist/%'"#
+    ).fetch_all(&sql_pool).await?;
+    if apply {
+        sqlx::query!(
+            "UPDATE playlists SET custom_cover = TRUE WHERE id = ANY($1)",
+            &unmarked as &[PlaylistId]
+        ).execute(&sql_pool).await?;
+    }
+
+    // The same pick as `PlaylistDao::refresh_default_covers`, to count before changing anything.
+    // In a dry run, the unmarked uploads are left out as if they were marked.
     let rows = sqlx::query!(
         r#"SELECT p.id as "id: PlaylistId", p.cover_url, (
             SELECT s.cover_art_url FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id
@@ -44,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
         FROM playlists p WHERE NOT p.custom_cover"#
     ).fetch_all(&sql_pool).await?;
 
+    let rows: Vec<_> = rows.into_iter().filter(|x| !unmarked.contains(&x.id)).collect();
     let total = rows.len();
     let changed: Vec<PlaylistId> = rows.into_iter()
         .filter(|x| x.cover_url != x.default_cover)
@@ -56,7 +74,8 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let verb = if apply { "Updated" } else { "Would update" };
+    let (mark_verb, verb) = if apply { ("Marked", "Updated") } else { ("Would mark", "Would update") };
+    println!("{mark_verb} {} uploaded covers as custom.", unmarked.len());
     println!("{total} playlists without a custom cover. {verb} {}.", changed.len());
     Ok(())
 }

@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT p.id as \"id: PlaylistId\" FROM playlists p\n        WHERE NOT p.custom_cover AND p.cover_url LIKE '%/images/playlist/%'",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id: PlaylistId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "playlists",
+            "name": "id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "38a40c8c0b5f1757f8f63a4b0e6e6485c345ea4e3bbb3ec21ebcf3592606e26e"
+}
