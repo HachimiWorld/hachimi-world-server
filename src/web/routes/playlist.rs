@@ -274,7 +274,7 @@ async fn create(
         name: req.name.clone(),
         description: req.description.clone(),
         user_id: uid,
-        cover_url: None,
+        cover_url: None, // TODO: Pick a song cover by default
         custom_cover: false,
         is_public: req.is_public,
         is_hidden: false,
@@ -458,7 +458,6 @@ async fn add_song(
         },
     ).await?;
     PlaylistDao::update_by_id(&mut *tx, &playlist).await?;
-    PlaylistDao::refresh_default_covers(&mut *tx, &[playlist.id]).await?;
     tx.commit().await?;
     ok!(())
 }
@@ -477,10 +476,7 @@ async fn remove_song(
 ) -> WebResult<()> {
     let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
 
-    let mut tx = state.sql_pool.begin().await?;
-    PlaylistDao::remove_song(&mut *tx, playlist.id, req.song_id).await?;
-    PlaylistDao::refresh_default_covers(&mut *tx, &[playlist.id]).await?;
-    tx.commit().await?;
+    PlaylistDao::remove_song(&state.sql_pool, playlist.id, req.song_id).await?;
     ok!(())
 }
 

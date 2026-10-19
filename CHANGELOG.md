@@ -43,8 +43,7 @@
 
 ### Changes
 
-- Playlists without a cover uploaded by their owner now show the cover of their most recently added song that isn't hidden, in `cover_url` everywhere a playlist is returned. It's picked again when a song is added or removed; a song hidden or changed later doesn't update it until then. A playlist with no such song still has no cover
-  - Run the migrations, then once every server runs this version, `mig_261019_fill_playlist_default_covers` (dry run by default, `--apply` to update) to fill in existing playlists. The migration marks every cover set before as the owner's; the script also marks covers uploaded by servers still on the old version during the rollout
+- New `playlists.custom_cover` column, set when the owner uploads a cover with `/playlist/set_cover`. It's the first step of default playlist covers: covers uploaded before it are marked, and default covers turned on, in the next release, once every server sets it
 - Register, login, `/auth/refresh_token` and the anonymous play history and recommendation endpoints no longer fail with an internal error when the request has neither `X-Real-IP` nor `CF-Connecting-IP`, for example on a local server without a proxy. They use the connection's IP instead
 - The `/api` rate limit counts per user when the request has a valid access token, and per IP otherwise (it was per IP for everyone). It is looser now, 10 requests per second with bursts of 60, and set by the new optional `server.rate_limit` config (`per_second`, `burst_size`)
 - Usernames can be longer. `/user/update_profile` now measures width instead of characters: a CJK character (and most emoji) counts as 2 and others as 1, up to 20, so 10 Chinese characters or 20 Latin letters; at most 32 characters. Usernames with control characters such as line breaks, or with nothing visible, are rejected. All errors are still `invalid_username`
