@@ -7,7 +7,10 @@ use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
     CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
     ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, SearchReq, SearchResp,
+    SetCoverReq,
 };
+use image::{ImageFormat, Rgb, RgbImage};
+use reqwest::multipart::{Form, Part};
 use tokio::time::{sleep, Duration, Instant};
 
 mod common;
@@ -288,6 +291,37 @@ async fn test_favorite_playlists() {
         assert_eq!(remaining.data.len(), 1);
         assert_eq!(remaining.data[0].metadata.id, playlist_b);
     }).await;
+}
+
+#[tokio::test]
+async fn test_set_cover_marks_custom_cover() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        env.api.set_token(owner.token.access_token.clone());
+
+        let playlist_id = create_playlist(&env, "Custom Cover", None, false).await;
+        assert!(!custom_cover(&env, playlist_id).await);
+
+        set_cover(&env, playlist_id).await;
+        assert!(custom_cover(&env, playlist_id).await);
+    }).await;
+}
+
+async fn set_cover(env: &TestEnvironment, playlist_id: PlaylistId) {
+    let mut png = Vec::new();
+    RgbImage::from_pixel(300, 200, Rgb([128, 128, 128]))
+        .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png).unwrap();
+    let json = serde_json::to_string(&SetCoverReq { playlist_id }).unwrap();
+    env.api.post_raw("/playlist/set_cover")
+        .multipart(Form::new().text("json", json).part("file", Part::bytes(png).file_name("cover.png")))
+        .send().await.unwrap()
+        .parse_resp::<()>().await.unwrap();
+}
+
+async fn custom_cover(env: &TestEnvironment, playlist_id: PlaylistId) -> bool {
+    sqlx::query_scalar("SELECT custom_cover FROM playlists WHERE id = $1")
+        .bind(playlist_id.0)
+        .fetch_one(&env.pool).await.unwrap()
 }
 
 async fn create_playlist(
