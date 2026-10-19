@@ -57,7 +57,7 @@ impl NotificationDao {
                 create_time
             ) VALUES($1, $2, $3, $4, $5, $6, $7, $8)",
             value.id,
-            value.recipient_uid as _,
+            value.recipient_uid as UserId,
             value.notification_type,
             value.title,
             value.body,
@@ -79,7 +79,7 @@ impl NotificationDao {
         recipient_uid: UserId,
         id: Uuid,
     ) -> sqlx::Result<Option<Notification>> {
-        query_notifications!("WHERE id = $1 AND recipient_uid = $2", id, recipient_uid as _)
+        query_notifications!("WHERE id = $1 AND recipient_uid = $2", id, recipient_uid as UserId)
             .fetch_optional(executor)
             .await
     }
@@ -98,7 +98,7 @@ impl NotificationDao {
                 AND create_time >= $3
             ORDER BY id DESC
             LIMIT $4",
-            recipient_uid as _, before_id, since, limit
+            recipient_uid as UserId, before_id, since, limit
         ).fetch_all(executor).await
     }
 
@@ -111,7 +111,7 @@ impl NotificationDao {
         sqlx::query!(
             "SELECT COUNT(*) FROM notifications
             WHERE recipient_uid = $1 AND read_time IS NULL AND create_time >= $2",
-            recipient_uid as _, since
+            recipient_uid as UserId, since
         ).fetch_one(executor).await.map(|x| x.count.unwrap_or(0))
     }
 
@@ -126,7 +126,7 @@ impl NotificationDao {
         sqlx::query!(
             "UPDATE notifications SET read_time = $3
             WHERE id = $1 AND recipient_uid = $2 AND read_time IS NULL",
-            id, recipient_uid as _, read_time
+            id, recipient_uid as UserId, read_time
         ).execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 
@@ -141,7 +141,7 @@ impl NotificationDao {
         sqlx::query!(
             "UPDATE notifications SET read_time = $3
             WHERE recipient_uid = $1 AND read_time IS NULL AND create_time >= $2",
-            recipient_uid as _, since, read_time
+            recipient_uid as UserId, since, read_time
         ).execute(executor).await.map(|x| x.rows_affected())
     }
 

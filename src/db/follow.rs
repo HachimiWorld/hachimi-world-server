@@ -44,8 +44,8 @@ impl FollowDao {
     {
         let result = sqlx::query!(
             r#"INSERT INTO follows (follower_id, followed_id) VALUES ($1, $2) ON CONFLICT DO NOTHING"#,
-            follower_id as _,
-            followed_id as _
+            follower_id as UserId,
+            followed_id as UserId
         )
             .execute(executor)
             .await?;
@@ -58,8 +58,8 @@ impl FollowDao {
     {
         sqlx::query!(
             "DELETE FROM follows WHERE follower_id = $1 AND followed_id = $2",
-            follower_id as _,
-            followed_id as _
+            follower_id as UserId,
+            followed_id as UserId
         )
             .execute(executor)
             .await?;
@@ -72,8 +72,8 @@ impl FollowDao {
     {
         let result = sqlx::query!(
             r#"SELECT 1 as "exists: bool" FROM follows WHERE follower_id = $1 AND followed_id = $2"#,
-            follower_id as _,
-            followed_id as _
+            follower_id as UserId,
+            followed_id as UserId
         )
             .fetch_optional(executor)
             .await?;
@@ -99,7 +99,7 @@ impl FollowDao {
                WHERE f.follower_id = $1 AND f.create_time < $2
                ORDER BY f.create_time DESC
                LIMIT $3"#,
-            follower_id as _,
+            follower_id as UserId,
             cursor,
             limit
         )
@@ -126,7 +126,7 @@ impl FollowDao {
                WHERE f.followed_id = $1 AND f.create_time < $2
                ORDER BY f.create_time DESC
                LIMIT $3"#,
-            followed_id as _,
+            followed_id as UserId,
             cursor,
             limit
         )
@@ -142,7 +142,7 @@ impl FollowDao {
     {
         sqlx::query!(
             r#"SELECT COUNT(*) AS "count!" FROM follows WHERE followed_id = $1 AND create_time > $2"#,
-            followed_id as _, after
+            followed_id as UserId, after
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
@@ -152,7 +152,7 @@ impl FollowDao {
     {
         sqlx::query!(
             "UPDATE users SET following_count = COALESCE(following_count, 0) + $1 WHERE id = $2",
-            delta, uid as _
+            delta, uid as UserId
         ).execute(executor).await?;
         Ok(())
     }
@@ -163,7 +163,7 @@ impl FollowDao {
     {
         sqlx::query!(
             "UPDATE users SET follower_count = COALESCE(follower_count, 0) + $1 WHERE id = $2",
-            delta, uid as _
+            delta, uid as UserId
         ).execute(executor).await?;
         Ok(())
     }
@@ -180,8 +180,8 @@ impl FollowDao {
         }
         let rows = sqlx::query!(
             r#"SELECT follower_id as "follower_id: UserId" FROM follows WHERE followed_id = $1 AND follower_id = ANY($2)"#,
-            uid as _,
-            candidate_ids as _
+            uid as UserId,
+            candidate_ids as &[UserId]
         ).fetch_all(executor).await?;
         Ok(rows.into_iter().map(|r| r.follower_id).collect())
     }

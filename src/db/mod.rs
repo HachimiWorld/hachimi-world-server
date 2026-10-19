@@ -6,7 +6,7 @@ use sqlx::PgExecutor;
 /// database schema and the JSON api stay the same.
 ///
 /// In `query!` / `query_as!`, read a column as an id with `id as "id: _"` (or `"id: SongId"`),
-/// and bind an id with `song_id as _`.
+/// and bind an id with `song_id as SongId`.
 macro_rules! define_id {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*

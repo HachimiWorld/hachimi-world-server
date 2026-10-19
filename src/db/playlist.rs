@@ -175,7 +175,7 @@ where
     }
 
     async fn get_by_id(executor: E, id: PlaylistId) -> sqlx::Result<Option<Self::Entity>> {
-        query_playlists!("WHERE id = $1", id as _)
+        query_playlists!("WHERE id = $1", id as PlaylistId)
             .fetch_optional(executor)
             .await
     }
@@ -193,12 +193,12 @@ where
             WHERE id = $8",
             value.name,
             value.description,
-            value.user_id as _,
+            value.user_id as UserId,
             value.cover_url,
             value.is_public,
             value.create_time,
             value.update_time,
-            value.id as _,
+            value.id as PlaylistId,
         ).execute(executor).await?;
         Ok(())
     }
@@ -217,7 +217,7 @@ where
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id as \"id: PlaylistId\"",
             value.name,
             value.description,
-            value.user_id as _,
+            value.user_id as UserId,
             value.cover_url,
             value.is_public,
             value.is_hidden,
@@ -237,7 +237,7 @@ where
     E: PgExecutor<'e>,
 {
     async fn remove_song(executor: E, playlist_id: PlaylistId, song_id: SongId) -> sqlx::Result<()> {
-        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2", playlist_id as _, song_id as _)
+        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1 AND song_id = $2", playlist_id as PlaylistId, song_id as SongId)
             .execute(executor)
             .await?;
         Ok(())
@@ -246,8 +246,8 @@ where
     async fn add_song(executor: E, value: &PlaylistSong) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO playlist_songs (playlist_id, song_id, order_index, add_time) VALUES ($1, $2, $3, $4)",
-            value.playlist_id as _,
-            value.song_id as _,
+            value.playlist_id as PlaylistId,
+            value.song_id as SongId,
             value.order_index,
             value.add_time,
         ).execute(executor)
@@ -255,7 +255,7 @@ where
         Ok(())
     }
     async fn list_songs(executor: E, playlist_id: PlaylistId) -> sqlx::Result<Vec<PlaylistSong>> {
-        query_playlist_songs!("WHERE playlist_id = $1 ORDER BY order_index", playlist_id as _)
+        query_playlist_songs!("WHERE playlist_id = $1 ORDER BY order_index", playlist_id as PlaylistId)
             .fetch_all(executor)
             .await
     }
@@ -263,7 +263,7 @@ where
     async fn count_songs(executor: E, playlist_ids: &[PlaylistId]) -> sqlx::Result<HashMap<PlaylistId, i64>> {
         if playlist_ids.is_empty() { return Ok(HashMap::new()); }
 
-        let result = sqlx::query!("SELECT playlist_id as \"playlist_id: PlaylistId\", COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id", playlist_ids as _)
+        let result = sqlx::query!("SELECT playlist_id as \"playlist_id: PlaylistId\", COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id", playlist_ids as &[PlaylistId])
             .fetch_all(executor)
             .await?
             .into_iter()
@@ -273,14 +273,14 @@ where
     }
 
     async fn list_by_user(executor: E, user_id: UserId) -> sqlx::Result<Vec<Playlist>> {
-        query_playlists!("WHERE user_id = $1", user_id as _)
+        query_playlists!("WHERE user_id = $1", user_id as UserId)
             .fetch_all(executor)
             .await
     }
 
     async fn list_by_ids(executor: E, ids: &[PlaylistId]) -> sqlx::Result<Vec<Playlist>> {
         if ids.is_empty() { return Ok(vec![]); }
-        query_playlists!("WHERE id = ANY($1)", ids as _)
+        query_playlists!("WHERE id = ANY($1)", ids as &[PlaylistId])
             .fetch_all(executor)
             .await
     }
@@ -288,15 +288,15 @@ where
     async fn list_containing(executor: E, song_id: SongId, user_id: UserId) -> sqlx::Result<Vec<Playlist>> {
         query_playlists!(
             "p JOIN playlist_songs ps ON ps.playlist_id = p.id WHERE ps.song_id = $1 AND p.user_id = $2",
-            song_id as _,
-            user_id as _
+            song_id as SongId,
+            user_id as UserId
         )
             .fetch_all(executor)
             .await
     }
 
     async fn count_by_user(executor: E, user_id: UserId) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(1) FROM playlists WHERE user_id = $1", user_id as _)
+        sqlx::query!("SELECT COUNT(1) FROM playlists WHERE user_id = $1", user_id as UserId)
             .fetch_one(executor)
             .await
             .map(|x| x.count.unwrap_or(0))
@@ -306,12 +306,12 @@ where
         let offset = page_index * page_size;
         query_favorite_playlists!(
             "WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
-            user_id as _, page_size, offset
+            user_id as UserId, page_size, offset
         ).fetch_all(executor).await
     }
 
     async fn count_favorites(executor: E, user_id: UserId) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(*) FROM favorite_playlists WHERE user_id = $1", user_id as _)
+        sqlx::query!("SELECT COUNT(*) FROM favorite_playlists WHERE user_id = $1", user_id as UserId)
             .fetch_one(executor)
             .await
             .map(|x| x.count.unwrap_or(0))
@@ -322,8 +322,8 @@ where
         sqlx::query!(
             "INSERT INTO favorite_playlists (user_id, playlist_id, order_index, add_time) VALUES ($1, $2, $3, $4)
              ON CONFLICT (user_id, playlist_id) DO NOTHING",
-            value.user_id as _,
-            value.playlist_id as _,
+            value.user_id as UserId,
+            value.playlist_id as PlaylistId,
             value.order_index,
             value.add_time
         ).execute(executor).await?;
@@ -333,8 +333,8 @@ where
     async fn remove_favorite(executor: E, user_id: UserId, playlist_id: PlaylistId) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM favorite_playlists WHERE user_id = $1 AND playlist_id = $2",
-            user_id as _,
-            playlist_id as _
+            user_id as UserId,
+            playlist_id as PlaylistId
         ).execute(executor).await?;
         Ok(())
     }
@@ -342,8 +342,8 @@ where
     async fn get_favorite(executor: E, user_id: UserId, playlist_id: PlaylistId) -> sqlx::Result<Option<FavoritePlaylist>> {
         query_favorite_playlists!(
             "WHERE user_id = $1 AND playlist_id = $2",
-            user_id as _,
-            playlist_id as _
+            user_id as UserId,
+            playlist_id as PlaylistId
         )
         .fetch_optional(executor)
         .await
@@ -356,17 +356,17 @@ impl<'e> PlaylistDao {
             sqlx::query!(
                 "UPDATE playlist_songs SET order_index = $1 WHERE playlist_id = $2 AND song_id = $3",
                 value.order_index,
-                value.playlist_id as _,
-                value.song_id as _,
+                value.playlist_id as PlaylistId,
+                value.song_id as SongId,
             ).execute(&mut **tx).await?;
         }
         Ok(())
     }
 
     pub async fn delete_cascade_by_id(tx: &mut PgTransaction<'e>, id: PlaylistId) -> sqlx::Result<()> {
-        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1", id as _)
+        sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1", id as PlaylistId)
             .execute(&mut **tx).await?;
-        sqlx::query!("DELETE FROM playlists WHERE id = $1", id as _)
+        sqlx::query!("DELETE FROM playlists WHERE id = $1", id as PlaylistId)
             .execute(&mut **tx).await?;
         Ok(())
     }
@@ -376,7 +376,7 @@ impl PlaylistDao {
     /// Returns whether the playlist exists.
     /// @since 261008
     pub async fn set_hidden<'e>(executor: impl PgExecutor<'e>, id: PlaylistId, hidden: bool) -> sqlx::Result<bool> {
-        sqlx::query!("UPDATE playlists SET is_hidden = $2 WHERE id = $1", id as _, hidden)
+        sqlx::query!("UPDATE playlists SET is_hidden = $2 WHERE id = $1", id as PlaylistId, hidden)
             .execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 }

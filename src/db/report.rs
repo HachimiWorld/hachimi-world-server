@@ -150,7 +150,7 @@ impl ReportCaseDao {
         sqlx::query!(
             "INSERT INTO report_cases (target_type, target_id, target_owner_uid, status, ignore_reports, pending_count, last_report_time, create_time, update_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-            value.target_type, value.target_id, value.target_owner_uid as _, value.status, value.ignore_reports,
+            value.target_type, value.target_id, value.target_owner_uid as UserId, value.status, value.ignore_reports,
             value.pending_count, value.last_report_time, value.create_time, value.update_time
         ).fetch_one(executor).await.map(|x| x.id)
     }
@@ -159,7 +159,7 @@ impl ReportCaseDao {
         sqlx::query!(
             "UPDATE report_cases SET target_owner_uid = $2, status = $3, ignore_reports = $4, pending_count = $5, last_report_time = $6, update_time = $7
             WHERE id = $1",
-            value.id, value.target_owner_uid as _, value.status, value.ignore_reports, value.pending_count, value.last_report_time, value.update_time
+            value.id, value.target_owner_uid as UserId, value.status, value.ignore_reports, value.pending_count, value.last_report_time, value.update_time
         ).execute(executor).await?;
         Ok(())
     }
@@ -188,19 +188,19 @@ impl ReportDao {
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Report) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO reports (case_id, reporter_uid, reason, detail, action_id, create_time) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-            value.case_id, value.reporter_uid as _, value.reason, value.detail, value.action_id, value.create_time
+            value.case_id, value.reporter_uid as UserId, value.reason, value.detail, value.action_id, value.create_time
         ).fetch_one(executor).await.map(|x| x.id)
     }
 
     pub async fn list_by_case_and_reporter<'e>(executor: impl PgExecutor<'e>, case_id: i64, reporter_uid: UserId) -> sqlx::Result<Vec<Report>> {
-        query_reports!("WHERE case_id = $1 AND reporter_uid = $2 ORDER BY id", case_id, reporter_uid as _)
+        query_reports!("WHERE case_id = $1 AND reporter_uid = $2 ORDER BY id", case_id, reporter_uid as UserId)
             .fetch_all(executor).await
     }
 
     pub async fn count_by_reporter_since<'e>(executor: impl PgExecutor<'e>, reporter_uid: UserId, since: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query!(
             r#"SELECT COUNT(*) AS "count!" FROM reports WHERE reporter_uid = $1 AND create_time > $2"#,
-            reporter_uid as _, since
+            reporter_uid as UserId, since
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
@@ -246,7 +246,7 @@ impl ModerationActionDao {
         sqlx::query!(
             "INSERT INTO moderation_actions (case_id, operator_uid, verdict, note, ignore_reports, up_to_report_id, target_snapshot, content_actions, author_reason, create_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id",
-            value.case_id, value.operator_uid as _, value.verdict, value.note, value.ignore_reports,
+            value.case_id, value.operator_uid as UserId, value.verdict, value.note, value.ignore_reports,
             value.up_to_report_id, value.target_snapshot, &value.content_actions, value.author_reason, value.create_time
         ).fetch_one(executor).await.map(|x| x.id)
     }

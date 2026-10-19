@@ -123,7 +123,7 @@ where
                 type = $9,
                 comment = $10
             WHERE id = $11",
-            value.user_id as _,
+            value.user_id as UserId,
             value.song_display_id,
             value.data,
             value.submit_time,
@@ -142,7 +142,7 @@ where
         query!("INSERT INTO song_publishing_review (user_id, song_display_id, data, submit_time, update_time, review_time, review_comment, status, type, comment)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 RETURNING id",
-            value.user_id as _, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status, value.r#type, value.comment
+            value.user_id as UserId, value.song_display_id, value.data, value.submit_time, value.update_time, value.review_time, value.review_comment, value.status, value.r#type, value.comment
         ).fetch_one(executor).await.map(|r| r.id)
     }
 
@@ -165,18 +165,18 @@ where
     async fn page_by_user(executor: E, user_id: UserId, page_index: i64, page_size: i64) -> sqlx::Result<Vec<Self::Entity>> {
         query_song_publishing_reviews!(
             "WHERE user_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
-            user_id as _, page_size, page_index * page_size
+            user_id as UserId, page_size, page_index * page_size
         ).fetch_all(executor).await
     }
 
     async fn count_by_user(executor: E, user_id: UserId) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1", user_id as _)
+        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1", user_id as UserId)
             .fetch_one(executor).await
             .map(|r| r.count.unwrap_or(0))
     }
 
     async fn count_by_user_and_status(executor: E, user_id: UserId, status: i32) -> sqlx::Result<i64> {
-        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1 AND status = $2", user_id as _, status)
+        sqlx::query!("SELECT COUNT(*) FROM song_publishing_review WHERE user_id = $1 AND status = $2", user_id as UserId, status)
             .fetch_one(executor).await
             .map(|r| r.count.unwrap_or(0))
     }

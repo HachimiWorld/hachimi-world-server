@@ -56,7 +56,7 @@ where
     async fn cursor_by_user_id(executor: E, user_id: UserId, before_time: DateTime<Utc>, size: usize) -> sqlx::Result<Vec<UserPlayHistory>> {
         query_user_play_history!(
             "WHERE user_id = $1 AND create_time < $2 ORDER BY create_time DESC LIMIT $3",
-            user_id as _,
+            user_id as UserId,
             before_time,
             size as i64
         ).fetch_all(executor).await
@@ -65,8 +65,8 @@ where
     async fn delete(executor: E, user_id: UserId, song_id: SongId) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM user_play_history WHERE user_id = $1 AND song_id = $2",
-            user_id as _,
-            song_id as _
+            user_id as UserId,
+            song_id as SongId
         ).execute(executor).await?;
         Ok(())
     }
@@ -76,13 +76,13 @@ impl<'e> IUserPlayHistoryExt<'e> for UserPlayHistoryDao {
     async fn delete_and_insert(executor: &mut PgTransaction<'e>, user_id: UserId, song_id: SongId) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM user_play_history WHERE user_id = $1 AND song_id = $2",
-            user_id as _,
-            song_id as _
+            user_id as UserId,
+            song_id as SongId
         ).execute(&mut **executor).await?;
         sqlx::query!(
             "INSERT INTO user_play_history (user_id, song_id, create_time) VALUES ($1, $2, $3)",
-            user_id as _,
-            song_id as _,
+            user_id as UserId,
+            song_id as SongId,
             Utc::now()
         ).execute(&mut **executor).await?;
         Ok(())

@@ -100,7 +100,7 @@ where
         let rec = sqlx::query!(
             "INSERT INTO posts (author_uid, title, content, content_type, cover_url, create_time, update_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-            value.author_uid as _,
+            value.author_uid as UserId,
             value.title,
             value.content,
             value.content_type,

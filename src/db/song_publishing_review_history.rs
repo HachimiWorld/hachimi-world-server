@@ -103,7 +103,7 @@ where
         sqlx::query!(
             "UPDATE song_publishing_review_history SET review_id = $1, user_id = $2, action_type = $3, note = $4, snapshot_data = $5, create_time = $6 WHERE id = $7",
             value.review_id,
-            value.user_id as _,
+            value.user_id as UserId,
             value.action_type,
             value.note,
             value.snapshot_data,
@@ -119,7 +119,7 @@ where
         sqlx::query_scalar!(
             "INSERT INTO song_publishing_review_history (review_id, user_id, action_type, note, snapshot_data, create_time) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             value.review_id,
-            value.user_id as _,
+            value.user_id as UserId,
             value.action_type,
             value.note,
             value.snapshot_data,

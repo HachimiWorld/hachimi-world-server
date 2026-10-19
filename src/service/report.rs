@@ -209,7 +209,7 @@ pub async fn submit(
                 report.action_id = Some(action.id);
                 already_reviewed = true;
             } else {
-                case.target_owner_uid = target.owner_uid as _;
+                case.target_owner_uid = target.owner_uid;
                 case.status = STATUS_PENDING.to_string();
                 case.pending_count += 1;
                 case.last_report_time = now;

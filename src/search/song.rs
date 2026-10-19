@@ -262,7 +262,7 @@ pub async fn get_documents_batch(
     let mut crews: HashMap<SongId, _> = query!(
             "SELECT song_id AS \"song_id!: SongId\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
                LEFT JOIN users u ON u.id = c.uid
-               WHERE song_id = ANY($1)", song_ids as _)
+               WHERE song_id = ANY($1)", song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
@@ -278,7 +278,7 @@ pub async fn get_documents_batch(
                 o.origin_url
             FROM song_origin_info o
                  LEFT JOIN songs s ON s.id = o.origin_song_id
-            WHERE o.song_id = ANY($1)", song_ids as _)
+            WHERE o.song_id = ANY($1)", song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
@@ -287,7 +287,7 @@ pub async fn get_documents_batch(
             "SELECT r.song_id AS \"song_id!: SongId\", t.name AS \"name?\"
             FROM song_tag_refs r
                 LEFT JOIN song_tags t ON t.id = r.tag_id
-            WHERE r.song_id = ANY($1)", song_ids as _)
+            WHERE r.song_id = ANY($1)", song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 

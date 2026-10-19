@@ -34,7 +34,7 @@ pub async fn recommend_tags_by_play_history(
         ORDER BY cnt DESC, str.tag_id ASC
         LIMIT $3
         "#,
-        query.user_id as _,
+        query.user_id as UserId,
         query.since,
         limit,
     )
@@ -76,7 +76,7 @@ pub async fn recommend_tags(
         WHERE sp.user_id = $1 AND sp.create_time >= $2
         GROUP BY str.tag_id
         "#,
-        user_id as _,
+        user_id as UserId,
         since,
     )
     .fetch_all(pool)
@@ -91,7 +91,7 @@ pub async fn recommend_tags(
         WHERE sl.user_id = $1
         GROUP BY str.tag_id
         "#,
-        user_id as _,
+        user_id as UserId,
     )
     .fetch_all(pool)
     .await?;

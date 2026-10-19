@@ -22,14 +22,14 @@ impl MessageReadMarkDao {
         sqlx::query_as!(
             MessageReadMark,
             r#"SELECT uid as "uid: _", channel, read_time, update_time FROM message_read_marks WHERE uid = $1"#,
-            uid as _
+            uid as UserId
         ).fetch_all(executor).await
     }
 
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &MessageReadMark) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO message_read_marks(uid, channel, read_time, update_time) VALUES($1, $2, $3, $4)",
-            value.uid as _, value.channel, value.read_time, value.update_time
+            value.uid as UserId, value.channel, value.read_time, value.update_time
         ).execute(executor).await?;
         Ok(())
     }
@@ -38,7 +38,7 @@ impl MessageReadMarkDao {
     pub async fn update<'e>(executor: impl PgExecutor<'e>, value: &MessageReadMark) -> sqlx::Result<bool> {
         sqlx::query!(
             "UPDATE message_read_marks SET read_time = $3, update_time = $4 WHERE uid = $1 AND channel = $2",
-            value.uid as _, value.channel, value.read_time, value.update_time
+            value.uid as UserId, value.channel, value.read_time, value.update_time
         ).execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 }

@@ -65,7 +65,7 @@ where E: PgExecutor<'e> {
     async fn insert(executor: E, value: &UserConnectionAccount) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO user_connection_accounts(user_id, provider_type, provider_account_id, provider_account_name, public, create_time, update_time) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            value.user_id as _,
+            value.user_id as UserId,
             value.provider_type,
             value.provider_account_id,
             value.provider_account_name,
@@ -84,7 +84,7 @@ where E: PgExecutor<'e> {
             value.provider_account_name,
             value.public,
             value.update_time,
-            value.user_id as _,
+            value.user_id as UserId,
             value.provider_type
         )
         .execute(executor)
@@ -95,7 +95,7 @@ where E: PgExecutor<'e> {
     async fn delete(executor: E, user_id: UserId, provider_type: &str) -> sqlx::Result<()> {
         sqlx::query!(
             "DELETE FROM user_connection_accounts WHERE user_id = $1 AND provider_type = $2",
-            user_id as _,
+            user_id as UserId,
             provider_type
         )
         .execute(executor)
@@ -104,19 +104,19 @@ where E: PgExecutor<'e> {
     }
 
     async fn list_by_user_id(executor: E, user_id: UserId) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1", user_id as _)
+        query_user_connection_accounts!("WHERE user_id = $1", user_id as UserId)
             .fetch_all(executor)
             .await
     }
 
     async fn list_public_by_user_id(executor: E, user_id: UserId) -> sqlx::Result<Vec<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1 AND public = true", user_id as _)
+        query_user_connection_accounts!("WHERE user_id = $1 AND public = true", user_id as UserId)
             .fetch_all(executor)
             .await
     }
 
     async fn get_by_user_id(executor: E, user_id: UserId, provider_type: &str) -> sqlx::Result<Option<UserConnectionAccount>> {
-        query_user_connection_accounts!("WHERE user_id = $1 AND provider_type = $2", user_id as _, provider_type)
+        query_user_connection_accounts!("WHERE user_id = $1 AND provider_type = $2", user_id as UserId, provider_type)
             .fetch_optional(executor)
             .await
     }

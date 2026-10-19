@@ -30,7 +30,7 @@ pub struct CommitteeMemberDao;
 
 impl CommitteeMemberDao {
     pub async fn get<'e>(executor: impl PgExecutor<'e>, uid: UserId) -> sqlx::Result<Option<CommitteeMember>> {
-        query_committee_members!("WHERE uid = $1", uid as _)
+        query_committee_members!("WHERE uid = $1", uid as UserId)
             .fetch_optional(executor).await
     }
 
@@ -43,14 +43,14 @@ impl CommitteeMemberDao {
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &CommitteeMember) -> sqlx::Result<()> {
         sqlx::query!(
             "INSERT INTO committee_members (uid, appointed_by_uid, create_time) VALUES ($1, $2, $3)",
-            value.uid as _, value.appointed_by_uid as _, value.create_time
+            value.uid as UserId, value.appointed_by_uid as UserId, value.create_time
         ).execute(executor).await?;
         Ok(())
     }
 
     /// Returns whether a member was removed.
     pub async fn delete<'e>(executor: impl PgExecutor<'e>, uid: UserId) -> sqlx::Result<bool> {
-        sqlx::query!("DELETE FROM committee_members WHERE uid = $1", uid as _)
+        sqlx::query!("DELETE FROM committee_members WHERE uid = $1", uid as UserId)
             .execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 }

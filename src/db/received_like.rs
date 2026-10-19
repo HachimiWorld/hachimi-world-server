@@ -33,7 +33,7 @@ impl ReceivedLikeDao {
             r#"SELECT COUNT(*) AS "count!" FROM song_likes l
             JOIN songs s ON s.id = l.song_id
             WHERE s.uploader_uid = $1 AND l.user_id <> s.uploader_uid AND l.create_time > $2"#,
-            uploader_uid as _, after
+            uploader_uid as UserId, after
         ).fetch_one(executor).await.map(|x| x.count)
     }
 
@@ -59,7 +59,7 @@ impl ReceivedLikeDao {
             HAVING $2::timestamptz IS NULL OR (MAX(l.create_time), l.song_id) < ($2, $3::bigint)
             ORDER BY MAX(l.create_time) DESC, l.song_id DESC
             LIMIT $4"#,
-            uploader_uid as _, before_time, before_song_id as _, limit
+            uploader_uid as UserId, before_time, before_song_id as std::option::Option<SongId>, limit
         ).fetch_all(executor).await
     }
 
@@ -80,7 +80,7 @@ impl ReceivedLikeDao {
             ) t
             WHERE rn <= $2
             ORDER BY song_id, create_time DESC, user_id DESC"#,
-            song_ids as _, per_song
+            song_ids as &[SongId], per_song
         ).fetch_all(executor).await
     }
 }

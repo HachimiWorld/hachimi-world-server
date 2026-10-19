@@ -96,7 +96,7 @@ where E: PgExecutor<'e> {
     }
 
     async fn get_by_id(executor: E, id: UserId) -> Result<Option<User>> {
-        Ok(query_users!("WHERE id = $1", id as _)
+        Ok(query_users!("WHERE id = $1", id as UserId)
             .fetch_optional(executor)
             .await?)
     }
@@ -134,13 +134,13 @@ where E: PgExecutor<'e> {
             value.last_login_time,
             value.create_time,
             value.update_time,
-            value.id as _
+            value.id as UserId
         ).execute(executor).await?;
         Ok(())
     }
 
     async fn delete_by_id(executor: E, id: UserId) -> Result<()> {
-        sqlx::query!("DELETE FROM users WHERE id = $1", id as _)
+        sqlx::query!("DELETE FROM users WHERE id = $1", id as UserId)
             .execute(executor)
             .await?;
         Ok(())
@@ -151,7 +151,7 @@ impl <'e, E> IUserDao<'e, E> for UserDao
 where E: PgExecutor<'e> {
     async fn list_by_ids(executor: E, ids: &[UserId]) -> Result<Vec<User>> {
         if ids.is_empty() { return Ok(vec![]) }
-        query_users!("WHERE id = ANY($1)", ids as _)
+        query_users!("WHERE id = ANY($1)", ids as &[UserId])
             .fetch_all(executor)
             .await
     }

@@ -93,7 +93,7 @@ where
         sqlx::query!(
             "UPDATE song_publishing_review_comment SET review_id = $1, user_id = $2, content = $3, create_time = $4, update_time = $5 WHERE id = $6",
             value.review_id,
-            value.user_id as _,
+            value.user_id as UserId,
             &value.content,
             value.create_time,
             value.update_time,
@@ -108,7 +108,7 @@ where
         let record = sqlx::query_scalar!(
             "INSERT INTO song_publishing_review_comment (review_id, user_id, content, create_time, update_time) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             value.review_id,
-            value.user_id as _,
+            value.user_id as UserId,
             &value.content,
             value.create_time,
             value.update_time

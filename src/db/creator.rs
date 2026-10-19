@@ -78,7 +78,7 @@ where
                 create_time = $4,
                 update_time = $5
             WHERE id = $6",
-            value.user_id as _,
+            value.user_id as UserId,
             value.jmid_prefix,
             value.active,
             value.create_time,
@@ -91,7 +91,7 @@ where
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<i64> {
         sqlx::query!(
             "INSERT INTO creators (user_id, jmid_prefix, active, create_time, update_time) VALUES ($1, $2, $3, $4, $5) RETURNING id",
-            value.user_id as _,
+            value.user_id as UserId,
             value.jmid_prefix,
             value.active,
             value.create_time,
@@ -111,7 +111,7 @@ where
 impl<'e> CreatorDao {
 
     pub async fn get_by_user_id(executor: impl PgExecutor<'e>, user_id: UserId) -> sqlx::Result<Option<Creator>> {
-        query_creators!("WHERE user_id = $1", user_id as _)
+        query_creators!("WHERE user_id = $1", user_id as UserId)
             .fetch_optional(executor)
             .await
     }
