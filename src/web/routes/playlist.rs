@@ -275,6 +275,7 @@ async fn create(
         description: req.description.clone(),
         user_id: uid,
         cover_url: None, // TODO: Pick a song cover by default
+        custom_cover: false,
         is_public: req.is_public,
         is_hidden: false,
         create_time: Utc::now(),
@@ -598,6 +599,7 @@ async fn set_cover(
     let result = state.file_host.upload(Bytes::from(webp), &filename).await?;
 
     playlist.cover_url = Some(result.public_url);
+    playlist.custom_cover = true;
     playlist.update_time = Utc::now();
     PlaylistDao::update_by_id(&state.sql_pool, &playlist).await?;
 

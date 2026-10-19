@@ -2,7 +2,8 @@ use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::db::CrudDao;
 use crate::db::user::UserId;
 use itertools::Itertools;
-use meilisearch_sdk::client::{Client, SwapIndexes};
+use crate::search::SearchClient;
+use meilisearch_sdk::client::SwapIndexes;
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
 use metrics::counter;
@@ -34,7 +35,7 @@ pub struct SongDocument {
 }
 
 pub async fn add_or_replace_document(
-    client: &Client,
+    client: &SearchClient,
     pool: &PgPool,
     song_ids: &[SongId]
 ) -> anyhow::Result<()> {
@@ -46,7 +47,7 @@ pub async fn add_or_replace_document(
 }
 
 pub async fn delete_song_document(
-    client: &Client,
+    client: &SearchClient,
     song_ids: &[SongId],
 ) -> Result<(), meilisearch_sdk::errors::Error> {
     client.index("songs")
@@ -100,7 +101,7 @@ pub struct SearchResultHitsInfo {
 }
 
 pub async fn search_songs(
-    client: &Client,
+    client: &SearchClient,
     query: &SearchQuery,
 ) -> Result<SearchResult, meilisearch_sdk::errors::Error> {
     let index = client.index("songs");
@@ -135,8 +136,9 @@ pub async fn search_songs(
     })
 }
 
-pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(), meilisearch_sdk::errors::Error> {
-    let exists = match client.get_index("songs").await {
+/// Creates the index if it is missing. With `fill`, also fills it from the database in the background.
+pub async fn setup_search_index(client: &SearchClient, pg_pool: &PgPool, fill: bool) -> Result<(), meilisearch_sdk::errors::Error> {
+    let exists = match client.client().get_index(client.index_name("songs")).await {
         Ok(_) => { true }
         Err(Error::Meilisearch(err)) => {
             if err.error_code == ErrorCode::IndexNotFound {
@@ -150,28 +152,30 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
 
     if !exists {
         info!("Setting up songs index");
-        setup_search_index_with_name(client, "songs").await?;
+        setup_search_index_with_name(client, &client.index_name("songs")).await?;
 
         // Startup indexing
-        tokio::spawn({
-            let client = client.clone();
-            let pool = pg_pool.clone();
-            async move {
-                match fully_index_songs(&client, &pool).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!("Failed to index songs: {:?}", err);
-                    }
-                };
-            }.instrument(info_span!("full_index_songs"))
-        });
+        if fill {
+            tokio::spawn({
+                let client = client.clone();
+                let pool = pg_pool.clone();
+                async move {
+                    match fully_index_songs(&client, &pool).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            error!("Failed to index songs: {:?}", err);
+                        }
+                    };
+                }.instrument(info_span!("full_index_songs"))
+            });
+        }
     }
 
     Ok(())
 }
 
-async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
-    let index = client.index(index_name);
+async fn setup_search_index_with_name(client: &SearchClient, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
+    let index = client.client().index(index_name);
 
     // Set searchable attributes
     index.set_searchable_attributes([
@@ -204,7 +208,7 @@ async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Resu
 
 // Schedule to execute fully indexing task
 async fn fully_index_songs(
-    client: &Client,
+    client: &SearchClient,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
     counter!("full_index_song_count").increment(1);
@@ -214,7 +218,7 @@ async fn fully_index_songs(
     // 3. Indexing
     // 4. Replace it with the new index
     let time = chrono::Utc::now();
-    let new_index_name = format!("songs_{}", time.format("%Y%m%d%H%M%S"));
+    let new_index_name = client.index_name(&format!("songs_{}", time.format("%Y%m%d%H%M%S")));
 
     // How much RAM is it required to do this job?
     let songs = SongDao::list(pool).await?;
@@ -230,17 +234,17 @@ async fn fully_index_songs(
         let documents = get_documents_batch(pool, &ids).await?;
         info!("sync chunk {} to MeiliSearch: {:?}", index, documents.len());
         let _ = new_index.add_documents(&documents, Some("id")).await?
-            .wait_for_completion(&client, None, None)
+            .wait_for_completion(client.client(), None, None)
             .await?;
         info!("sync chunk {index} successfully");
     }
 
     info!("sync all chunk successfully, swapping indexes");
-    let _ = client.swap_indexes([&SwapIndexes {
-        indexes: ("songs".to_string(), new_index_name),
+    let _ = client.client().swap_indexes([&SwapIndexes {
+        indexes: (client.index_name("songs"), new_index_name),
         rename: None,
     }]).await?
-        .wait_for_completion(&client, None, None)
+        .wait_for_completion(client.client(), None, None)
         .await?;
     info!("swapping indexes successfully");
     new_index.delete().await?;

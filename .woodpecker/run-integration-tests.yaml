@@ -5,6 +5,19 @@ when:
   event:
     - push
     - manual
+# One Postgres and one Meilisearch for the whole run. Each test clones its own database and uses
+# its own index prefix (see tests/common/postgres.rs and meilisearch.rs). Redis still starts per
+# test via testcontainers.
+services:
+  - name: postgres
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+  - name: meilisearch
+    image: getmeili/meilisearch:v1.32
+    environment:
+      MEILI_NO_ANALYTICS: true
+      MEILI_MASTER_KEY: "12345678"
 steps:
   # Named volume is the cache; do not tar/zstd (write amplification).
   # Share CARGO_HOME with other workflows; keep CARGO_TARGET_DIR isolated.
@@ -13,6 +26,8 @@ steps:
     environment:
       SQLX_OFFLINE: true
       RUST_BACKTRACE: 1
+      TEST_DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      TEST_MEILISEARCH_URL: http://meilisearch:7700
       CARGO_HOME: /cache/cargo
       CARGO_TARGET_DIR: /cache/target/run-integration-tests
     volumes:
@@ -28,7 +43,7 @@ steps:
         else
           echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
-      - cargo nextest run --no-fail-fast --tests -j 4
+      - cargo nextest run --no-fail-fast --tests
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success

@@ -2,7 +2,8 @@ use crate::db::playlist::{IPlaylistDao, PlaylistDao, PlaylistId};
 use chrono::{DateTime, Utc};
 use crate::db::user::UserId;
 use itertools::Itertools;
-use meilisearch_sdk::client::{Client, SwapIndexes};
+use crate::search::SearchClient;
+use meilisearch_sdk::client::SwapIndexes;
 use meilisearch_sdk::errors::{Error, ErrorCode};
 use meilisearch_sdk::indexes::Index;
 use metrics::counter;
@@ -29,7 +30,7 @@ pub struct SearchResult {
 }
 
 pub async fn add_or_replace_document(
-    client: &Client,
+    client: &SearchClient,
     pool: &PgPool,
     playlist_ids: &[PlaylistId]
 ) -> anyhow::Result<()> {
@@ -41,7 +42,7 @@ pub async fn add_or_replace_document(
 }
 
 pub async fn delete_playlist_document(
-    client: &Client,
+    client: &SearchClient,
     playlist_ids: &[PlaylistId],
 ) -> Result<(), meilisearch_sdk::errors::Error> {
     client.index("playlists")
@@ -79,7 +80,7 @@ impl SearchSortMethod {
 }
 
 pub async fn search_playlists(
-    client: &Client,
+    client: &SearchClient,
     query: &SearchQuery,
 ) -> Result<SearchResult, meilisearch_sdk::errors::Error> {
     let index = client.index("playlists");
@@ -113,8 +114,9 @@ pub async fn search_playlists(
     })
 }
 
-pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(), meilisearch_sdk::errors::Error> {
-    let exists = match client.get_index("playlists").await {
+/// Creates the index if it is missing. With `fill`, also fills it from the database in the background.
+pub async fn setup_search_index(client: &SearchClient, pg_pool: &PgPool, fill: bool) -> Result<(), meilisearch_sdk::errors::Error> {
+    let exists = match client.client().get_index(client.index_name("playlists")).await {
         Ok(_) => true,
         Err(Error::Meilisearch(err)) => {
             if err.error_code == ErrorCode::IndexNotFound {
@@ -128,29 +130,31 @@ pub async fn setup_search_index(client: &Client, pg_pool: &PgPool) -> Result<(),
 
     if !exists {
         info!("Setting up playlists index");
-        setup_search_index_with_name(client, "playlists").await?;
+        setup_search_index_with_name(client, &client.index_name("playlists")).await?;
 
         // Startup indexing
-        tokio::spawn({
-            let client = client.clone();
-            let pool = pg_pool.clone();
-            async move {
-                match fully_index_playlists(&client, &pool).await {
-                    Ok(_) => {}
-                    Err(err) => {
-                        error!("Failed to index playlists: {:?}", err);
-                    }
-                };
-            }
-            .instrument(info_span!("full_index_playlists"))
-        });
+        if fill {
+            tokio::spawn({
+                let client = client.clone();
+                let pool = pg_pool.clone();
+                async move {
+                    match fully_index_playlists(&client, &pool).await {
+                        Ok(_) => {}
+                        Err(err) => {
+                            error!("Failed to index playlists: {:?}", err);
+                        }
+                    };
+                }
+                .instrument(info_span!("full_index_playlists"))
+            });
+        }
     }
 
     Ok(())
 }
 
-async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
-    let index = client.index(index_name);
+async fn setup_search_index_with_name(client: &SearchClient, index_name: &str) -> Result<Index, meilisearch_sdk::errors::Error> {
+    let index = client.client().index(index_name);
 
     // Search text only should come from these fields.
     index.set_searchable_attributes(["title", "description"]).await?;
@@ -164,13 +168,13 @@ async fn setup_search_index_with_name(client: &Client, index_name: &str) -> Resu
 }
 
 async fn fully_index_playlists(
-    client: &Client,
+    client: &SearchClient,
     pool: &PgPool,
 ) -> anyhow::Result<()> {
     counter!("full_index_playlist_count").increment(1);
 
     let time = chrono::Utc::now();
-    let new_index_name = format!("playlists_{}", time.format("%Y%m%d%H%M%S"));
+    let new_index_name = client.index_name(&format!("playlists_{}", time.format("%Y%m%d%H%M%S")));
 
     // Only public playlists are indexed.
     let ids = sqlx::query!(r#"SELECT id as "id: PlaylistId" FROM playlists WHERE is_public = true"#)
@@ -191,19 +195,19 @@ async fn fully_index_playlists(
         let _ = new_index
             .add_documents(&documents, Some("id"))
             .await?
-            .wait_for_completion(&client, None, None)
+            .wait_for_completion(client.client(), None, None)
             .await?;
         info!("sync chunk {index} successfully");
     }
 
     info!("sync all chunk successfully, swapping indexes");
-    let _ = client
+    let _ = client.client()
         .swap_indexes([&SwapIndexes {
-            indexes: ("playlists".to_string(), new_index_name),
+            indexes: (client.index_name("playlists"), new_index_name),
             rename: None,
         }])
         .await?
-        .wait_for_completion(&client, None, None)
+        .wait_for_completion(client.client(), None, None)
         .await?;
 
     info!("swapping indexes successfully");
