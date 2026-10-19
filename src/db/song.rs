@@ -331,7 +331,6 @@ where
     fn insert_plays(executor: E, values: &[SongPlay]) -> impl Future<Output=sqlx::Result<()>>;
     fn cursor_plays(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output=sqlx::Result<Vec<SongPlay>>>;
     fn cursor_plays_distinct_latest(executor: E, user_id: i64, max_create_time: DateTime<Utc>, size: usize) -> impl Future<Output=sqlx::Result<Vec<SongPlay>>>;
-    fn delete_play(executor: E, id: i64, user_id: i64) -> impl Future<Output=sqlx::Result<()>>;
 }
 
 impl<'e, E> CrudDao<'e, E> for SongDao
@@ -653,12 +652,6 @@ where
             LIMIT $3",
             user_id, create_before, size as i64
         ).fetch_all(executor).await
-    }
-
-    async fn delete_play(executor: E, id: i64, user_id: i64) -> sqlx::Result<()> {
-        sqlx::query!("DELETE FROM song_plays WHERE id = $1 AND user_id = $2", id, user_id)
-            .execute(executor).await?;
-        Ok(())
     }
 }
 
