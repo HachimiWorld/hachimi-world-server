@@ -6,8 +6,11 @@ use hachimi_world_server::db::song::SongId;
 use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
     CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
-    ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, SearchReq, SearchResp,
+    ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, RemoveSongReq, SearchReq,
+    SearchResp, SetCoverReq,
 };
+use image::{ImageFormat, Rgb, RgbImage};
+use reqwest::multipart::{Form, Part};
 use tokio::time::{sleep, Duration, Instant};
 
 mod common;
@@ -288,6 +291,105 @@ async fn test_favorite_playlists() {
         assert_eq!(remaining.data.len(), 1);
         assert_eq!(remaining.data[0].metadata.id, playlist_b);
     }).await;
+}
+
+#[tokio::test]
+async fn test_playlist_default_cover() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        let contributor = with_test_contributor_user(&mut env).await;
+        let owner_token = owner.token.access_token.clone();
+        let contributor_token = contributor.token.access_token.clone();
+
+        let mut songs = Vec::new();
+        for title in ["Cover A", "Cover B", "Cover C"] {
+            let id = create_approved_song(&mut env, &owner_token, &contributor_token, title).await.id;
+            set_song_cover(&env, id, &format!("https://example.com/{title}.webp")).await;
+            songs.push(id);
+        }
+        let cover = |i: usize| Some(format!("https://example.com/Cover {}.webp", ["A", "B", "C"][i]));
+        env.api.set_token(owner_token.clone());
+
+        let playlist_id = create_playlist(&env, "Default Cover", None, true).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, None, "No songs, no cover");
+
+        add_song_to_playlist(&env, playlist_id, songs[0]).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, cover(0));
+
+        // The most recently added song wins, wherever it is in the order
+        add_song_to_playlist(&env, playlist_id, songs[1]).await;
+        env.api.post("/playlist/change_order", &ChangeOrderReq { playlist_id, song_id: songs[1], target_order: 0 })
+            .await.parse_resp::<()>().await.unwrap();
+        assert_eq!(playlist_cover(&env, playlist_id).await, cover(1));
+        let detail = env.api.get_query("/playlist/detail", &DetailReq { id: playlist_id }).await
+            .parse_resp::<DetailResp>().await.unwrap();
+        assert_eq!(detail.playlist_info.cover_url, cover(1));
+
+        // Hiding a song doesn't update the cover by itself, but hidden songs are skipped when it's
+        // picked again
+        set_song_hidden(&env, songs[1], true).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, cover(1));
+        add_song_to_playlist(&env, playlist_id, songs[2]).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, cover(2));
+        remove_song_from_playlist(&env, playlist_id, songs[2]).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, cover(0));
+
+        remove_song_from_playlist(&env, playlist_id, songs[0]).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, None, "Only a hidden song is left");
+    }).await;
+}
+
+#[tokio::test]
+async fn test_playlist_custom_cover_is_kept() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        let contributor = with_test_contributor_user(&mut env).await;
+        let owner_token = owner.token.access_token.clone();
+        let contributor_token = contributor.token.access_token.clone();
+        let song_id = create_approved_song(&mut env, &owner_token, &contributor_token, "Not The Cover").await.id;
+        set_song_cover(&env, song_id, "https://example.com/song.webp").await;
+        env.api.set_token(owner_token.clone());
+
+        let playlist_id = create_playlist(&env, "Custom Cover", None, false).await;
+        let mut png = Vec::new();
+        RgbImage::from_pixel(300, 200, Rgb([128, 128, 128]))
+            .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png).unwrap();
+        let json = serde_json::to_string(&SetCoverReq { playlist_id }).unwrap();
+        env.api.post_raw("/playlist/set_cover")
+            .multipart(Form::new().text("json", json).part("file", Part::bytes(png).file_name("cover.png")))
+            .send().await.unwrap()
+            .parse_resp::<()>().await.unwrap();
+        let custom = playlist_cover(&env, playlist_id).await;
+        assert!(custom.is_some());
+
+        add_song_to_playlist(&env, playlist_id, song_id).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, custom);
+        remove_song_from_playlist(&env, playlist_id, song_id).await;
+        assert_eq!(playlist_cover(&env, playlist_id).await, custom);
+    }).await;
+}
+
+/// The cover of one of the user's own playlists, from `/playlist/list`.
+async fn playlist_cover(env: &TestEnvironment, playlist_id: PlaylistId) -> Option<String> {
+    let list = env.api.get("/playlist/list").await.parse_resp::<ListResp>().await.unwrap();
+    list.playlists.into_iter().find(|x| x.id == playlist_id).unwrap().cover_url
+}
+
+async fn set_song_cover(env: &TestEnvironment, song_id: SongId, cover_url: &str) {
+    sqlx::query("UPDATE songs SET cover_art_url = $1 WHERE id = $2")
+        .bind(cover_url).bind(song_id.0)
+        .execute(&env.pool).await.unwrap();
+}
+
+async fn set_song_hidden(env: &TestEnvironment, song_id: SongId, hidden: bool) {
+    sqlx::query("UPDATE songs SET is_hidden = $1 WHERE id = $2")
+        .bind(hidden).bind(song_id.0)
+        .execute(&env.pool).await.unwrap();
+}
+
+async fn remove_song_from_playlist(env: &TestEnvironment, playlist_id: PlaylistId, song_id: SongId) {
+    env.api.post("/playlist/remove_song", &RemoveSongReq { playlist_id, song_id })
+        .await.parse_resp::<()>().await.unwrap();
 }
 
 async fn create_playlist(

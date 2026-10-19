@@ -21,6 +21,7 @@ macro_rules! query_playlists {
                 description,
                 user_id as "user_id: _",
                 cover_url,
+                custom_cover,
                 is_public,
                 is_hidden,
                 create_time,
@@ -38,6 +39,7 @@ macro_rules! query_playlists {
                 description,
                 user_id as "user_id: _",
                 cover_url,
+                custom_cover,
                 is_public,
                 is_hidden,
                 create_time,
@@ -111,7 +113,13 @@ pub struct Playlist {
     pub name: String,
     pub description: Option<String>,
     pub user_id: UserId,
+    /// The owner's cover, or when [Playlist::custom_cover] is false, the cover of a song in it; see
+    /// [PlaylistDao::refresh_default_covers].
     pub cover_url: Option<String>,
+    /// Whether the owner uploaded the cover.
+    /// @since 261019
+    #[serde(default)]
+    pub custom_cover: bool,
     pub is_public: bool,
     /// Hidden by the platform: only the owner can see it, and only [PlaylistDao::set_hidden]
     /// changes it.
@@ -187,14 +195,16 @@ where
                 description = $2,
                 user_id = $3,
                 cover_url = $4,
-                is_public = $5,
-                create_time = $6,
-                update_time = $7
-            WHERE id = $8",
+                custom_cover = $5,
+                is_public = $6,
+                create_time = $7,
+                update_time = $8
+            WHERE id = $9",
             value.name,
             value.description,
             value.user_id as UserId,
             value.cover_url,
+            value.custom_cover,
             value.is_public,
             value.create_time,
             value.update_time,
@@ -210,15 +220,17 @@ where
                description,
                user_id,
                cover_url,
+               custom_cover,
                is_public,
                is_hidden,
                create_time,
                update_time
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id as "id: PlaylistId""#,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id as "id: PlaylistId""#,
             value.name,
             value.description,
             value.user_id as UserId,
             value.cover_url,
+            value.custom_cover,
             value.is_public,
             value.is_hidden,
             value.create_time,
@@ -378,5 +390,24 @@ impl PlaylistDao {
     pub async fn set_hidden<'e>(executor: impl PgExecutor<'e>, id: PlaylistId, hidden: bool) -> sqlx::Result<bool> {
         sqlx::query!("UPDATE playlists SET is_hidden = $2 WHERE id = $1", id as PlaylistId, hidden)
             .execute(executor).await.map(|x| x.rows_affected() > 0)
+    }
+
+    /// Sets the cover of each playlist without a custom cover to the cover of its most recently
+    /// added song that isn't hidden, or none if there is no such song. Called when songs are added
+    /// or removed; songs hidden or changed later don't update it.
+    /// @since 261019
+    pub async fn refresh_default_covers<'e>(executor: impl PgExecutor<'e>, ids: &[PlaylistId]) -> sqlx::Result<()> {
+        if ids.is_empty() { return Ok(()); }
+        sqlx::query!(
+            "UPDATE playlists p SET cover_url = (
+                SELECT s.cover_art_url FROM playlist_songs ps JOIN songs s ON s.id = ps.song_id
+                WHERE ps.playlist_id = p.id AND NOT s.is_hidden
+                ORDER BY ps.add_time DESC, ps.order_index DESC
+                LIMIT 1
+            )
+            WHERE p.id = ANY($1) AND NOT p.custom_cover",
+            ids as &[PlaylistId]
+        ).execute(executor).await?;
+        Ok(())
     }
 }
