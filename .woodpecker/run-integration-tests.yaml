@@ -36,7 +36,7 @@ steps:
         else
           echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
-      - cargo nextest run --no-fail-fast --tests -j 4
+      - cargo nextest run --no-fail-fast --tests
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success
