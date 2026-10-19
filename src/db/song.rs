@@ -413,7 +413,7 @@ where
 
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<SongId> {
         sqlx::query!(
-            "INSERT INTO songs (
+            r#"INSERT INTO songs (
                 display_id,
                 title,
                 subtitle,
@@ -434,7 +434,7 @@ where
                 update_time,
                 explicit,
                 gain
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id as \"id: SongId\"",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING id as "id: SongId""#,
             value.display_id,
             value.title,
             value.subtitle,
@@ -562,7 +562,7 @@ where
 
     async fn count_likes_batch(executor: E, song_ids: &[SongId]) -> sqlx::Result<HashMap<SongId, i64>> {
         if song_ids.is_empty() { return Ok(HashMap::new()); }
-        let result = sqlx::query!("SELECT song_id as \"song_id: SongId\", COUNT(*) FROM song_likes WHERE song_id = ANY($1) GROUP BY song_id", song_ids as &[SongId])
+        let result = sqlx::query!(r#"SELECT song_id as "song_id: SongId", COUNT(*) FROM song_likes WHERE song_id = ANY($1) GROUP BY song_id"#, song_ids as &[SongId])
             .fetch_all(executor)
             .await?
             .into_iter()
@@ -587,7 +587,7 @@ where
 
     async fn count_plays_batch(executor: E, song_ids: &[SongId]) -> sqlx::Result<HashMap<SongId, i64>> {
         if song_ids.is_empty() { return Ok(HashMap::new()); }
-        let result = sqlx::query!("SELECT song_id as \"song_id: SongId\", COUNT(*) FROM song_plays WHERE song_id = ANY($1) GROUP BY song_id", song_ids as &[SongId])
+        let result = sqlx::query!(r#"SELECT song_id as "song_id: SongId", COUNT(*) FROM song_plays WHERE song_id = ANY($1) GROUP BY song_id"#, song_ids as &[SongId])
             .fetch_all(executor)
             .await?
             .into_iter()

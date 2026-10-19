@@ -260,17 +260,17 @@ pub async fn get_documents_batch(
         .map(|x| (x.id, x))
         .collect();
     let mut crews: HashMap<SongId, _> = query!(
-            "SELECT song_id AS \"song_id!: SongId\", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
+            r#"SELECT song_id AS "song_id!: SongId", u.username internal_username, c.uid, c.person_name external_username, c.role FROM song_production_crew c
                LEFT JOIN users u ON u.id = c.uid
-               WHERE song_id = ANY($1)", song_ids as &[SongId])
+               WHERE song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
     let mut origin_infos: HashMap<SongId, _> = query!(
             // FIXME: The `AS song_id!` is a workaround for the bug of nullable inference in sqlx.
-            "SELECT o.song_id AS \"song_id!: SongId\",
-                s.title AS \"internal_title?\",
-                s.artist AS \"internal_artist?\",
+            r#"SELECT o.song_id AS "song_id!: SongId",
+                s.title AS "internal_title?",
+                s.artist AS "internal_artist?",
                 o.origin_type,
                 o.origin_song_id,
                 o.origin_title,
@@ -278,16 +278,16 @@ pub async fn get_documents_batch(
                 o.origin_url
             FROM song_origin_info o
                  LEFT JOIN songs s ON s.id = o.origin_song_id
-            WHERE o.song_id = ANY($1)", song_ids as &[SongId])
+            WHERE o.song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 
     let mut tags: HashMap<SongId, _> = query!(
             // FIXME: Nullability inference bug workaround for sqlx
-            "SELECT r.song_id AS \"song_id!: SongId\", t.name AS \"name?\"
+            r#"SELECT r.song_id AS "song_id!: SongId", t.name AS "name?"
             FROM song_tag_refs r
                 LEFT JOIN song_tags t ON t.id = r.tag_id
-            WHERE r.song_id = ANY($1)", song_ids as &[SongId])
+            WHERE r.song_id = ANY($1)"#, song_ids as &[SongId])
         .fetch_all(pool).await?
         .into_iter().into_group_map_by(|x| x.song_id);
 

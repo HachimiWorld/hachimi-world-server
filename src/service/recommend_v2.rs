@@ -283,15 +283,15 @@ async fn save_cache_hot(mut redis: ConnectionManager, songs: &[PublicSongDetail]
 
 async fn get_from_db_hot_weekly(redis: &ConnectionManager, pool: &Pool<Postgres>, day_delta: i64, limit: i64) -> anyhow::Result<Vec<PublicSongDetail>> {
     let time_ago = Utc::now().sub(TimeDelta::days(day_delta));
-    let result = sqlx::query!("
-        SELECT s.title, sp.song_id AS \"song_id: SongId\", count(*) AS play_count
+    let result = sqlx::query!(r#"
+        SELECT s.title, sp.song_id AS "song_id: SongId", count(*) AS play_count
         FROM song_plays sp
                  JOIN songs s ON sp.song_id = s.id
         WHERE sp.create_time > $1
         GROUP BY sp.song_id, s.title
         ORDER BY play_count DESC
         LIMIT $2
-    ", time_ago, limit).fetch_all(pool).await?;
+    "#, time_ago, limit).fetch_all(pool).await?;
     
     let song_ids = &result.iter().map(|x| x.song_id).collect::<Vec<_>>();
     let songs = song::get_public_detail_with_cache(redis.clone(), pool, song_ids).await?

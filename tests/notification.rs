@@ -330,7 +330,7 @@ async fn test_content_intent() {
         assert_eq!(item.content_intent, Some(ContentIntent::new("song.comment.view", data)));
 
         // A malformed stored intent is returned as null, and the text is still shown
-        sqlx::query("UPDATE notifications SET content_intent = '{\"action\": 1}'::jsonb WHERE id = $1")
+        sqlx::query(r#"UPDATE notifications SET content_intent = '{"action": 1}'::jsonb WHERE id = $1"#)
             .bind(id)
             .execute(&env.pool).await.unwrap();
         let item = detail(&env, &id.to_string()).await.unwrap();

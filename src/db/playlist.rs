@@ -205,7 +205,7 @@ where
 
     async fn insert(executor: E, value: &Self::Entity) -> sqlx::Result<PlaylistId> {
         sqlx::query!(
-            "INSERT INTO playlists (
+            r#"INSERT INTO playlists (
                name,
                description,
                user_id,
@@ -214,7 +214,7 @@ where
                is_hidden,
                create_time,
                update_time
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id as \"id: PlaylistId\"",
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id as "id: PlaylistId""#,
             value.name,
             value.description,
             value.user_id as UserId,
@@ -263,7 +263,7 @@ where
     async fn count_songs(executor: E, playlist_ids: &[PlaylistId]) -> sqlx::Result<HashMap<PlaylistId, i64>> {
         if playlist_ids.is_empty() { return Ok(HashMap::new()); }
 
-        let result = sqlx::query!("SELECT playlist_id as \"playlist_id: PlaylistId\", COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id", playlist_ids as &[PlaylistId])
+        let result = sqlx::query!(r#"SELECT playlist_id as "playlist_id: PlaylistId", COUNT(*) FROM playlist_songs WHERE playlist_id = ANY($1) GROUP BY playlist_id"#, playlist_ids as &[PlaylistId])
             .fetch_all(executor)
             .await?
             .into_iter()

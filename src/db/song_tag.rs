@@ -139,7 +139,7 @@ where E: PgExecutor<'e> {
 
     async fn list_by_song_ids(executor: E, song_ids: &[SongId]) -> sqlx::Result<HashMap<SongId, Vec<i64>>> {
         if song_ids.is_empty() { return Ok(HashMap::new()) }
-        let rows = sqlx::query!("SELECT song_id as \"song_id: SongId\", tag_id FROM song_tag_refs WHERE song_id = ANY($1)", song_ids as &[SongId])
+        let rows = sqlx::query!(r#"SELECT song_id as "song_id: SongId", tag_id FROM song_tag_refs WHERE song_id = ANY($1)"#, song_ids as &[SongId])
             .fetch_all(executor).await?;
         let result: HashMap<SongId, Vec<i64>> = rows.into_iter()
             .map(|x| (x.song_id, x.tag_id)).into_group_map();
