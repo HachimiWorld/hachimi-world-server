@@ -160,7 +160,8 @@ impl CommentDao {
         ).fetch_one(executor).await
     }
 
-    /// The first `per_root` shown replies under each of `root_ids`, oldest first.
+    /// The first `per_root` shown replies under each of `root_ids`, oldest first. Reads only those
+    /// from `idx_comments_root`, however many replies a root has.
     pub async fn list_first_replies<'e>(
         executor: impl PgExecutor<'e>,
         root_ids: &[CommentId],
@@ -170,13 +171,13 @@ impl CommentDao {
         if root_ids.is_empty() { return Ok(vec![]) }
         query_comments!(
             "WHERE id IN (
-                SELECT id FROM (
-                    SELECT id, ROW_NUMBER() OVER (PARTITION BY root_id ORDER BY id) AS n FROM comments
-                    WHERE root_id = ANY($1) AND (
-                        (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
-                        OR (user_id = $2 AND delete_time IS NULL)
-                    )
-                ) x WHERE n <= $3
+                SELECT r.id FROM UNNEST($1::bigint[]) AS root(id)
+                CROSS JOIN LATERAL (
+                    SELECT c.id FROM comments c
+                    WHERE c.root_id = root.id AND c.delete_time IS NULL
+                        AND ((c.status = 'published' AND NOT c.is_hidden) OR c.user_id = $2)
+                    ORDER BY c.id LIMIT $3
+                ) r
             )
             ORDER BY id",
             root_ids as &[CommentId], viewer_uid as Option<UserId>, per_root

@@ -150,6 +150,35 @@ async fn comments_replies_and_likes() {
 }
 
 #[tokio::test]
+async fn threads_show_their_first_replies() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _owner) = new_song(&mut env, &contributor).await;
+        let alice = with_new_random_test_user(&mut env).await;
+
+        login(&mut env, &alice);
+        let busy = post(&env, song_id, "很多回复", None).await.unwrap();
+        wait_lock().await;
+        let quiet = post(&env, song_id, "一条回复", None).await.unwrap();
+        let mut busy_replies = vec![];
+        for i in 0..5 {
+            wait_lock().await;
+            busy_replies.push(post(&env, song_id, &format!("回复 {i}"), Some(busy.id)).await.unwrap().id);
+        }
+        wait_lock().await;
+        let quiet_reply = post(&env, song_id, "就这一条", Some(quiet.id)).await.unwrap();
+
+        // Each thread shows its own first 3 replies, oldest first
+        let resp = list(&env, song_id, "new").await.unwrap();
+        assert_eq!(root_ids(&resp), [quiet.id, busy.id]);
+        assert_eq!(resp.threads[0].replies.iter().map(|x| x.id).collect::<Vec<_>>(), [quiet_reply.id]);
+        assert_eq!(resp.threads[0].reply_count, 1);
+        assert_eq!(resp.threads[1].replies.iter().map(|x| x.id).collect::<Vec<_>>(), busy_replies[..3]);
+        assert_eq!(resp.threads[1].reply_count, 5);
+    }).await;
+}
+
+#[tokio::test]
 async fn invalid_comments_are_refused() {
     with_test_environment(|mut env| async move {
         let contributor = with_test_contributor_user(&mut env).await;

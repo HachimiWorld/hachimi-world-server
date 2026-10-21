@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id IN (\n                SELECT id FROM (\n                    SELECT id, ROW_NUMBER() OVER (PARTITION BY root_id ORDER BY id) AS n FROM comments\n                    WHERE root_id = ANY($1) AND (\n                        (status = 'published' AND NOT is_hidden AND delete_time IS NULL)\n                        OR (user_id = $2 AND delete_time IS NULL)\n                    )\n                ) x WHERE n <= $3\n            )\n            ORDER BY id",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id IN (\n                SELECT r.id FROM UNNEST($1::bigint[]) AS root(id)\n                CROSS JOIN LATERAL (\n                    SELECT c.id FROM comments c\n                    WHERE c.root_id = root.id AND c.delete_time IS NULL\n                        AND ((c.status = 'published' AND NOT c.is_hidden) OR c.user_id = $2)\n                    ORDER BY c.id LIMIT $3\n                ) r\n            )\n            ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -182,5 +182,5 @@
       false
     ]
   },
-  "hash": "2bc437807323abc656412908896155e1b8a4de2f453853b60fce6ad0fdcce23c"
+  "hash": "ce9cf6a78f7ddc75fd9bc763db23c27b8b6058928bd9874acd60f45bbaaf316f"
 }
