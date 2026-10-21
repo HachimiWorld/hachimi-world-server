@@ -1,4 +1,5 @@
 use hachimi_world_server::db::song::SongId;
+use hachimi_world_server::service::ugc::UgcPreview;
 use hachimi_world_server::db::user::UserId;
 mod common;
 
@@ -131,6 +132,7 @@ async fn test_reports_merge_into_one_case() {
         let item = &q.items[0];
         assert_eq!((item.target_type.as_str(), item.target_id, item.pending_count), ("song", song.id.0, 3));
         assert!(item.target.as_ref().unwrap().title.starts_with("Reported"));
+        assert!(matches!(&item.target.as_ref().unwrap().preview, UgcPreview::Song { title, .. } if title.starts_with("Reported")));
         assert_eq!(item.target.as_ref().unwrap().owner.as_ref().unwrap().uid, owner.uid);
         let reasons: Vec<(&str, i64)> = item.reasons.iter().map(|x| (x.reason.as_str(), x.count)).collect();
         assert_eq!(reasons, vec![("spam", 2), ("nsfw", 1)]);

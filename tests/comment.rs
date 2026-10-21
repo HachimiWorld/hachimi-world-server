@@ -15,7 +15,8 @@ use hachimi_world_server::service::content_review;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::routes::comment::{CommentIdReq, CreateReq, ListReq, ListResp, RepliesReq, RepliesResp};
 use hachimi_world_server::web::routes::message::{MarkReadReq, MarkReadResp, ReceivedRepliesReq, ReceivedRepliesResp, SummaryResp};
-use hachimi_world_server::web::routes::report::{ResolveReq, ResolveResp, SubmitReq, SubmitResp};
+use hachimi_world_server::service::ugc::UgcPreview;
+use hachimi_world_server::web::routes::report::{CaseReq, CaseResp, ResolveReq, ResolveResp, SubmitReq, SubmitResp};
 
 const CHECKS_ON: TestOptions = TestOptions { content_check: true };
 
@@ -265,6 +266,7 @@ async fn replies_reach_the_message_center() {
         assert_eq!(items[0].comment.id, comment.id);
         assert_eq!(items[0].replied_content, None);
         assert_eq!(items[0].target.target_id, song_id.0);
+        assert!(matches!(&items[0].target.preview, UgcPreview::Song { title, .. } if title.starts_with("Commented-")));
 
         // Alice gets Bob's reply, but not her own
         login(&mut env, &alice);
@@ -308,6 +310,14 @@ async fn reported_comments_can_be_hidden() {
         wait_lock().await;
 
         login(&mut env, &contributor);
+        let detail: CaseResp = env.api.get_query("/report/case", &CaseReq { target_type: "comment".into(), target_id: comment.id.0 }).await
+            .parse_resp().await.unwrap();
+        let target = detail.case.target.unwrap();
+        let UgcPreview::Comment { content, on: Some(on) } = target.preview else { panic!("Not a comment on something: {:?}", target.preview) };
+        assert_eq!(content, "广告");
+        assert!(matches!(*on, UgcPreview::Song { ref title, .. } if title.starts_with("Commented-")));
+        assert_eq!(target.owner.unwrap().uid, author.uid);
+
         let _: ResolveResp = env.api.post("/report/resolve", &ResolveReq {
             target_type: "comment".into(),
             target_id: comment.id.0,
@@ -333,6 +343,7 @@ async fn reported_comments_can_be_hidden() {
         assert_eq!(title, "评论已被隐藏");
         assert_eq!(intent["action"], "song.comment.view");
         assert_eq!(intent["data"]["comment_id"], comment.id.0);
+        assert!(intent["data"]["song_display_id"].as_str().is_some_and(|x| !x.is_empty()));
     }).await
 }
 

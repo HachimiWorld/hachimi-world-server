@@ -1,7 +1,7 @@
 //! Songs as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
-use crate::db::song::{SongDao, SongId};
+use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
+use crate::db::song::{Song, SongDao, SongId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::song;
@@ -18,6 +18,22 @@ const ACTIONS: &[ContentAction] = &[HIDE, RESTORE];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SongAdapter;
 
+/// How a song looks, here and wherever something on a song shows it.
+pub fn preview(x: &Song) -> UgcPreview {
+    UgcPreview::Song {
+        title: x.title.clone(),
+        cover_url: x.cover_art_url.clone(),
+        display_id: x.display_id.clone(),
+    }
+}
+
+fn title(target: &UgcTarget) -> Option<&str> {
+    match &target.preview {
+        UgcPreview::Song { title, .. } => Some(title),
+        _ => None,
+    }
+}
+
 impl UgcAdapter for SongAdapter {
     fn name(&self) -> &'static str {
         "song"
@@ -30,11 +46,9 @@ impl UgcAdapter for SongAdapter {
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         Ok(SongDao::get_by_id(pool, SongId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.uploader_uid,
-            title: x.title,
-            cover_url: Some(x.cover_art_url),
-            display_id: x.display_id,
             is_public: !x.is_hidden,
             is_hidden: x.is_hidden,
+            preview: preview(&x),
         }))
     }
 
@@ -56,15 +70,15 @@ impl UgcAdapter for SongAdapter {
         }
     }
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        match target.and_then(title) {
             Some(x) => format!("作品《{}》", to_plain_text(x)),
             None => "作品".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let title = to_plain_text(&target.title);
+        let title = to_plain_text(title(target).unwrap_or_default());
         let mut data = serde_json::Map::new();
         data.insert("song_id".into(), id.into());
         let intent = ContentIntent::new("creation.artwork.view", data);

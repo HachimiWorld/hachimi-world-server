@@ -17,6 +17,7 @@ use crate::db::CrudDao;
 use crate::service::content_check::{self, ContentChecker, Verdict};
 use crate::service::content_review;
 use crate::service::errors::{ServiceError, ServiceResult};
+use crate::service::ugc::{self, UgcPreview};
 use crate::util::redlock::RedLock;
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
@@ -43,12 +44,7 @@ pub struct TargetInfo {
     pub owner_uid: UserId,
     /// Hidden by the platform: only the owner can see it and its comments.
     pub is_hidden: bool,
-    /// The song's title.
-    pub title: String,
-    /// The song's cover.
-    pub cover_url: Option<String>,
-    /// The song's display id, such as `JM-ABCD-123`.
-    pub display_id: String,
+    pub preview: UgcPreview,
 }
 
 impl TargetInfo {
@@ -89,9 +85,7 @@ impl CommentTarget {
                 Ok(SongDao::list_by_ids(pool, &ids).await?.into_iter().map(|x| (x.id.0, TargetInfo {
                     owner_uid: x.uploader_uid,
                     is_hidden: x.is_hidden,
-                    title: x.title,
-                    cover_url: Some(x.cover_art_url),
-                    display_id: x.display_id,
+                    preview: ugc::song_preview(&x),
                 })).collect())
             }
         }
@@ -459,11 +453,7 @@ pub struct ReplyTarget {
     /// Such as `song`.
     pub target_type: String,
     pub target_id: i64,
-    /// The song's title.
-    pub title: String,
-    pub cover_url: Option<String>,
-    /// The song's display id, such as `JM-ABCD-123`.
-    pub display_id: String,
+    pub preview: UgcPreview,
 }
 
 /// A comment replying to the user, or on what they own.
@@ -525,9 +515,7 @@ pub async fn received_replies(
                 target: ReplyTarget {
                     target_type: comment.target_type.clone(),
                     target_id: comment.target_id,
-                    title: info.title.clone(),
-                    cover_url: info.cover_url.clone(),
-                    display_id: info.display_id.clone(),
+                    preview: info.preview.clone(),
                 },
                 replied_content: comment.reply_to_id.and_then(|x| replied.get(&x).cloned()),
                 comment,

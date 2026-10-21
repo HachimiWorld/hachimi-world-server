@@ -1,9 +1,7 @@
 //! Comments as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
+use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::comment::{CommentDao, CommentId, STATUS_PUBLISHED};
-use crate::db::song::{SongDao, SongId};
-use crate::db::CrudDao;
 use crate::service::comment::{self, CommentTarget};
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::web::state::AppState;
@@ -19,6 +17,13 @@ const QUOTE_CHARS: usize = 20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommentAdapter;
+
+fn content(target: &UgcTarget) -> Option<&str> {
+    match &target.preview {
+        UgcPreview::Comment { content, .. } => Some(content),
+        _ => None,
+    }
+}
 
 fn quote(content: &str) -> String {
     let text = to_plain_text(content).replace('\n', " ");
@@ -38,23 +43,21 @@ impl UgcAdapter for CommentAdapter {
         ACTIONS
     }
 
-    /// The comment's text is its title; the cover and display id are those of the song it's on.
-    /// Only a published comment that isn't deleted can be reported.
+    /// The preview shows what the comment is on, as that target's kind shows it. Only a
+    /// published comment that isn't deleted can be reported.
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         let Some(x) = CommentDao::get_by_id(pool, CommentId(id)).await? else {
             return Ok(None);
         };
-        let song = match CommentTarget::parse(&x.target_type) {
-            Some(CommentTarget::Song) => SongDao::get_by_id(pool, SongId(x.target_id)).await?,
+        let on = match CommentTarget::parse(&x.target_type) {
+            Some(target) => target.load(pool, x.target_id).await?.map(|x| Box::new(x.preview)),
             None => None,
         };
         Ok(Some(UgcTarget {
             owner_uid: x.user_id,
             is_public: x.status == STATUS_PUBLISHED && !x.is_hidden && x.delete_time.is_none(),
             is_hidden: x.is_hidden,
-            title: x.content,
-            cover_url: song.as_ref().map(|x| x.cover_art_url.clone()),
-            display_id: song.map(|x| x.display_id).unwrap_or_default(),
+            preview: UgcPreview::Comment { content: x.content, on },
         }))
     }
 
@@ -71,17 +74,24 @@ impl UgcAdapter for CommentAdapter {
     /// Comments aren't cached or indexed.
     async fn refresh(&self, _state: &AppState, _id: i64) {}
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        match target.and_then(content) {
             Some(x) => format!("评论「{}」", quote(x)),
             None => "评论".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let text = quote(&target.title);
+        let text = quote(content(target).unwrap_or_default());
+        let song_display_id = match &target.preview {
+            UgcPreview::Comment { on: Some(on), .. } => match on.as_ref() {
+                UgcPreview::Song { display_id, .. } => display_id.clone(),
+                _ => String::new(),
+            },
+            _ => String::new(),
+        };
         let mut data = serde_json::Map::new();
-        data.insert("song_display_id".into(), target.display_id.clone().into());
+        data.insert("song_display_id".into(), song_display_id.into());
         data.insert("comment_id".into(), id.into());
         let intent = ContentIntent::new("song.comment.view", data);
         if actions.contains(&HIDE) {

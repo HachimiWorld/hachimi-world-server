@@ -1,6 +1,6 @@
 //! Playlists as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
+use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::playlist::{PlaylistDao, PlaylistId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
@@ -18,6 +18,13 @@ const ACTIONS: &[ContentAction] = &[HIDE, RESTORE];
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlaylistAdapter;
 
+fn name(target: &UgcTarget) -> Option<&str> {
+    match &target.preview {
+        UgcPreview::Playlist { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
 impl UgcAdapter for PlaylistAdapter {
     fn name(&self) -> &'static str {
         "playlist"
@@ -30,11 +37,9 @@ impl UgcAdapter for PlaylistAdapter {
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         Ok(PlaylistDao::get_by_id(pool, PlaylistId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.user_id,
-            title: x.name,
-            cover_url: x.cover_url,
-            display_id: String::new(),
             is_public: x.is_public && !x.is_hidden,
             is_hidden: x.is_hidden,
+            preview: UgcPreview::Playlist { name: x.name, cover_url: x.cover_url },
         }))
     }
 
@@ -56,15 +61,15 @@ impl UgcAdapter for PlaylistAdapter {
         }
     }
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        match target.and_then(name) {
             Some(x) => format!("歌单《{}》", to_plain_text(x)),
             None => "歌单".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let title = to_plain_text(&target.title);
+        let title = to_plain_text(name(target).unwrap_or_default());
         let mut data = serde_json::Map::new();
         data.insert("playlist_id".into(), id.into());
         let intent = ContentIntent::new("playlist.view", data);

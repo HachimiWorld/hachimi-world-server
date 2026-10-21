@@ -1,9 +1,9 @@
 //! The kinds of user-generated content that can be reported, and what a decision can do to each.
 //!
 //! The report flow is the same for every kind; the steps that touch the content are left to the
-//! kind's adapter (`song.rs`, `playlist.rs`, `user.rs`, `comment.rs`): what the target looks like,
-//! which content actions it offers and how to take them, what to refresh afterwards, and what to
-//! tell its owner.
+//! kind's adapter (`song.rs`, `playlist.rs`, `user.rs`, `comment.rs`): who owns the target and who
+//! can see it, how it looks ([UgcPreview]), which content actions it offers and how to take them,
+//! what to refresh afterwards, and what to tell its owner.
 //! An adapter knows its own content and nothing else, and declares its own actions.
 //!
 //! Each adapter implements [UgcAdapter], and each [UgcKind] variant carries its adapter; the
@@ -16,6 +16,8 @@ mod comment;
 mod playlist;
 mod song;
 mod user;
+
+pub(crate) use song::preview as song_preview;
 
 use crate::service::notification::ContentIntent;
 use crate::web::state::AppState;
@@ -35,24 +37,48 @@ pub enum UgcKind {
     Comment(comment::CommentAdapter),
 }
 
-/// A target in the shape the report flow needs, whatever its kind: shown in the report queue,
-/// used to check who may report it, and kept as a snapshot with each action.
+/// A target in the shape the report flow needs, whatever its kind: used to check who may report
+/// it and what a decision can do, shown in the report queue, and kept as a snapshot with each
+/// action. The flow reads the owner and visibility; the preview is the kind's own business.
 /// @since 261008
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UgcTarget {
     pub owner_uid: UserId,
-    /// Song title, playlist name, username or the text of a comment.
-    pub title: String,
-    /// Song cover, playlist cover or avatar; for a comment, the cover of the song it's on.
-    pub cover_url: Option<String>,
-    /// Song display id such as `JM-ABCD-123`, also for a comment on a song; empty for other kinds.
-    pub display_id: String,
     /// Whether people other than the owner can see it.
     pub is_public: bool,
     /// Hidden by the platform.
     /// @since 261008
     #[serde(default)]
     pub is_hidden: bool,
+    /// @since 261021
+    pub preview: UgcPreview,
+}
+
+/// How a target looks, in the shape of its kind. Built by the kind's adapter, and passed on by the
+/// report flow without reading it.
+/// @since 261021
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UgcPreview {
+    Song {
+        title: String,
+        cover_url: String,
+        /// Such as `JM-ABCD-123`.
+        display_id: String,
+    },
+    Playlist {
+        name: String,
+        cover_url: Option<String>,
+    },
+    User {
+        username: String,
+        avatar_url: Option<String>,
+    },
+    Comment {
+        content: String,
+        /// What the comment is on; None if it's gone.
+        on: Option<Box<UgcPreview>>,
+    },
 }
 
 /// Something a decision can do to the content, declared by the kind's adapter. The report flow
@@ -102,7 +128,7 @@ pub trait UgcAdapter {
     async fn refresh(&self, state: &AppState, id: i64);
 
     /// How the target is named in user-facing text, such as 作品《X》, or just 作品 if it's gone.
-    fn mention(&self, title: Option<&str>) -> String;
+    fn mention(&self, target: Option<&UgcTarget>) -> String;
 
     /// Tells the owner what `actions` did to their content. None if they did nothing.
     /// `reason_suffix` is appended to the body as is.

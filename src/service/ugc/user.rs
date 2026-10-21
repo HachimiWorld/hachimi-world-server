@@ -1,6 +1,6 @@
 //! Users as report targets: their profile is the content.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
+use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
@@ -37,11 +37,9 @@ impl UgcAdapter for UserAdapter {
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         Ok(UserDao::get_by_id(pool, UserId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.id,
-            title: x.username,
-            cover_url: x.avatar_url,
-            display_id: String::new(),
             is_public: true,
             is_hidden: false,
+            preview: UgcPreview::User { username: x.username, avatar_url: x.avatar_url },
         }))
     }
 
@@ -67,8 +65,12 @@ impl UgcAdapter for UserAdapter {
         }
     }
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        let username = target.and_then(|x| match &x.preview {
+            UgcPreview::User { username, .. } => Some(username),
+            _ => None,
+        });
+        match username {
             Some(x) => format!("用户「{}」", to_plain_text(x)),
             None => "用户".to_string(),
         }
