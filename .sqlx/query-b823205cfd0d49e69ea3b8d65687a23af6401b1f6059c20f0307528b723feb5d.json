@@ -1,0 +1,113 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id,\n                subject,\n                target_id,\n                attempt_count,\n                available_time,\n                done_time,\n                last_error,\n                create_time\n            FROM content_reviews\n            WHERE done_time IS NULL AND available_time <= $1 ORDER BY available_time, id LIMIT $2",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "subject",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "subject"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "target_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "attempt_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "attempt_count"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "available_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "available_time"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "done_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "done_time"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "last_error",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "last_error"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "create_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "b823205cfd0d49e69ea3b8d65687a23af6401b1f6059c20f0307528b723feb5d"
+}

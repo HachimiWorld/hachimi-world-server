@@ -1,0 +1,187 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE root_id = $1 AND (\n                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)\n                OR (user_id = $2 AND delete_time IS NULL)\n            )\n            ORDER BY id LIMIT $3 OFFSET $4",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "target_type",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "target_type"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "target_id",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "target_id"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "user_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "user_id"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "root_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "root_id"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "reply_to_id: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "reply_to_id"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "reply_to_uid: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "reply_to_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "content",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "content"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "status",
+        "type_info": "Text",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "status"
+          }
+        }
+      },
+      {
+        "ordinal": 9,
+        "name": "is_hidden",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "is_hidden"
+          }
+        }
+      },
+      {
+        "ordinal": 10,
+        "name": "like_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "like_count"
+          }
+        }
+      },
+      {
+        "ordinal": 11,
+        "name": "delete_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "delete_time"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
+        "name": "create_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "create_time"
+          }
+        }
+      },
+      {
+        "ordinal": 13,
+        "name": "update_time",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "update_time"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "7067a349ebfa2df312fe8badc655bd1e306470aba1cdd2e7ca04b06780c223b0"
+}

@@ -21,3 +21,5 @@ pub mod ugc;
 pub mod report;
 pub mod committee;
 pub mod content_check;
+pub mod comment;
+pub mod content_review;

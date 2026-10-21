@@ -86,7 +86,7 @@ async fn test_submit_validation() {
         let reporter = with_new_random_test_user(&mut env).await;
 
         login(&mut env, &reporter);
-        assert_eq!(submit(&env, &report_req("comment", song.id.0, "spam", None)).await.unwrap_err(), "invalid_target_type");
+        assert_eq!(submit(&env, &report_req("post", song.id.0, "spam", None)).await.unwrap_err(), "invalid_target_type");
         assert_eq!(submit(&env, &report_req("song", -1, "spam", None)).await.unwrap_err(), "target_not_found");
         assert_eq!(submit(&env, &report_req("song", song.id.0, "boring", None)).await.unwrap_err(), "invalid_reason");
         assert_eq!(submit(&env, &report_req("song", song.id.0, "other", Some("  "))).await.unwrap_err(), "detail_required");

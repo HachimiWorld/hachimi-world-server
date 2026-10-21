@@ -1,7 +1,7 @@
 extern crate hachimi_world_server as app;
 
 use app::config::Config;
-use app::service::{email_outbox, notification};
+use app::service::{content_review, email_outbox, notification};
 use app::service::sitemap::{self, SitemapCfg};
 use app::service::content_check::{self, ContentCheckCfg, ContentChecker};
 use app::file_hosting::{FileHost, S3FileHost};
@@ -82,6 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
     notification::start_cleanup_job(state.clone(), cancel_token.clone()).await?;
     email_outbox::start_relay(state.clone(), cancel_token.clone());
+    content_review::start_worker(state.clone(), cancel_token.clone());
 
     info!("Starting web server at {}", server_cfg.listen);
     web::run_web_app(server_cfg, state, cancel_token).await?;

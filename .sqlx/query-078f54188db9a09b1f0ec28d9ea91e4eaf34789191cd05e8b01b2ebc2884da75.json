@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE comments SET delete_time = $2, update_time = $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "078f54188db9a09b1f0ec28d9ea91e4eaf34789191cd05e8b01b2ebc2884da75"
+}

@@ -1,8 +1,9 @@
 //! The kinds of user-generated content that can be reported, and what a decision can do to each.
 //!
 //! The report flow is the same for every kind; the steps that touch the content are left to the
-//! kind's adapter (`song.rs`, `playlist.rs`, `user.rs`): what the target looks like, which content
-//! actions it offers and how to take them, what to refresh afterwards, and what to tell its owner.
+//! kind's adapter (`song.rs`, `playlist.rs`, `user.rs`, `comment.rs`): what the target looks like,
+//! which content actions it offers and how to take them, what to refresh afterwards, and what to
+//! tell its owner.
 //! An adapter knows its own content and nothing else, and declares its own actions.
 //!
 //! Each adapter implements [UgcAdapter], and each [UgcKind] variant carries its adapter; the
@@ -11,6 +12,7 @@
 //! in [UgcKind::ALL]; the compiler points at any method the adapter leaves out.
 use crate::db::user::UserId;
 
+mod comment;
 mod playlist;
 mod song;
 mod user;
@@ -30,6 +32,7 @@ pub enum UgcKind {
     Song(song::SongAdapter),
     Playlist(playlist::PlaylistAdapter),
     User(user::UserAdapter),
+    Comment(comment::CommentAdapter),
 }
 
 /// A target in the shape the report flow needs, whatever its kind: shown in the report queue,
@@ -38,11 +41,11 @@ pub enum UgcKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UgcTarget {
     pub owner_uid: UserId,
-    /// Song title, playlist name or username.
+    /// Song title, playlist name, username or the text of a comment.
     pub title: String,
-    /// Song cover, playlist cover or avatar.
+    /// Song cover, playlist cover or avatar; for a comment, the cover of the song it's on.
     pub cover_url: Option<String>,
-    /// Song display id such as `JM-ABCD-123`; empty for other kinds.
+    /// Song display id such as `JM-ABCD-123`, also for a comment on a song; empty for other kinds.
     pub display_id: String,
     /// Whether people other than the owner can see it.
     pub is_public: bool,
@@ -108,10 +111,11 @@ pub trait UgcAdapter {
 
 impl UgcKind {
     /// Every kind, so names can be parsed back. Add new kinds here too.
-    pub const ALL: [UgcKind; 3] = [
+    pub const ALL: [UgcKind; 4] = [
         Self::Song(song::SongAdapter),
         Self::Playlist(playlist::PlaylistAdapter),
         Self::User(user::UserAdapter),
+        Self::Comment(comment::CommentAdapter),
     ];
 
     pub fn parse(s: &str) -> Option<Self> {
