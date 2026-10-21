@@ -24,6 +24,7 @@ use chrono::{DateTime, Duration, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
+use strum::{EnumIter, IntoEnumIterator};
 
 const CONTENT_MAX_CHARS: usize = 500;
 /// How many comments a user may post in an hour, counting ones blocked by content checks, so
@@ -34,7 +35,7 @@ const FIRST_REPLIES: i64 = 3;
 
 /// What a comment can be on. Each says who owns its targets and who can see them.
 /// @since 261021
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum CommentTarget {
     Song,
 }
@@ -54,10 +55,8 @@ impl TargetInfo {
 }
 
 impl CommentTarget {
-    pub const ALL: [CommentTarget; 1] = [Self::Song];
-
     pub fn parse(s: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|x| x.as_str() == s)
+        Self::iter().find(|x| x.as_str() == s)
     }
 
     pub fn as_str(self) -> &'static str {
@@ -485,7 +484,7 @@ pub async fn received_replies(
     comments.truncate(limit as usize);
 
     let mut targets: HashMap<(CommentTarget, i64), TargetInfo> = HashMap::new();
-    for target in CommentTarget::ALL {
+    for target in CommentTarget::iter() {
         let ids: Vec<i64> = comments.iter()
             .filter(|x| CommentTarget::parse(&x.target_type) == Some(target))
             .map(|x| x.target_id)

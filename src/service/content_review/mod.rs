@@ -9,8 +9,8 @@
 //! pass can still be reported.
 //!
 //! As with [crate::service::ugc], each [ReviewKind] variant carries its adapter and `enum_dispatch`
-//! forwards [ReviewAdapter] to it. Adding a kind means a new adapter, a variant for it and an entry
-//! in [ReviewKind::ALL]; the kind's subject must be one of the content check subjects.
+//! forwards [ReviewAdapter] to it. Adding a kind means a new adapter and a variant for it;
+//! [ReviewKind::iter] finds it by itself. The kind's subjects must be content check subjects.
 
 mod comment;
 
@@ -23,6 +23,7 @@ use chrono::{DateTime, Duration, Utc};
 use enum_dispatch::enum_dispatch;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Instant;
+use strum::{EnumIter, IntoEnumIterator};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -35,9 +36,10 @@ const LOCK_NAME: &str = "content_review:run";
 /// Content that still can't be checked this long after it was submitted is published.
 pub const GIVE_UP_AFTER: Duration = Duration::hours(24);
 
-/// A kind of content that can wait here. Each variant carries the kind's adapter.
+/// A kind of content that can wait here. Each variant carries the kind's adapter, made by
+/// [Default] when [EnumIter] lists the kinds.
 #[enum_dispatch(ReviewAdapter)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 pub enum ReviewKind {
     Comment(comment::CommentReview),
 }
@@ -47,8 +49,8 @@ pub enum ReviewKind {
 #[allow(async_fn_in_trait)]
 #[enum_dispatch]
 pub trait ReviewAdapter {
-    /// The content check subject the content is checked as, also stored in the queue.
-    fn subject(&self) -> &'static str;
+    /// The content check subjects this kind's content is checked as, also stored in the queue.
+    fn subjects(&self) -> Vec<&'static str>;
 
     /// Who wrote the content and its text, if it still waits. None if it was deleted or settled
     /// some other way, which ends its review.
@@ -59,13 +61,8 @@ pub trait ReviewAdapter {
 }
 
 impl ReviewKind {
-    /// Every kind. Add new kinds here too.
-    pub const ALL: [ReviewKind; 1] = [
-        Self::Comment(comment::CommentReview::SONG),
-    ];
-
     pub fn of_subject(subject: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|x| x.subject() == subject)
+        Self::iter().find(|x| x.subjects().contains(&subject))
     }
 }
 
@@ -157,7 +154,7 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
 
     review.attempt_count += 1;
     let verdict = match checker {
-        Some(checker) => checker.try_check_text(pool, kind.subject(), actor_uid, review.target_id, &text).await?,
+        Some(checker) => checker.try_check_text(pool, &review.subject, actor_uid, review.target_id, &text).await?,
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
         None => Some(Verdict::Pass),
     };
@@ -185,13 +182,17 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
 #[cfg(test)]
 mod tests {
     use super::{ReviewAdapter, ReviewKind};
-    use crate::service::content_check::SUBJECTS;
+    use crate::service::content_check::{SUBJECTS, SUBJECT_SONG_COMMENT};
+    use strum::IntoEnumIterator;
 
     #[test]
-    fn every_kind_is_a_check_subject_and_found_by_it() {
-        for kind in ReviewKind::ALL {
-            assert!(SUBJECTS.contains(&kind.subject()), "{}", kind.subject());
-            assert_eq!(ReviewKind::of_subject(kind.subject()), Some(kind));
+    fn every_subject_is_a_check_subject_and_finds_its_kind() {
+        for kind in ReviewKind::iter() {
+            for subject in kind.subjects() {
+                assert!(SUBJECTS.contains(&subject), "{subject}");
+                assert_eq!(ReviewKind::of_subject(subject), Some(kind));
+            }
         }
+        assert!(ReviewKind::of_subject(SUBJECT_SONG_COMMENT).is_some());
     }
 }

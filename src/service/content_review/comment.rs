@@ -5,18 +5,15 @@ use crate::db::comment::CommentId;
 use crate::db::user::UserId;
 use crate::service::comment::{self, CommentTarget};
 use sqlx::PgPool;
+use strum::IntoEnumIterator;
 
-/// Comments on one kind of target, checked as that kind's subject.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CommentReview(CommentTarget);
-
-impl CommentReview {
-    pub const SONG: Self = Self(CommentTarget::Song);
-}
+/// Comments on every kind of target, each checked as its target kind's subject.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct CommentReview;
 
 impl ReviewAdapter for CommentReview {
-    fn subject(&self) -> &'static str {
-        self.0.subject()
+    fn subjects(&self) -> Vec<&'static str> {
+        CommentTarget::iter().map(|x| x.subject()).collect()
     }
 
     async fn load_pending(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<(UserId, String)>> {

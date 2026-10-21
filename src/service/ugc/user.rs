@@ -23,7 +23,7 @@ const FIELDS: &[(ContentAction, ProfileField, &str)] = &[
     (RESET_USERNAME, ProfileField::Username, "昵称"),
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UserAdapter;
 
 /// How a user looks.

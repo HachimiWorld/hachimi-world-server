@@ -16,7 +16,7 @@ const HIDE: ContentAction = ContentAction { id: "hide", penalty: true };
 const RESTORE: ContentAction = ContentAction { id: "restore", penalty: false };
 const ACTIONS: &[ContentAction] = &[HIDE, RESTORE];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PlaylistAdapter;
 
 /// How a playlist looks.
