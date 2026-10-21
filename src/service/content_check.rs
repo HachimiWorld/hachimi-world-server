@@ -45,10 +45,15 @@ pub const SUBJECT_PLAYLIST_DESCRIPTION: &str = "playlist.description";
 /// A playlist cover, checked when it's uploaded. Checked as an image.
 /// @since 261018
 pub const SUBJECT_PLAYLIST_COVER: &str = "playlist.cover";
+/// A comment or reply on a song, checked when it's posted. One that can't be checked then waits
+/// for [crate::service::content_review] instead of passing.
+/// @since 261021
+pub const SUBJECT_SONG_COMMENT: &str = "song.comment";
 /// Every subject the server checks. A policy must cover exactly these.
 const SUBJECTS: &[&str] = &[
     SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR,
     SUBJECT_PLAYLIST_NAME, SUBJECT_PLAYLIST_DESCRIPTION, SUBJECT_PLAYLIST_COVER,
+    SUBJECT_SONG_COMMENT,
 ];
 /// The subjects whose content is an image; the rest are text.
 const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR, SUBJECT_PLAYLIST_COVER];
@@ -313,10 +318,25 @@ impl ContentChecker {
         target_id: i64,
         text: &str,
     ) -> anyhow::Result<Verdict> {
+        Ok(self.try_check_text(pool, subject, actor_uid, target_id, text).await?.unwrap_or(Verdict::Pass))
+    }
+
+    /// [ContentChecker::check_text], but `None` when TypeSafe fails or its answer doesn't match the
+    /// policy, for content that waits to be checked again instead of passing. The failure is
+    /// recorded either way.
+    /// @since 261021
+    pub async fn try_check_text(
+        &self,
+        pool: &PgPool,
+        subject: &str,
+        actor_uid: UserId,
+        target_id: i64,
+        text: &str,
+    ) -> anyhow::Result<Option<Verdict>> {
         let policy = self.subject_policy(subject)?;
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(text.as_bytes()) };
         if let Some(verdict) = self.reuse(pool, &record, |_| text.to_string()).await? {
-            return Ok(verdict);
+            return Ok(Some(verdict));
         }
         let call = self.client.system_one(&self.model, text, &policy.questions);
         self.check(pool, policy, record, call, |_| text.to_string()).await
@@ -342,9 +362,10 @@ impl ContentChecker {
         let policy = self.subject_policy(subject)?;
         let call = self.client.system_one_image(&self.image_model, jpeg, &policy.questions);
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
-        self.check(pool, policy, record, call, |blocked| {
+        let verdict = self.check(pool, policy, record, call, |blocked| {
             if blocked { blocked_key } else { passed_key }.to_string()
-        }).await
+        }).await?;
+        Ok(verdict.unwrap_or(Verdict::Pass))
     }
 
     /// The verdict of an earlier check of the same image file, recorded the same way as
@@ -416,7 +437,8 @@ impl ContentChecker {
     }
 
     /// Makes `call`, judges its answers and records the check. `content` gives what to record as
-    /// the content, given whether it was blocked.
+    /// the content, given whether it was blocked. `None` when the call failed or its answers didn't
+    /// match the policy.
     async fn check(
         &self,
         pool: &PgPool,
@@ -424,7 +446,7 @@ impl ContentChecker {
         record: Record<'_>,
         call: impl Future<Output = anyhow::Result<SystemOneResponse>>,
         content: impl FnOnce(bool) -> String,
-    ) -> anyhow::Result<Verdict> {
+    ) -> anyhow::Result<Option<Verdict>> {
         let Record { subject, actor_uid, target_id, content_hash } = record;
         let started = Instant::now();
         let result = call.await;
@@ -440,9 +462,10 @@ impl ContentChecker {
             Err(e) => (None, None, Some(format!("{e:#}")), Vec::new()),
         };
         if let Some(e) = &error {
-            warn!(subject, actor_uid = actor_uid.0, "Content check failed, passing the content: {e}");
+            warn!(subject, actor_uid = actor_uid.0, "Content check failed: {e}");
         }
         record_metrics(subject, error.is_some(), &blocked, input_tokens, elapsed);
+        let failed = error.is_some();
 
         ContentCheckDao::insert(pool, &ContentCheck {
             id: 0,
@@ -461,7 +484,13 @@ impl ContentChecker {
             create_time: Utc::now(),
         }).await?;
 
-        Ok(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) })
+        Ok(if failed {
+            None
+        } else if blocked.is_empty() {
+            Some(Verdict::Pass)
+        } else {
+            Some(Verdict::Blocked(blocked))
+        })
     }
 }
 
