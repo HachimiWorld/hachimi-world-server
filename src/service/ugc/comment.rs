@@ -1,10 +1,11 @@
 //! Comments as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::comment::{CommentDao, CommentId, STATUS_PUBLISHED};
 use crate::service::comment::{self, CommentTarget};
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::web::state::AppState;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
 
 /// Hide the comment from everyone but its author.
@@ -18,10 +19,24 @@ const QUOTE_CHARS: usize = 20;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommentAdapter;
 
-fn content(target: &UgcTarget) -> Option<&str> {
-    match &target.preview {
-        UgcPreview::Comment { content, .. } => Some(content),
-        _ => None,
+/// How a comment looks: its text, and what it's on as that target's kind shows it.
+/// @since 261021
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommentPreview {
+    pub content: String,
+    /// What the comment is on; None if it's gone.
+    pub on: Option<Box<UgcPreview>>,
+}
+
+impl Preview for CommentPreview {
+    fn headline(&self) -> &str {
+        &self.content
+    }
+
+    /// The comment's text over the card of what it's on.
+    fn legacy_card(&self) -> LegacyCard {
+        let on = self.on.as_ref().map(|x| x.legacy_card()).unwrap_or_default();
+        LegacyCard { title: self.content.clone(), ..on }
     }
 }
 
@@ -57,7 +72,7 @@ impl UgcAdapter for CommentAdapter {
             owner_uid: x.user_id,
             is_public: x.status == STATUS_PUBLISHED && !x.is_hidden && x.delete_time.is_none(),
             is_hidden: x.is_hidden,
-            preview: UgcPreview::Comment { content: x.content, on },
+            preview: UgcPreview::Comment(CommentPreview { content: x.content, on }),
         }))
     }
 
@@ -75,17 +90,18 @@ impl UgcAdapter for CommentAdapter {
     async fn refresh(&self, _state: &AppState, _id: i64) {}
 
     fn mention(&self, target: Option<&UgcTarget>) -> String {
-        match target.and_then(content) {
+        match target.map(|x| x.preview.headline()) {
             Some(x) => format!("评论「{}」", quote(x)),
             None => "评论".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let text = quote(content(target).unwrap_or_default());
+        let text = quote(target.preview.headline());
+        // Comments are only on songs for now
         let song_display_id = match &target.preview {
-            UgcPreview::Comment { on: Some(on), .. } => match on.as_ref() {
-                UgcPreview::Song { display_id, .. } => display_id.clone(),
+            UgcPreview::Comment(CommentPreview { on: Some(on), .. }) => match on.as_ref() {
+                UgcPreview::Song(song) => song.display_id.clone(),
                 _ => String::new(),
             },
             _ => String::new(),

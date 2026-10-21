@@ -3,7 +3,7 @@ use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::service::committee;
 use crate::service::errors::ServiceError;
 use crate::service::report::{self, CaseSummary, Decision, ReportError, Verdict};
-use crate::service::ugc::{UgcKind, UgcPreview, UgcTarget};
+use crate::service::ugc::{Preview, UgcKind, UgcPreview, UgcTarget};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -373,26 +373,13 @@ fn case_item(x: CaseSummary, users: &HashMap<UserId, UserBrief>) -> CaseItem {
 }
 
 fn target_info(t: UgcTarget, users: &HashMap<UserId, UserBrief>) -> TargetInfo {
-    let (title, cover_url, display_id) = legacy_card(&t.preview);
+    let legacy = t.preview.legacy_card();
     TargetInfo {
         owner: users.get(&t.owner_uid).cloned(),
         preview: t.preview,
-        title,
-        cover_url,
-        display_id,
-    }
-}
-
-/// The fields clients before 261021 read, until they read `preview`.
-fn legacy_card(preview: &UgcPreview) -> (String, Option<String>, String) {
-    match preview {
-        UgcPreview::Song { title, cover_url, display_id } => (title.clone(), Some(cover_url.clone()), display_id.clone()),
-        UgcPreview::Playlist { name, cover_url } => (name.clone(), cover_url.clone(), String::new()),
-        UgcPreview::User { username, avatar_url } => (username.clone(), avatar_url.clone(), String::new()),
-        UgcPreview::Comment { content, on } => {
-            let (_, cover_url, display_id) = on.as_deref().map(legacy_card).unwrap_or_default();
-            (content.clone(), cover_url, display_id)
-        }
+        title: legacy.title,
+        cover_url: legacy.cover_url,
+        display_id: legacy.display_id,
     }
 }
 

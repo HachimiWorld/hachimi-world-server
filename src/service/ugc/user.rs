@@ -1,11 +1,12 @@
 //! Users as report targets: their profile is the content.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::user::{self, ProfileField};
 use crate::web::state::AppState;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
 use tracing::warn;
 
@@ -25,6 +26,24 @@ const FIELDS: &[(ContentAction, ProfileField, &str)] = &[
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UserAdapter;
 
+/// How a user looks.
+/// @since 261021
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UserPreview {
+    pub username: String,
+    pub avatar_url: Option<String>,
+}
+
+impl Preview for UserPreview {
+    fn headline(&self) -> &str {
+        &self.username
+    }
+
+    fn legacy_card(&self) -> LegacyCard {
+        LegacyCard { title: self.username.clone(), cover_url: self.avatar_url.clone(), display_id: String::new() }
+    }
+}
+
 impl UgcAdapter for UserAdapter {
     fn name(&self) -> &'static str {
         "user"
@@ -39,7 +58,7 @@ impl UgcAdapter for UserAdapter {
             owner_uid: x.id,
             is_public: true,
             is_hidden: false,
-            preview: UgcPreview::User { username: x.username, avatar_url: x.avatar_url },
+            preview: UgcPreview::User(UserPreview { username: x.username, avatar_url: x.avatar_url }),
         }))
     }
 
@@ -66,11 +85,7 @@ impl UgcAdapter for UserAdapter {
     }
 
     fn mention(&self, target: Option<&UgcTarget>) -> String {
-        let username = target.and_then(|x| match &x.preview {
-            UgcPreview::User { username, .. } => Some(username),
-            _ => None,
-        });
-        match username {
+        match target.map(|x| x.preview.headline()) {
             Some(x) => format!("用户「{}」", to_plain_text(x)),
             None => "用户".to_string(),
         }
