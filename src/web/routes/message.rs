@@ -1,6 +1,7 @@
 use crate::db::comment::CommentId;
 use crate::db::song::SongId;
-use crate::service::message_center::{self, Channel, ReceivedLikeItem, ReceivedReplyItem};
+use crate::service::comment::{self, ReceivedReplyItem};
+use crate::service::message_center::{self, Channel, ReceivedLikeItem};
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
@@ -133,6 +134,6 @@ async fn received_replies(claims: Claims, state: State<AppState>, req: Query<Rec
         _ => err!("invalid_cursor", "before_time and before_comment_id must be given together"),
     };
     let limit = req.limit.unwrap_or(20).clamp(1, 50);
-    let (items, has_more) = message_center::received_replies(&state.sql_pool, claims.uid(), before, limit).await?;
+    let (items, has_more) = comment::received_replies(&state.sql_pool, claims.uid(), before, limit).await?;
     ok!(ReceivedRepliesResp { items, has_more })
 }

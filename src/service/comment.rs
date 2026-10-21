@@ -11,7 +11,7 @@
 
 use crate::db::comment::{Comment, CommentDao, CommentId, CommentLikeDao, STATUS_PENDING, STATUS_PUBLISHED, STATUS_REJECTED};
 use crate::db::content_check::ContentCheckDao;
-use crate::db::song::{SongDao, SongId};
+use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::content_check::{self, ContentChecker, Verdict};
@@ -33,16 +33,22 @@ const FIRST_REPLIES: i64 = 3;
 
 /// What a comment can be on. Each says who owns its targets and who can see them.
 /// @since 261021
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CommentTarget {
     Song,
 }
 
-/// A target as comments need it.
+/// A target as comments need it, whatever its kind.
 pub struct TargetInfo {
     pub owner_uid: UserId,
     /// Hidden by the platform: only the owner can see it and its comments.
     pub is_hidden: bool,
+    /// The song's title.
+    pub title: String,
+    /// The song's cover.
+    pub cover_url: Option<String>,
+    /// The song's display id, such as `JM-ABCD-123`.
+    pub display_id: String,
 }
 
 impl TargetInfo {
@@ -71,17 +77,23 @@ impl CommentTarget {
         }
     }
 
-    /// The kind whose comments are checked as `subject`.
-    pub fn of_subject(subject: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|x| x.subject() == subject)
+    pub async fn load(self, pool: &PgPool, target_id: i64) -> sqlx::Result<Option<TargetInfo>> {
+        Ok(self.load_many(pool, &[target_id]).await?.remove(&target_id))
     }
 
-    pub async fn load(self, pool: &PgPool, target_id: i64) -> sqlx::Result<Option<TargetInfo>> {
+    /// The targets of these ids that exist, by id.
+    pub async fn load_many(self, pool: &PgPool, target_ids: &[i64]) -> sqlx::Result<HashMap<i64, TargetInfo>> {
         match self {
-            Self::Song => Ok(SongDao::get_by_id(pool, SongId(target_id)).await?.map(|x| TargetInfo {
-                owner_uid: x.uploader_uid,
-                is_hidden: x.is_hidden,
-            })),
+            Self::Song => {
+                let ids: Vec<SongId> = target_ids.iter().map(|x| SongId(*x)).collect();
+                Ok(SongDao::list_by_ids(pool, &ids).await?.into_iter().map(|x| (x.id.0, TargetInfo {
+                    owner_uid: x.uploader_uid,
+                    is_hidden: x.is_hidden,
+                    title: x.title,
+                    cover_url: Some(x.cover_art_url),
+                    display_id: x.display_id,
+                })).collect())
+            }
         }
     }
 }
@@ -438,4 +450,89 @@ pub async fn settle_pending(pool: &PgPool, comment_id: CommentId, publish: bool)
 /// Hides or shows a comment, for report decisions.
 pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId, hidden: bool) -> sqlx::Result<()> {
     CommentDao::update_hidden(&mut **tx, comment_id, hidden, Utc::now()).await
+}
+
+/// What a received reply is on.
+/// @since 261021
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReplyTarget {
+    /// Such as `song`.
+    pub target_type: String,
+    pub target_id: i64,
+    /// The song's title.
+    pub title: String,
+    pub cover_url: Option<String>,
+    /// The song's display id, such as `JM-ABCD-123`.
+    pub display_id: String,
+}
+
+/// A comment replying to the user, or on what they own.
+/// @since 261021
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReceivedReplyItem {
+    pub comment: CommentItem,
+    pub target: ReplyTarget,
+    /// The user's comment it replies to; `None` for a comment on what they own, or if that comment
+    /// was deleted.
+    pub replied_content: Option<String>,
+}
+
+/// How many comments replying to `uid` or on what they own others published after `after`.
+pub async fn count_received_replies_after(pool: &PgPool, uid: UserId, after: DateTime<Utc>) -> sqlx::Result<i64> {
+    CommentDao::count_published_replies_to_after(pool, uid, after).await
+}
+
+/// Comments replying to `uid` or on what they own, by others, newest first. Ones on targets `uid`
+/// can't see are left out. Returns the page and whether there are more.
+pub async fn received_replies(
+    pool: &PgPool,
+    uid: UserId,
+    before: Option<(DateTime<Utc>, CommentId)>,
+    limit: i64,
+) -> sqlx::Result<(Vec<ReceivedReplyItem>, bool)> {
+    let mut comments = CommentDao::list_published_replies_to(pool, uid, before, limit + 1).await?;
+    let has_more = comments.len() as i64 > limit;
+    comments.truncate(limit as usize);
+
+    let mut targets: HashMap<(CommentTarget, i64), TargetInfo> = HashMap::new();
+    for target in CommentTarget::ALL {
+        let ids: Vec<i64> = comments.iter()
+            .filter(|x| CommentTarget::parse(&x.target_type) == Some(target))
+            .map(|x| x.target_id)
+            .collect();
+        if ids.is_empty() {
+            continue;
+        }
+        for (id, info) in target.load_many(pool, &ids).await? {
+            if info.visible_to(Some(uid)) {
+                targets.insert((target, id), info);
+            }
+        }
+    }
+    let replied_ids: Vec<CommentId> = comments.iter().filter_map(|x| x.reply_to_id).collect();
+    let replied: HashMap<CommentId, String> = CommentDao::list_by_ids(pool, &replied_ids).await?
+        .into_iter()
+        .filter(|x| x.delete_time.is_none())
+        .map(|x| (x.id, x.content))
+        .collect();
+
+    let items = to_items(pool, comments, Some(uid)).await?
+        .into_iter()
+        .filter_map(|comment| {
+            let kind = CommentTarget::parse(&comment.target_type)?;
+            let info = targets.get(&(kind, comment.target_id))?;
+            Some(ReceivedReplyItem {
+                target: ReplyTarget {
+                    target_type: comment.target_type.clone(),
+                    target_id: comment.target_id,
+                    title: info.title.clone(),
+                    cover_url: info.cover_url.clone(),
+                    display_id: info.display_id.clone(),
+                },
+                replied_content: comment.reply_to_id.and_then(|x| replied.get(&x).cloned()),
+                comment,
+            })
+        })
+        .collect();
+    Ok((items, has_more))
 }

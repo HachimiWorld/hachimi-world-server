@@ -2,18 +2,25 @@
 //! submitted. Only content that must not pass unchecked comes here, which so far is comments; the
 //! content waits unpublished, seen only by its author.
 //!
-//! The content stays in its own table, and its module says how to read it and what to do with the
-//! verdict; this module only keeps the queue and retries with backoff. Content that still can't be
+//! The content stays in its own table. Each kind of content that can wait here has an adapter
+//! (`comment.rs`) that reads the waiting text and settles it once judged; this module only keeps
+//! the queue and retries with backoff, and knows no kind by name. Content that still can't be
 //! checked after [GIVE_UP_AFTER] is published, as there is no one to judge it by hand yet; a wrong
 //! pass can still be reported.
+//!
+//! As with [crate::service::ugc], each [ReviewKind] variant carries its adapter and `enum_dispatch`
+//! forwards [ReviewAdapter] to it. Adding a kind means a new adapter, a variant for it and an entry
+//! in [ReviewKind::ALL]; the kind's subject must be one of the content check subjects.
 
-use crate::db::comment::CommentId;
+mod comment;
+
 use crate::db::content_review::{ContentReview, ContentReviewDao};
-use crate::service::comment::{self, CommentTarget};
+use crate::db::user::UserId;
 use crate::service::content_check::{ContentChecker, Verdict};
 use crate::util::redlock::RedLock;
 use crate::web::state::AppState;
 use chrono::{DateTime, Duration, Utc};
+use enum_dispatch::enum_dispatch;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -27,6 +34,40 @@ const BATCH_SIZE: i64 = 20;
 const LOCK_NAME: &str = "content_review:run";
 /// Content that still can't be checked this long after it was submitted is published.
 pub const GIVE_UP_AFTER: Duration = Duration::hours(24);
+
+/// A kind of content that can wait here. Each variant carries the kind's adapter.
+#[enum_dispatch(ReviewAdapter)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReviewKind {
+    Comment(comment::CommentReview),
+}
+
+/// What every kind of waiting content provides, implemented once per kind in its own file.
+// Only called through the concrete ReviewKind, so the futures' auto traits (Send) are known
+#[allow(async_fn_in_trait)]
+#[enum_dispatch]
+pub trait ReviewAdapter {
+    /// The content check subject the content is checked as, also stored in the queue.
+    fn subject(&self) -> &'static str;
+
+    /// Who wrote the content and its text, if it still waits. None if it was deleted or settled
+    /// some other way, which ends its review.
+    async fn load_pending(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<(UserId, String)>>;
+
+    /// Publishes the content if `pass`, or rejects it.
+    async fn settle(&self, pool: &PgPool, id: i64, pass: bool) -> sqlx::Result<()>;
+}
+
+impl ReviewKind {
+    /// Every kind. Add new kinds here too.
+    pub const ALL: [ReviewKind; 1] = [
+        Self::Comment(comment::CommentReview::SONG),
+    ];
+
+    pub fn of_subject(subject: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|x| x.subject() == subject)
+    }
+}
 
 /// Adds content to check again in `tx`, the transaction that saves it as waiting.
 pub async fn enqueue(tx: &mut Transaction<'_, Postgres>, subject: &str, target_id: i64, now: DateTime<Utc>) -> sqlx::Result<()> {
@@ -100,15 +141,14 @@ pub async fn run(pool: &PgPool, red_lock: &RedLock, checker: Option<&ContentChec
 }
 
 async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review: ContentReview, now: DateTime<Utc>) -> anyhow::Result<()> {
-    let Some(target) = CommentTarget::of_subject(&review.subject) else {
+    let Some(kind) = ReviewKind::of_subject(&review.subject) else {
         // Written by a newer version, or by mistake; leave it for an instance that knows it
         warn!(id = review.id, subject = review.subject, "Unknown content review subject");
         review.available_time = now + Duration::hours(1);
         ContentReviewDao::update(pool, &review).await?;
         return Ok(());
     };
-    let comment_id = CommentId(review.target_id);
-    let Some((actor_uid, text)) = comment::load_pending(pool, comment_id).await? else {
+    let Some((actor_uid, text)) = kind.load_pending(pool, review.target_id).await? else {
         // Deleted, or settled some other way
         review.done_time = Some(now);
         ContentReviewDao::update(pool, &review).await?;
@@ -117,19 +157,19 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
 
     review.attempt_count += 1;
     let verdict = match checker {
-        Some(checker) => checker.try_check_text(pool, target.subject(), actor_uid, review.target_id, &text).await?,
+        Some(checker) => checker.try_check_text(pool, kind.subject(), actor_uid, review.target_id, &text).await?,
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
         None => Some(Verdict::Pass),
     };
     match verdict {
         Some(verdict) => {
-            comment::settle_pending(pool, comment_id, verdict == Verdict::Pass).await?;
+            kind.settle(pool, review.target_id, verdict == Verdict::Pass).await?;
             review.done_time = Some(now);
             review.last_error = None;
         }
         None if now - review.create_time >= GIVE_UP_AFTER => {
             info!(id = review.id, subject = review.subject, "Publishing content that couldn't be checked for {} attempts", review.attempt_count);
-            comment::settle_pending(pool, comment_id, true).await?;
+            kind.settle(pool, review.target_id, true).await?;
             review.done_time = Some(now);
             review.last_error = Some("Gave up checking and published".to_string());
         }
@@ -140,4 +180,18 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
     }
     ContentReviewDao::update(pool, &review).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ReviewAdapter, ReviewKind};
+    use crate::service::content_check::SUBJECTS;
+
+    #[test]
+    fn every_kind_is_a_check_subject_and_found_by_it() {
+        for kind in ReviewKind::ALL {
+            assert!(SUBJECTS.contains(&kind.subject()), "{}", kind.subject());
+            assert_eq!(ReviewKind::of_subject(kind.subject()), Some(kind));
+        }
+    }
 }

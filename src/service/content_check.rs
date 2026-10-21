@@ -50,7 +50,7 @@ pub const SUBJECT_PLAYLIST_COVER: &str = "playlist.cover";
 /// @since 261021
 pub const SUBJECT_SONG_COMMENT: &str = "song.comment";
 /// Every subject the server checks. A policy must cover exactly these.
-const SUBJECTS: &[&str] = &[
+pub(crate) const SUBJECTS: &[&str] = &[
     SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR,
     SUBJECT_PLAYLIST_NAME, SUBJECT_PLAYLIST_DESCRIPTION, SUBJECT_PLAYLIST_COVER,
     SUBJECT_SONG_COMMENT,
