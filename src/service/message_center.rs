@@ -1,6 +1,6 @@
 //! The message center: unread counts of every kind of message, and the kinds that are read as a
-//! whole, received likes and new followers. Each of those keeps one read time per user; opening it
-//! marks everything up to now read. System notifications are read one by one, see
+//! whole, received likes, new followers and replies. Each of those keeps one read time per user;
+//! opening it marks everything up to now read. System notifications are read one by one, see
 //! [crate::service::notification].
 
 use crate::db::follow::FollowDao;
@@ -8,6 +8,7 @@ use crate::db::message_read_mark::{MessageReadMark, MessageReadMarkDao};
 use crate::db::received_like::ReceivedLikeDao;
 use crate::db::song::{ISongDao, Song, SongDao, SongId};
 use crate::db::user::{IUserDao, UserDao, UserId};
+use crate::service::comment;
 use crate::service::notification;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,9 @@ const LATEST_LIKERS: i64 = 3;
 pub enum Channel {
     Like,
     Follow,
+    /// Replies to the user's comments, and comments on their songs.
+    /// @since 261021
+    Reply,
 }
 
 impl Channel {
@@ -32,6 +36,7 @@ impl Channel {
         match s {
             "like" => Some(Self::Like),
             "follow" => Some(Self::Follow),
+            "reply" => Some(Self::Reply),
             _ => None,
         }
     }
@@ -40,6 +45,7 @@ impl Channel {
         match self {
             Self::Like => "like",
             Self::Follow => "follow",
+            Self::Reply => "reply",
         }
     }
 }
@@ -50,10 +56,15 @@ pub struct Summary {
     pub system_unread: i64,
     pub like_unread: i64,
     pub follow_unread: i64,
+    /// @since 261021
+    pub reply_unread: i64,
     /// Likes after this are unread.
     pub like_read_time: DateTime<Utc>,
     /// Followers who followed after this are new.
     pub follow_read_time: DateTime<Utc>,
+    /// Replies after this are unread.
+    /// @since 261021
+    pub reply_read_time: DateTime<Utc>,
 }
 
 pub async fn summary(pool: &PgPool, uid: UserId) -> sqlx::Result<Summary> {
@@ -65,13 +76,16 @@ pub async fn summary(pool: &PgPool, uid: UserId) -> sqlx::Result<Summary> {
     let read_time = |channel: Channel| marks.get(channel.as_str()).copied().unwrap_or(default_read_time);
     let like_read_time = read_time(Channel::Like);
     let follow_read_time = read_time(Channel::Follow);
+    let reply_read_time = read_time(Channel::Reply);
 
     Ok(Summary {
         system_unread: notification::unread_count(pool, uid).await?,
         like_unread: ReceivedLikeDao::count_after(pool, uid, like_read_time).await?,
         follow_unread: FollowDao::count_followers_after(pool, uid, follow_read_time).await?,
+        reply_unread: comment::count_received_replies_after(pool, uid, reply_read_time).await?,
         like_read_time,
         follow_read_time,
+        reply_read_time,
     })
 }
 

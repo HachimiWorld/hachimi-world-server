@@ -1,0 +1,36 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT root_id AS \"root_id!: CommentId\", COUNT(*) AS \"count!\" FROM comments\n            WHERE root_id = ANY($1) AND (\n                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)\n                OR (user_id = $2 AND delete_time IS NULL)\n            )\n            GROUP BY root_id",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "root_id!: CommentId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "root_id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      null
+    ]
+  },
+  "hash": "1bdffdac0414bf10164186ca7eae493b2542fcf6065b45c5e6c82be16b7c3667"
+}

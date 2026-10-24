@@ -46,7 +46,7 @@ groups:
           summary: More than 20% of content checks are failing
           description: >-
             TypeSafe is failing or its answers don't match the policy, so usernames and bios are saved
-            unchecked. Look for "Content check failed" in the server logs and at the error column of
+            unchecked and comments are held back until they can be checked. Look for "Content check failed" in the server logs and at the error column of
             content_checks.
 
       - uid: content-check-block-rate
@@ -124,3 +124,78 @@ groups:
           description: >-
             Users wait for the check when they save their profile. Slow checks near
             typesafe.timeout_ms usually end as timeouts, which let the content through.
+
+      - uid: content-review-waiting
+        title: Content has waited long for its check
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Hours the oldest held-back content has waited for a recheck. Every replica reports
+              # the same number, hence max.
+              expr: max(content_review_oldest_pending_seconds) / 3600
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 1 ] }
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          service: hachimi-world-server
+          severity: warning
+        annotations:
+          summary: Content has waited more than an hour for its content check
+          description: >-
+            Comments whose check failed are held back, seen only by their authors, and checked again
+            in the background. They still can't be checked, so TypeSafe is probably down or its
+            answers don't match the policy; see content_checks and "Content checks are failing".
+            After 24 hours the content is published unchecked.
+
+      - uid: content-review-gave-up
+        title: Content was published unchecked
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # Held-back content published in the last hour because it still couldn't be checked
+              # after 24 hours.
+              expr: sum(increase(content_review_settled_total{outcome="gave_up"}[1h]))
+          - refId: B
+            datasourceUid: __expr__
+            model: { refId: B, type: reduce, expression: A, reducer: last }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { type: gt, params: [ 0 ] }
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels:
+          service: hachimi-world-server
+          severity: warning
+        annotations:
+          summary: Content was published without a content check
+          description: >-
+            Held-back content couldn't be checked for 24 hours and was published unchecked. The
+            reviews are the content_reviews rows with last_error "Gave up checking and published";
+            look at that content by hand.

@@ -1,11 +1,12 @@
 //! Songs as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
-use crate::db::song::{SongDao, SongId};
+use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
+use crate::db::song::{Song, SongDao, SongId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::song;
 use crate::web::state::AppState;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
 use tracing::warn;
 
@@ -15,8 +16,36 @@ const HIDE: ContentAction = ContentAction { id: "hide", penalty: true };
 const RESTORE: ContentAction = ContentAction { id: "restore", penalty: false };
 const ACTIONS: &[ContentAction] = &[HIDE, RESTORE];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct SongAdapter;
+
+/// How a song looks, here and wherever something on a song shows it.
+/// @since 261021
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SongPreview {
+    pub title: String,
+    pub cover_url: String,
+    /// Such as `JM-ABCD-123`.
+    pub display_id: String,
+}
+
+impl Preview for SongPreview {
+    fn headline(&self) -> &str {
+        &self.title
+    }
+
+    fn legacy_card(&self) -> LegacyCard {
+        LegacyCard { title: self.title.clone(), cover_url: Some(self.cover_url.clone()), display_id: self.display_id.clone() }
+    }
+}
+
+pub fn preview(x: &Song) -> UgcPreview {
+    UgcPreview::Song(SongPreview {
+        title: x.title.clone(),
+        cover_url: x.cover_art_url.clone(),
+        display_id: x.display_id.clone(),
+    })
+}
 
 impl UgcAdapter for SongAdapter {
     fn name(&self) -> &'static str {
@@ -30,11 +59,9 @@ impl UgcAdapter for SongAdapter {
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         Ok(SongDao::get_by_id(pool, SongId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.uploader_uid,
-            title: x.title,
-            cover_url: Some(x.cover_art_url),
-            display_id: x.display_id,
             is_public: !x.is_hidden,
             is_hidden: x.is_hidden,
+            preview: preview(&x),
         }))
     }
 
@@ -56,15 +83,15 @@ impl UgcAdapter for SongAdapter {
         }
     }
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        match target.map(|x| x.preview.headline()) {
             Some(x) => format!("作品《{}》", to_plain_text(x)),
             None => "作品".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let title = to_plain_text(&target.title);
+        let title = to_plain_text(target.preview.headline());
         let mut data = serde_json::Map::new();
         data.insert("song_id".into(), id.into());
         let intent = ContentIntent::new("creation.artwork.view", data);
