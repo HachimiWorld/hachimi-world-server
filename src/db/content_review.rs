@@ -40,6 +40,14 @@ pub struct ContentReview {
     pub create_time: DateTime<Utc>,
 }
 
+/// The reviews of one subject that are not done.
+#[derive(Debug, Clone)]
+pub struct PendingSummary {
+    pub subject: String,
+    pub count: i64,
+    pub oldest_create_time: DateTime<Utc>,
+}
+
 pub struct ContentReviewDao;
 
 impl ContentReviewDao {
@@ -65,6 +73,15 @@ impl ContentReviewDao {
             r#"SELECT EXISTS(SELECT 1 FROM content_reviews WHERE done_time IS NULL AND available_time <= $1) AS "exists!""#,
             time
         ).fetch_one(executor).await
+    }
+
+    /// For each subject with reviews not done: how many, and when the oldest was submitted.
+    pub async fn summarize_pending<'e>(executor: impl PgExecutor<'e>) -> sqlx::Result<Vec<PendingSummary>> {
+        sqlx::query_as!(
+            PendingSummary,
+            r#"SELECT subject, COUNT(*) AS "count!", MIN(create_time) AS "oldest_create_time!"
+            FROM content_reviews WHERE done_time IS NULL GROUP BY subject"#
+        ).fetch_all(executor).await
     }
 
     pub async fn list_by_subject_and_target<'e>(executor: impl PgExecutor<'e>, subject: &str, target_id: i64) -> sqlx::Result<Vec<ContentReview>> {

@@ -5,8 +5,8 @@ exports them: a change to a metric should change its dashboard and alerts in the
 
 | File | What |
 |---|---|
-| `dashboards/content-check.json` | Content check: policy in use, outcomes, block and error rates, TypeSafe response time, blocks by question, tokens and cost |
-| `alerts/content-check.yaml` | Content check alerts: checks failing, blocking a lot, slow |
+| `dashboards/content-check.json` | Content check: policy in use, outcomes, block and error rates, TypeSafe response time, blocks by question, tokens and cost; content held back for a recheck |
+| `alerts/content-check.yaml` | Content check alerts: checks failing, blocking a lot, slow; content waiting long for its recheck, or published unchecked |
 
 Nothing here is secret. Contact points such as Discord webhooks stay in Grafana.
 
@@ -69,3 +69,20 @@ check of content already judged under the same policy and model reuses that answ
 `content_check_reused_total` only, not in the others, which are about calls to TypeSafe. The
 alerts need a minimum number of checks before they fire, because profile edits are few; with no
 checks at all there's no data, which counts as OK.
+
+### Rechecks
+
+Content that must not pass unchecked, so far comments, is held back when its check fails, and a
+background worker checks it again (`service::content_review`). After 24 hours it is published
+unchecked.
+
+| Metric | Type | Labels |
+|---|---|---|
+| `content_review_settled_total` | counter | `subject`, `outcome` (`pass`, `block`, `gave_up`, `unchecked`, `gone`) |
+| `content_review_pending` | gauge | `subject` |
+| `content_review_oldest_pending_seconds` | gauge | `subject` |
+
+`gave_up` is content published unchecked after 24 hours, `unchecked` content published because checks
+are off, and `gone` content deleted before it could be checked. The gauges are read from the database
+every 30 seconds by every replica, so they are the same everywhere: read them with `max`. The
+rechecks themselves are calls to TypeSafe and also count in the content check metrics.

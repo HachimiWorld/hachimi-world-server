@@ -11,6 +11,11 @@
 //! As with [crate::service::ugc], each [ReviewKind] variant carries its adapter and `enum_dispatch`
 //! forwards [ReviewAdapter] to it. Adding a kind means a new adapter and a variant for it;
 //! [ReviewKind::iter] finds it by itself. The kind's subjects must be content check subjects.
+//!
+//! Metrics, by subject: `content_review_settled_total` counts reviews as they end, by `outcome`
+//! (see [Outcome]), and the gauges `content_review_pending` and
+//! `content_review_oldest_pending_seconds` show what still waits, so an alert can fire well before
+//! content is published unchecked.
 
 mod comment;
 
@@ -21,11 +26,13 @@ use crate::util::redlock::RedLock;
 use crate::web::state::AppState;
 use chrono::{DateTime, Duration, Utc};
 use enum_dispatch::enum_dispatch;
+use metrics::{counter, gauge};
 use sqlx::{PgPool, Postgres, Transaction};
+use std::collections::HashMap;
 use std::time::Instant;
 use strum::{EnumIter, IntoEnumIterator};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 
 /// Checks for due reviews this often.
 const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
@@ -103,6 +110,9 @@ pub fn start_worker(state: AppState, cancel_token: CancellationToken) {
             if let Err(e) = run(&state.sql_pool, &state.red_lock, checker, Utc::now()).await {
                 error!("Failed to run content reviews: {e:?}");
             }
+            if let Err(e) = report_pending(&state.sql_pool, Utc::now()).await {
+                error!("Failed to report pending content reviews: {e:?}");
+            }
         }
     });
 }
@@ -137,6 +147,45 @@ pub async fn run(pool: &PgPool, red_lock: &RedLock, checker: Option<&ContentChec
     }
 }
 
+/// Sets the pending gauges of every subject, 0 for those with nothing waiting. Every replica reports
+/// the same numbers, so they are read with `max`.
+pub async fn report_pending(pool: &PgPool, now: DateTime<Utc>) -> sqlx::Result<()> {
+    let pending: HashMap<_, _> = ContentReviewDao::summarize_pending(pool).await?
+        .into_iter()
+        .map(|x| (x.subject.clone(), x))
+        .collect();
+    for subject in ReviewKind::iter().flat_map(|x| x.subjects()) {
+        let (count, oldest) = match pending.get(subject) {
+            Some(x) => (x.count as f64, (now - x.oldest_create_time).num_seconds().max(0) as f64),
+            None => (0.0, 0.0),
+        };
+        gauge!("content_review_pending", "subject" => subject).set(count);
+        gauge!("content_review_oldest_pending_seconds", "subject" => subject).set(oldest);
+    }
+    Ok(())
+}
+
+/// How a review ended, the `outcome` label of `content_review_settled_total`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr)]
+#[strum(serialize_all = "snake_case")]
+enum Outcome {
+    /// Checked and published.
+    Pass,
+    /// Checked and rejected.
+    Block,
+    /// Published unchecked after [GIVE_UP_AFTER].
+    GaveUp,
+    /// Published unchecked because checks are off.
+    Unchecked,
+    /// Deleted, or settled some other way, before it was checked.
+    Gone,
+}
+
+fn record_settled(subject: &str, outcome: Outcome) {
+    let outcome: &'static str = outcome.into();
+    counter!("content_review_settled_total", "subject" => subject.to_string(), "outcome" => outcome).increment(1);
+}
+
 async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review: ContentReview, now: DateTime<Utc>) -> anyhow::Result<()> {
     let Some(kind) = ReviewKind::of_subject(&review.subject) else {
         // Written by a newer version, or by mistake; leave it for an instance that knows it
@@ -149,6 +198,7 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
         // Deleted, or settled some other way
         review.done_time = Some(now);
         ContentReviewDao::update(pool, &review).await?;
+        record_settled(&review.subject, Outcome::Gone);
         return Ok(());
     };
 
@@ -158,24 +208,34 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
         None => Some(Verdict::Pass),
     };
-    match verdict {
+    let outcome = match verdict {
         Some(verdict) => {
             kind.settle(pool, review.target_id, verdict == Verdict::Pass).await?;
             review.done_time = Some(now);
             review.last_error = None;
+            Some(match (checker, verdict) {
+                (None, _) => Outcome::Unchecked,
+                (Some(_), Verdict::Pass) => Outcome::Pass,
+                (Some(_), _) => Outcome::Block,
+            })
         }
         None if now - review.create_time >= GIVE_UP_AFTER => {
-            info!(id = review.id, subject = review.subject, "Publishing content that couldn't be checked for {} attempts", review.attempt_count);
+            warn!(id = review.id, subject = review.subject, "Publishing content that couldn't be checked for {} attempts", review.attempt_count);
             kind.settle(pool, review.target_id, true).await?;
             review.done_time = Some(now);
             review.last_error = Some("Gave up checking and published".to_string());
+            Some(Outcome::GaveUp)
         }
         None => {
             review.available_time = now + retry_delay(review.attempt_count);
             review.last_error = Some("The content check failed; see content_checks".to_string());
+            None
         }
-    }
+    };
     ContentReviewDao::update(pool, &review).await?;
+    if let Some(outcome) = outcome {
+        record_settled(&review.subject, outcome);
+    }
     Ok(())
 }
 

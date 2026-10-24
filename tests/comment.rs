@@ -483,7 +483,11 @@ async fn waiting_comments_are_checked_again() {
 
 #[tokio::test]
 async fn comments_that_cant_be_checked_for_a_day_are_published() {
-    with_test_environment_with(CHECKS_ON, |mut env| async move {
+    // The test runs on one thread, so the worker records here
+    let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
+    let handle = recorder.handle();
+    let _guard = metrics::set_default_local_recorder(&recorder);
+    with_test_environment_with(CHECKS_ON, |mut env| { let metrics = handle.clone(); async move {
         let contributor = with_test_contributor_user(&mut env).await;
         let (song_id, _) = new_song(&mut env, &contributor).await;
         let author = with_new_random_test_user(&mut env).await;
@@ -493,10 +497,28 @@ async fn comments_that_cant_be_checked_for_a_day_are_published() {
         let now = Utc::now();
         run_reviews(&env, get_mock_typesafe_client(), now + Duration::hours(23)).await;
         assert_eq!(status(&env, comment.id).await, "pending");
+        content_review::report_pending(&env.pool, now + Duration::hours(23)).await.unwrap();
+        let out = metrics.render();
+        assert!(out.contains(r#"content_review_pending{subject="song.comment"} 1"#), "{out}");
+        let oldest = gauge_value(&out, r#"content_review_oldest_pending_seconds{subject="song.comment"}"#);
+        assert!((oldest - 23.0 * 3600.0).abs() < 60.0, "{out}");
+
         wait_lock().await;
         run_reviews(&env, get_mock_typesafe_client(), now + Duration::hours(25)).await;
         assert_eq!(status(&env, comment.id).await, "published");
         let review = ContentReviewDao::list_by_subject_and_target(&env.pool, "song.comment", comment.id.0).await.unwrap().remove(0);
         assert!(review.done_time.is_some());
-    }).await
+        content_review::report_pending(&env.pool, now + Duration::hours(25)).await.unwrap();
+        let out = metrics.render();
+        assert!(out.contains(r#"content_review_settled_total{subject="song.comment",outcome="gave_up"} 1"#), "{out}");
+        assert!(out.contains(r#"content_review_pending{subject="song.comment"} 0"#), "{out}");
+        assert!(out.contains(r#"content_review_oldest_pending_seconds{subject="song.comment"} 0"#), "{out}");
+    }}).await
+}
+
+fn gauge_value(rendered: &str, series: &str) -> f64 {
+    rendered.lines()
+        .find_map(|x| x.strip_prefix(series))
+        .unwrap_or_else(|| panic!("{series} not in {rendered}"))
+        .trim().parse().unwrap()
 }
