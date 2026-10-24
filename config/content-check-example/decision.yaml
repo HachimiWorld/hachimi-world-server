@@ -1,26 +1,24 @@
 # An example content check policy, enough to run the server. The real policy lives in deployment
 # config, outside this repository, so its questions and thresholds aren't public.
 #
-# questions/<subject>.json is the `questions` map of TypeSafe's System One API, sent as it is.
-# Here, each subject gives a threshold for some of its noul questions: content whose probability
-# reaches it is blocked. The server checks the subjects user.username, user.bio, user.avatar,
-# playlist.name, playlist.description, playlist.cover (the avatar and the cover are images),
-# song.comment and post.comment, and refuses to start unless the policy has exactly those, each
-# with a questions file.
-subjects:
-  user.username:
+# questions/*.json is the `questions` map of TypeSafe's System One API, sent as it is, and each
+# policy here gives a threshold for some of its noul questions: content whose probability reaches it
+# is blocked.
+#
+# The server checks the subjects user.username, user.bio, user.avatar, playlist.name,
+# playlist.description, playlist.cover, song.comment and post.comment; the avatar and the cover are
+# images, the rest text.
+# A subject without its own policy uses the default of its kind, with questions in
+# questions/default.text.json or questions/default.image.json. To give a subject its own, add it
+# under `subjects` with questions in questions/<subject>.json, for example:
+#
+#   subjects:
+#     user.username:
+#       block_at: { sexual: 0.8, spam: 0.6 }
+#
+# The server refuses to start if a subject has neither, or if `subjects` names one it doesn't check.
+defaults:
+  text:
     block_at: { sexual: 0.8, spam: 0.8 }
-  user.bio:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  user.avatar:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  playlist.name:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  playlist.description:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  playlist.cover:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  song.comment:
-    block_at: { sexual: 0.8, spam: 0.8 }
-  post.comment:
+  image:
     block_at: { sexual: 0.8, spam: 0.8 }

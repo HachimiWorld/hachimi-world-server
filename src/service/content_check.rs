@@ -26,6 +26,9 @@ use tracing::warn;
 
 const DECISION_FILE: &str = "decision.yaml";
 const QUESTIONS_DIR: &str = "questions";
+/// The kinds of content a default policy can be for, by how they're checked.
+const KIND_TEXT: &str = "text";
+const KIND_IMAGE: &str = "image";
 
 /// A username, checked when it changes.
 /// @since 261016
@@ -115,7 +118,11 @@ pub struct Policy {
     pub version: String,
     /// Relative path -> content.
     files: BTreeMap<String, String>,
+    /// Subjects with their own policy.
     subjects: BTreeMap<String, SubjectPolicy>,
+    /// [KIND_TEXT] or [KIND_IMAGE] -> the policy of every subject of that kind without its own.
+    /// @since 261024
+    defaults: BTreeMap<String, SubjectPolicy>,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +136,11 @@ struct SubjectPolicy {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DecisionFile {
+    /// By kind; questions in `questions/default.<kind>.json`.
+    #[serde(default)]
+    defaults: BTreeMap<String, DecisionSubject>,
+    /// Questions in `questions/<subject>.json`.
+    #[serde(default)]
     subjects: BTreeMap<String, DecisionSubject>,
 }
 
@@ -161,50 +173,46 @@ impl Policy {
         Self::from_files(files)
     }
 
-    /// Checks that the files agree: every subject in `decision.yaml` has a questions file and every
-    /// questions file has a subject; every threshold names a noul question of its subject and lies
-    /// in 0..=1. A mistake here would otherwise let content through without anyone noticing.
+    /// Checks that the files agree: every default and subject in `decision.yaml` has a questions
+    /// file and every questions file has a default or subject; every threshold names a noul question
+    /// of its policy and lies in 0..=1. A mistake here would otherwise let content through without
+    /// anyone noticing.
     fn from_files(files: BTreeMap<String, String>) -> anyhow::Result<Policy> {
         let decision: DecisionFile = yaml_serde::from_str(&files[DECISION_FILE])
             .with_context(|| format!("Invalid {DECISION_FILE}"))?;
 
+        let mut defaults = BTreeMap::new();
+        for (kind, decision) in decision.defaults {
+            if kind != KIND_TEXT && kind != KIND_IMAGE {
+                bail!("Default for {kind}, which is neither {KIND_TEXT} nor {KIND_IMAGE}");
+            }
+            let policy = SubjectPolicy::from_files(&files, &format!("default {kind}"), &default_file(&kind), decision)?;
+            defaults.insert(kind, policy);
+        }
         let mut subjects = BTreeMap::new();
         for (subject, decision) in decision.subjects {
-            let path = format!("{QUESTIONS_DIR}/{subject}.json");
-            let raw = files.get(&path).with_context(|| format!("{path} is missing for subject {subject}"))?;
-            let questions: serde_json::Value = serde_json::from_str(raw).with_context(|| format!("Invalid JSON in {path}"))?;
-            let map = questions.as_object().with_context(|| format!("{path} is not a JSON object"))?;
-            if decision.block_at.is_empty() {
-                bail!("Subject {subject} has no block_at, so it would never block anything");
-            }
-            for (id, threshold) in &decision.block_at {
-                let question = map.get(id).with_context(|| format!("block_at of {subject} names {id}, which isn't in {path}"))?;
-                if question.get("type").and_then(|t| t.as_str()) != Some("noul") {
-                    bail!("block_at of {subject} names {id}, which isn't a noul question");
-                }
-                if !(0.0..=1.0).contains(threshold) {
-                    bail!("block_at of {subject} for {id} is {threshold}, outside 0..=1");
-                }
-            }
-            subjects.insert(subject, SubjectPolicy { questions, block_at: decision.block_at });
+            let policy = SubjectPolicy::from_files(&files, &subject, &subject_file(&subject), decision)?;
+            subjects.insert(subject, policy);
         }
 
         for path in files.keys() {
-            if let Some(subject) = path.strip_prefix(&format!("{QUESTIONS_DIR}/")).and_then(|p| p.strip_suffix(".json"))
-                && !subjects.contains_key(subject) {
-                bail!("{path} has no subject in {DECISION_FILE}");
+            if path.starts_with(&format!("{QUESTIONS_DIR}/"))
+                && !defaults.keys().any(|x| *path == default_file(x))
+                && !subjects.keys().any(|x| *path == subject_file(x)) {
+                bail!("{path} has no default or subject in {DECISION_FILE}");
             }
         }
 
-        Ok(Policy { version: version_of(&files), files, subjects })
+        Ok(Policy { version: version_of(&files), files, subjects, defaults })
     }
 
-    /// Checks that the policy covers exactly `expected`: a missing subject would fail every check
-    /// of it, and an extra one is most likely a typo.
+    /// Checks that the policy covers exactly `expected`, each with its own policy or the default
+    /// of its kind: a missing subject would fail every check of it, and an extra one is most likely
+    /// a typo.
     fn check_subjects(&self, expected: &[&str]) -> anyhow::Result<()> {
         for subject in expected {
-            if !self.subjects.contains_key(*subject) {
-                bail!("The policy has no subject {subject}");
+            if !self.subjects.contains_key(*subject) && !self.defaults.contains_key(kind_of(subject)) {
+                bail!("The policy has no subject {subject} and no default for {}", kind_of(subject));
             }
         }
         for subject in self.subjects.keys() {
@@ -214,6 +222,50 @@ impl Policy {
         }
         Ok(())
     }
+
+    /// The policy `subject` is checked with: its own, or the default of its kind.
+    fn of_subject(&self, subject: &str) -> Option<&SubjectPolicy> {
+        self.subjects.get(subject).or_else(|| self.defaults.get(kind_of(subject)))
+    }
+
+    /// Every distinct policy, each named for the subject or default it is and with the subjects'
+    /// kind, so each is tried once.
+    fn distinct(&self) -> impl Iterator<Item = (String, &str, &SubjectPolicy)> {
+        let defaults = self.defaults.iter().map(|(kind, x)| (format!("default {kind}"), kind.as_str(), x));
+        let subjects = self.subjects.iter().map(|(subject, x)| (subject.clone(), kind_of(subject), x));
+        defaults.chain(subjects)
+    }
+}
+
+impl SubjectPolicy {
+    /// Reads the questions at `path` for `name`, a subject or a default, and checks `decision`
+    /// against them.
+    fn from_files(files: &BTreeMap<String, String>, name: &str, path: &str, decision: DecisionSubject) -> anyhow::Result<Self> {
+        let raw = files.get(path).with_context(|| format!("{path} is missing for {name}"))?;
+        let questions: serde_json::Value = serde_json::from_str(raw).with_context(|| format!("Invalid JSON in {path}"))?;
+        let map = questions.as_object().with_context(|| format!("{path} is not a JSON object"))?;
+        if decision.block_at.is_empty() {
+            bail!("{name} has no block_at, so it would never block anything");
+        }
+        for (id, threshold) in &decision.block_at {
+            let question = map.get(id).with_context(|| format!("block_at of {name} names {id}, which isn't in {path}"))?;
+            if question.get("type").and_then(|t| t.as_str()) != Some("noul") {
+                bail!("block_at of {name} names {id}, which isn't a noul question");
+            }
+            if !(0.0..=1.0).contains(threshold) {
+                bail!("block_at of {name} for {id} is {threshold}, outside 0..=1");
+            }
+        }
+        Ok(SubjectPolicy { questions, block_at: decision.block_at })
+    }
+}
+
+fn subject_file(subject: &str) -> String {
+    format!("{QUESTIONS_DIR}/{subject}.json")
+}
+
+fn default_file(kind: &str) -> String {
+    format!("{QUESTIONS_DIR}/default.{kind}.json")
 }
 
 /// Hashes each path and content in order, with separators so that moving bytes between a path and
@@ -271,15 +323,15 @@ impl ContentChecker {
         Ok(checker)
     }
 
-    /// Asks every subject's questions about harmless content (a text, or a plain grey image), which
+    /// Asks every distinct policy's questions about harmless content (a text, or a plain grey image), which
     /// tries the key, the models and the questions at once. A rejection that retrying can't fix, or
     /// answers that don't match the policy, fail startup. A passing failure, such as a timeout or
     /// TypeSafe being down, only logs: an outage elsewhere shouldn't keep the server from starting,
     /// and checks pass meanwhile.
     async fn probe(&self) -> anyhow::Result<()> {
         let probe_image = probe_image()?;
-        for (subject, policy) in &self.policy.subjects {
-            let result = if is_image(subject) {
+        for (name, kind, policy) in self.policy.distinct() {
+            let result = if kind == KIND_IMAGE {
                 self.client.system_one_image(&self.image_model, &probe_image, &policy.questions).await
             } else {
                 self.client.system_one(&self.model, PROBE_TEXT, &policy.questions).await
@@ -287,13 +339,13 @@ impl ContentChecker {
             match result {
                 Ok(resp) => {
                     if let Err(e) = blocked_by(&policy.block_at, &resp) {
-                        bail!("TypeSafe's answers for {subject} don't match the policy: {e}");
+                        bail!("TypeSafe's answers for {name} don't match the policy: {e}");
                     }
                 }
                 Err(e) => match e.downcast_ref::<TypeSafeStatusError>() {
                     Some(status) if status.is_config_error() => {
-                        let model = if is_image(subject) { &self.image_model } else { &self.model };
-                        return Err(e.context(format!("TypeSafe rejected the questions for {subject} with model {model}; check the key, the model and the policy")));
+                        let model = if kind == KIND_IMAGE { &self.image_model } else { &self.model };
+                        return Err(e.context(format!("TypeSafe rejected the questions for {name} with model {model}; check the key, the model and the policy")));
                     }
                     _ => {
                         warn!("Couldn't try the content check policy against TypeSafe, starting anyway: {e:#}");
@@ -436,7 +488,7 @@ impl ContentChecker {
     }
 
     fn subject_policy(&self, subject: &str) -> anyhow::Result<&SubjectPolicy> {
-        self.policy.subjects.get(subject).with_context(|| format!("No content check policy for {subject}"))
+        self.policy.of_subject(subject).with_context(|| format!("No content check policy for {subject}"))
     }
 
     /// Makes `call`, judges its answers and records the check. `content` gives what to record as
@@ -564,6 +616,11 @@ fn is_image(subject: &str) -> bool {
     IMAGE_SUBJECTS.contains(&subject)
 }
 
+/// [KIND_IMAGE] or [KIND_TEXT].
+fn kind_of(subject: &str) -> &'static str {
+    if is_image(subject) { KIND_IMAGE } else { KIND_TEXT }
+}
+
 /// A plain grey JPEG that fits TypeSafe's limits, harmless under any policy.
 fn probe_image() -> anyhow::Result<Vec<u8>> {
     let image = image::RgbImage::from_pixel(280, 280, image::Rgb([128, 128, 128]));
@@ -655,7 +712,7 @@ mod tests {
     #[test]
     fn rejects_inconsistent_policies() {
         assert!(error_of(DECISION, &[]).contains("questions/user.bio.json is missing"));
-        assert!(error_of(DECISION, &[("user.bio", QUESTIONS), ("user.username", QUESTIONS)]).contains("questions/user.username.json has no subject"));
+        assert!(error_of(DECISION, &[("user.bio", QUESTIONS), ("user.username", QUESTIONS)]).contains("questions/user.username.json has no default or subject"));
         assert!(error_of(&DECISION.replace("sexual", "spam"), &[("user.bio", QUESTIONS)]).contains("names spam, which isn't in"));
         assert!(error_of(&DECISION.replace("sexual", "tone"), &[("user.bio", QUESTIONS)]).contains("isn't a noul question"));
         assert!(error_of(&DECISION.replace("0.7, sexual", "1.5, sexual"), &[("user.bio", QUESTIONS)]).contains("outside 0..=1"));
@@ -679,6 +736,33 @@ mod tests {
         assert!(policy.check_subjects(&["user.bio"]).is_ok());
         assert!(policy.check_subjects(&["user.bio", "user.username"]).unwrap_err().to_string().contains("no subject user.username"));
         assert!(policy.check_subjects(&[]).unwrap_err().to_string().contains("doesn't check"));
+    }
+
+    const DEFAULTS: &str = "defaults:\n  text:\n    block_at: { politics: 0.8 }\n  image:\n    block_at: { sexual: 0.9 }\n";
+
+    #[test]
+    fn subjects_without_their_own_policy_use_the_default_of_their_kind() {
+        let decision = format!("{DEFAULTS}{DECISION}");
+        let policy = Policy::from_files(files(&decision, &[("default.text", QUESTIONS), ("default.image", QUESTIONS), ("user.bio", QUESTIONS)])).unwrap();
+        assert!(policy.check_subjects(&["user.bio", "user.username", "user.avatar"]).is_ok());
+        assert_eq!(policy.of_subject("user.bio").unwrap().block_at["politics"], 0.7);
+        assert_eq!(policy.of_subject("user.username").unwrap().block_at["politics"], 0.8);
+        assert_eq!(policy.of_subject("user.avatar").unwrap().block_at["sexual"], 0.9);
+        let names: Vec<String> = policy.distinct().map(|(name, _, _)| name).collect();
+        assert_eq!(names, ["default image", "default text", "user.bio"]);
+
+        // Only a text default: images still need their own
+        let text_only = Policy::from_files(files("defaults:\n  text:\n    block_at: { politics: 0.8 }\n", &[("default.text", QUESTIONS)])).unwrap();
+        assert!(text_only.check_subjects(&["user.bio", "song.comment"]).is_ok());
+        assert!(text_only.check_subjects(&["user.avatar"]).unwrap_err().to_string().contains("no subject user.avatar and no default for image"));
+    }
+
+    #[test]
+    fn rejects_inconsistent_defaults() {
+        assert!(error_of(DEFAULTS, &[("default.text", QUESTIONS)]).contains("questions/default.image.json is missing for default image"));
+        assert!(error_of("defaults:\n  audio:\n    block_at: { politics: 0.8 }\n", &[]).contains("neither text nor image"));
+        assert!(error_of("defaults:\n  text:\n    block_at: { spam: 0.8 }\n", &[("default.text", QUESTIONS)]).contains("names spam, which isn't in"));
+        assert!(error_of("subjects: {}\n", &[("default.text", QUESTIONS)]).contains("questions/default.text.json has no default or subject"));
     }
 
     #[test]
