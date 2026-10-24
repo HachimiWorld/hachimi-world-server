@@ -49,11 +49,14 @@ pub const SUBJECT_PLAYLIST_COVER: &str = "playlist.cover";
 /// for [crate::service::content_review] instead of passing.
 /// @since 261021
 pub const SUBJECT_SONG_COMMENT: &str = "song.comment";
+/// A comment or reply on a post, checked like [SUBJECT_SONG_COMMENT].
+/// @since 261024
+pub const SUBJECT_POST_COMMENT: &str = "post.comment";
 /// Every subject the server checks. A policy must cover exactly these.
 pub(crate) const SUBJECTS: &[&str] = &[
     SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR,
     SUBJECT_PLAYLIST_NAME, SUBJECT_PLAYLIST_DESCRIPTION, SUBJECT_PLAYLIST_COVER,
-    SUBJECT_SONG_COMMENT,
+    SUBJECT_SONG_COMMENT, SUBJECT_POST_COMMENT,
 ];
 /// The subjects whose content is an image; the rest are text.
 const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR, SUBJECT_PLAYLIST_COVER];

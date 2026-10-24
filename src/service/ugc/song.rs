@@ -94,7 +94,7 @@ impl UgcAdapter for SongAdapter {
         let title = to_plain_text(target.preview.headline());
         let mut data = serde_json::Map::new();
         data.insert("song_id".into(), id.into());
-        let intent = ContentIntent::new("creation.artwork.view", data);
+        let intent = Some(ContentIntent::new("creation.artwork.view", data));
         if actions.contains(&HIDE) {
             Some(OwnerMessage {
                 notification_type: "governance.content_hidden",

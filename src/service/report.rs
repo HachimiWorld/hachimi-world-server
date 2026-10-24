@@ -482,7 +482,7 @@ fn owner_notification(
         notification_type: message.notification_type,
         title: message.title.to_string(),
         body: message.body,
-        content_intent: Some(message.intent),
+        content_intent: message.intent,
         occurred_at,
     })
 }
