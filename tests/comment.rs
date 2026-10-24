@@ -500,3 +500,104 @@ async fn comments_that_cant_be_checked_for_a_day_are_published() {
         assert!(review.done_time.is_some());
     }).await
 }
+
+/// A post by `contributor`, and its id.
+async fn new_post(env: &mut TestEnvironment, contributor: &TestUser) -> i64 {
+    login(env, contributor);
+    let resp: hachimi_world_server::web::routes::post::CreateResp = env.api.post("/post/create", &hachimi_world_server::web::routes::post::CreateReq {
+        title: "更新公告".into(),
+        content: "这周上线了评论".into(),
+        content_type: "markdown".into(),
+        cover_file_id: None,
+    }).await.parse_resp().await.unwrap();
+    resp.id
+}
+
+async fn post_on_post(env: &TestEnvironment, post_id: i64, content: &str, reply_to_id: Option<CommentId>) -> Result<CommentItem, String> {
+    env.api.post("/comment/create", &CreateReq {
+        target_type: "post".into(),
+        target_id: post_id,
+        content: content.into(),
+        reply_to_id,
+    }).await.parse_resp().await.map_err(|e| e.code)
+}
+
+#[tokio::test]
+async fn posts_can_be_commented() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let post_id = new_post(&mut env, &contributor).await;
+        let alice = with_new_random_test_user(&mut env).await;
+        let bob = with_new_random_test_user(&mut env).await;
+
+        login(&mut env, &alice);
+        let comment = post_on_post(&env, post_id, "终于有评论了", None).await.unwrap();
+        assert_eq!(comment.target_type, "post");
+        assert_eq!(post_on_post(&env, post_id + 1_000_000, "没有这篇", None).await.unwrap_err(), "target_not_found");
+        login(&mut env, &bob);
+        let reply = post_on_post(&env, post_id, "+1", Some(comment.id)).await.unwrap();
+
+        let resp: ListResp = env.api.get_query("/comment/list", &ListReq {
+            target_type: "post".into(), target_id: post_id, sort: None, page_index: None, page_size: None,
+        }).await.parse_resp().await.unwrap();
+        assert_eq!(resp.total, 2);
+        assert_eq!(resp.threads[0].replies[0].id, reply.id);
+
+        // The post's author gets the comment, and Alice gets the reply, both shown as the post
+        login(&mut env, &contributor);
+        let items = received_replies(&env).await.items;
+        assert_eq!(items.iter().map(|x| x.comment.id).collect::<Vec<_>>(), [comment.id]);
+        assert!(matches!(&items[0].target.preview, UgcPreview::Post(p) if p.id == post_id && p.title == "更新公告"));
+        login(&mut env, &alice);
+        let items = received_replies(&env).await.items;
+        assert_eq!(items.iter().map(|x| x.comment.id).collect::<Vec<_>>(), [reply.id]);
+        assert!(matches!(&items[0].target.preview, UgcPreview::Post(p) if p.id == post_id));
+
+        // The post's author can delete comments under it
+        login(&mut env, &contributor);
+        act(&env, "delete", reply.id).await.unwrap();
+
+        // Reported and hidden, the author is told with a link to the post
+        login(&mut env, &bob);
+        let report: SubmitResp = env.api.post("/report/submit", &SubmitReq {
+            target_type: "comment".into(), target_id: comment.id.0, reason: "spam".into(), detail: None,
+        }).await.parse_resp().await.unwrap();
+        login(&mut env, &contributor);
+        let detail: CaseResp = env.api.get_query("/report/case", &CaseReq { target_type: "comment".into(), target_id: comment.id.0 }).await
+            .parse_resp().await.unwrap();
+        let target = detail.case.target.unwrap();
+        let UgcPreview::Comment(CommentPreview { on: Some(on), .. }) = target.preview else { panic!("Not a comment on something: {:?}", target.preview) };
+        assert!(matches!(*on, UgcPreview::Post(ref p) if p.id == post_id));
+        assert_eq!(target.title, "终于有评论了");
+        let _: ResolveResp = env.api.post("/report/resolve", &ResolveReq {
+            target_type: "comment".into(),
+            target_id: comment.id.0,
+            verdict: "agree".into(),
+            note: None,
+            content_actions: vec!["hide".into()],
+            author_reason: Some("广告".into()),
+            ignore_reports: false,
+            up_to_report_id: report.report_id,
+        }).await.parse_resp().await.unwrap();
+        let intent: serde_json::Value = sqlx::query_scalar(
+            "SELECT content_intent FROM notifications WHERE recipient_uid = $1 AND notification_type = 'governance.content_hidden'"
+        ).bind(alice.uid).fetch_one(&env.pool).await.unwrap();
+        assert_eq!(intent["action"], "post.comment.view");
+        assert_eq!(intent["data"]["post_id"], post_id);
+        assert_eq!(intent["data"]["comment_id"], comment.id.0);
+    }).await
+}
+
+#[tokio::test]
+async fn post_comments_are_checked_as_their_own_subject() {
+    with_test_environment_with(CHECKS_ON, |mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let post_id = new_post(&mut env, &contributor).await;
+        let alice = with_new_random_test_user(&mut env).await;
+        login(&mut env, &alice);
+        post_on_post(&env, post_id, "写得不错", None).await.unwrap();
+        let checks = ContentCheckDao::list_by_actor(&env.pool, alice.uid, 10).await.unwrap();
+        assert_eq!(checks.len(), 1);
+        assert_eq!(checks[0].subject, "post.comment");
+    }).await
+}

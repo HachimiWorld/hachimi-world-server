@@ -3,7 +3,7 @@
 use super::ReviewAdapter;
 use crate::db::comment::CommentId;
 use crate::db::user::UserId;
-use crate::service::comment::{self, CommentTarget};
+use crate::service::comment::{self, CommentTarget, CommentTargetAdapter};
 use sqlx::PgPool;
 use strum::IntoEnumIterator;
 
