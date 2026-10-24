@@ -85,7 +85,7 @@ async fn ordinary_changes_pass_and_are_recorded() {
         let policy = ContentPolicyDao::get_by_version(&env.pool, &checks[0].policy_version).await.unwrap()
             .expect("the policy snapshot should be stored");
         assert!(policy.files.get("decision.yaml").is_some());
-        assert!(policy.files.get("questions/user.username.json").is_some());
+        assert!(policy.files.get("questions/default.text.json").is_some());
     }).await
 }
 
