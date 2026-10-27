@@ -16,7 +16,7 @@ pub const STATUS_PUBLISHED: &str = "published";
 pub const STATUS_REJECTED: &str = "rejected";
 
 macro_rules! query_comments {
-    ($extra:literal $(, $arg:expr)* $(,)?) => {
+    ($($extra:literal)+ $(, $arg:expr)* $(,)?) => {
         sqlx::query_as!(
             Comment, r#"
             SELECT
@@ -35,7 +35,7 @@ macro_rules! query_comments {
                 create_time,
                 update_time
             FROM comments
-            "# + $extra,
+            "# $(+ $extra)+,
             $($arg),*
         )
     };
@@ -136,19 +136,31 @@ impl CommentDao {
         limit: i64,
         offset: i64,
     ) -> sqlx::Result<Vec<Comment>> {
-        query_comments!(
-            "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND (
-                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
-                OR (user_id = $3 AND delete_time IS NULL)
-                OR EXISTS (
-                    SELECT 1 FROM comments r WHERE r.root_id = comments.id
-                    AND r.status = 'published' AND NOT r.is_hidden AND r.delete_time IS NULL
-                )
-            )
-            ORDER BY CASE WHEN $4 THEN like_count ELSE 0 END DESC, id DESC
-            LIMIT $5 OFFSET $6",
-            target_type, target_id, viewer_uid as Option<UserId>, by_likes, limit, offset
-        ).fetch_all(executor).await
+        // One filter, two orders. The replies are looked for under the same target, so that when
+        // PostgreSQL hashes them up front it reads only this target's, not every comment.
+        macro_rules! ordered_by {
+            ($order:literal) => {
+                query_comments!(
+                    "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND (
+                        (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
+                        OR (user_id = $3 AND delete_time IS NULL)
+                        OR EXISTS (
+                            SELECT 1 FROM comments r
+                            WHERE r.target_type = $1 AND r.target_id = $2 AND r.root_id = comments.id
+                            AND r.status = 'published' AND NOT r.is_hidden AND r.delete_time IS NULL
+                        )
+                    ) "
+                    $order
+                    " LIMIT $4 OFFSET $5",
+                    target_type, target_id, viewer_uid as Option<UserId>, limit, offset
+                ).fetch_all(executor).await
+            };
+        }
+        if by_likes {
+            ordered_by!("ORDER BY like_count DESC, id DESC")
+        } else {
+            ordered_by!("ORDER BY id DESC")
+        }
     }
 
     /// Published comments and replies on a target that aren't hidden or deleted.
