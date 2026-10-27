@@ -60,6 +60,7 @@ tokio-cron-scheduler = "0.15.1"
 enum_dispatch = "0.3.13"
 unicode-width = "0.2.2"
 strum = { version = "0.28.0", features = ["derive"] }
+icu_properties = "2.3.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.7"
