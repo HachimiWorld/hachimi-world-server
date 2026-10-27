@@ -30,6 +30,7 @@ pub struct SummaryResp {
     pub system_unread: i64,
     pub like_unread: i64,
     pub follow_unread: i64,
+    /// At most 100, which the client shows as "99+".
     /// @since 261021
     pub reply_unread: i64,
     /// Likes after this are unread.

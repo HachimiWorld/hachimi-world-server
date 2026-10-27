@@ -10,7 +10,7 @@ use crate::common::{with_test_environment, with_test_environment_with, CommonPar
 use chrono::{Duration, Utc};
 use hachimi_world_server::db::content_check::ContentCheckDao;
 use hachimi_world_server::db::content_review::ContentReviewDao;
-use hachimi_world_server::service::comment::CommentItem;
+use hachimi_world_server::service::comment::{self, CommentItem};
 use hachimi_world_server::service::content_review;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::routes::comment::{CommentIdReq, CreateReq, ListReq, ListResp, RepliesReq, RepliesResp};
@@ -319,6 +319,21 @@ async fn replies_reach_the_message_center() {
         act(&env, "delete", reply.id).await.unwrap();
         login(&mut env, &alice);
         assert!(received_replies(&env).await.items.is_empty());
+    }).await
+}
+
+#[tokio::test]
+async fn unread_replies_are_counted_up_to_a_hundred() {
+    with_test_environment(|env| async move {
+        let (owner, other) = (UserId(1), UserId(2));
+        sqlx::query(
+            "INSERT INTO comments (target_type, target_id, user_id, reply_to_uid, content, status, is_hidden, like_count, create_time, update_time)
+            SELECT 'song', 1, $2, $1, 'x', 'published', false, 0, now(), now() FROM generate_series(1, 150)"
+        ).bind(owner.0).bind(other.0).execute(&env.pool).await.unwrap();
+
+        let since = Utc::now() - Duration::days(1);
+        assert_eq!(comment::count_received_replies_after(&env.pool, owner, since).await.unwrap(), comment::MAX_UNREAD_REPLIES);
+        assert_eq!(comment::count_received_replies_after(&env.pool, other, since).await.unwrap(), 0);
     }).await
 }
 

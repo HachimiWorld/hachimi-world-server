@@ -225,13 +225,17 @@ impl CommentDao {
         ).fetch_one(executor).await
     }
 
-    /// Published comments replying to `uid` by others, not hidden or deleted, posted after `after`.
-    pub async fn count_published_replies_to_after<'e>(executor: impl PgExecutor<'e>, uid: UserId, after: DateTime<Utc>) -> sqlx::Result<i64> {
+    /// Published comments replying to `uid` by others, not hidden or deleted, posted after `after`,
+    /// counted up to `limit`: reads at most that many, however many there are.
+    pub async fn count_published_replies_to_after<'e>(executor: impl PgExecutor<'e>, uid: UserId, after: DateTime<Utc>, limit: i64) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
-            r#"SELECT COUNT(*) AS "count!" FROM comments
-            WHERE reply_to_uid = $1 AND user_id <> $1 AND create_time > $2
-            AND status = 'published' AND NOT is_hidden AND delete_time IS NULL"#,
-            uid as UserId, after
+            r#"SELECT COUNT(*) AS "count!" FROM (
+                SELECT 1 FROM comments
+                WHERE reply_to_uid = $1 AND user_id <> $1 AND create_time > $2
+                AND status = 'published' AND NOT is_hidden AND delete_time IS NULL
+                LIMIT $3
+            ) AS unread"#,
+            uid as UserId, after, limit
         ).fetch_one(executor).await
     }
 
