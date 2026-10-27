@@ -56,6 +56,7 @@ pub struct Summary {
     pub system_unread: i64,
     pub like_unread: i64,
     pub follow_unread: i64,
+    /// At most [comment::MAX_UNREAD_REPLIES], shown as "99+".
     /// @since 261021
     pub reply_unread: i64,
     /// Likes after this are unread.

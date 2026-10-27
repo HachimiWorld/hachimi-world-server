@@ -36,6 +36,9 @@ const CONTENT_MAX_CHARS: usize = 500;
 const COMMENTS_PER_HOUR: i64 = 30;
 /// Replies shown under each top-level comment in a list.
 const FIRST_REPLIES: i64 = 3;
+/// Unread replies are counted up to this, so a summary stays cheap for someone who hasn't read
+/// theirs in a long time. Badges show more than 99 as "99+".
+pub const MAX_UNREAD_REPLIES: i64 = 100;
 
 /// What a comment can be on. Each variant carries the kind's adapter (`song.rs`, `post.rs`), and
 /// `enum_dispatch` forwards [CommentTargetAdapter] to it, as [crate::service::ugc::UgcKind] does
@@ -478,9 +481,10 @@ pub struct ReceivedReplyItem {
     pub replied_content: Option<String>,
 }
 
-/// How many comments replying to `uid` or on what they own others published after `after`.
+/// How many comments replying to `uid` or on what they own others published after `after`, up to
+/// [MAX_UNREAD_REPLIES].
 pub async fn count_received_replies_after(pool: &PgPool, uid: UserId, after: DateTime<Utc>) -> sqlx::Result<i64> {
-    CommentDao::count_published_replies_to_after(pool, uid, after).await
+    CommentDao::count_published_replies_to_after(pool, uid, after, MAX_UNREAD_REPLIES).await
 }
 
 /// Comments replying to `uid` or on what they own, by others, newest first. Ones on targets `uid`
