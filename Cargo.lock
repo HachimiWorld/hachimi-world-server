@@ -2288,6 +2288,7 @@ dependencies = [
  "futures",
  "governor",
  "hex",
+ "icu_properties",
  "image",
  "itertools 0.15.0",
  "jsonwebtoken 11.0.0",
