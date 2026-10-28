@@ -659,6 +659,7 @@ async fn posts_can_be_commented() {
         assert_eq!(intent["action"], "post.comment.view");
         assert_eq!(intent["data"]["post_id"], post_id);
         assert_eq!(intent["data"]["comment_id"], comment.id.0);
+        assert_counts_match(&env).await;
     }).await
 }
 
