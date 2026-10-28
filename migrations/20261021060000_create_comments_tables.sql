@@ -3,21 +3,29 @@
 -- Two levels: a comment on the target, and replies under it.
 CREATE TABLE comments
 (
-    id           BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-    target_type  TEXT        NOT NULL, -- song
-    target_id    BIGINT      NOT NULL,
-    user_id      BIGINT      NOT NULL,
-    root_id      BIGINT,               -- the top-level comment a reply is under; NULL for a top-level comment
-    reply_to_id  BIGINT,               -- the comment replied to; NULL for a top-level comment
-    reply_to_uid BIGINT      NOT NULL, -- who is replied to: the author of reply_to_id, or the target's owner
-    content      TEXT        NOT NULL,
-    status       TEXT        NOT NULL, -- pending / published / rejected, set by content checks
-    is_hidden    BOOLEAN     NOT NULL, -- hidden by a report decision
-    like_count   INT         NOT NULL,
-    delete_time  TIMESTAMPTZ,          -- deleted by its author or the target's owner
-    create_time  TIMESTAMPTZ NOT NULL,
-    update_time  TIMESTAMPTZ NOT NULL
+    id                  BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+    target_type         TEXT        NOT NULL, -- song
+    target_id           BIGINT      NOT NULL,
+    user_id             BIGINT      NOT NULL,
+    root_id             BIGINT,               -- the top-level comment a reply is under; NULL for a top-level comment
+    reply_to_id         BIGINT,               -- the comment replied to; NULL for a top-level comment
+    reply_to_uid        BIGINT      NOT NULL, -- who is replied to: the author of reply_to_id, or the target's owner
+    content             TEXT        NOT NULL,
+    status              TEXT        NOT NULL, -- pending / published / rejected, set by content checks
+    is_hidden           BOOLEAN     NOT NULL, -- hidden by a report decision
+    like_count          INT         NOT NULL, -- derived, see below
+    visible_reply_count INT         NOT NULL, -- derived, see below
+    delete_time         TIMESTAMPTZ,          -- deleted by its author or the target's owner
+    create_time         TIMESTAMPTZ NOT NULL,
+    update_time         TIMESTAMPTZ NOT NULL
 );
+
+-- Derived columns: copies of counts kept so lists don't count on every read. The source of truth is
+-- the count; the server updates the copy in the same transaction as what it counts, and
+-- src/bin/recount_comments.rs recounts them all if they ever drift.
+COMMENT ON COLUMN comments.like_count IS 'Derived: COUNT(*) FROM comment_likes WHERE comment_id = id';
+COMMENT ON COLUMN comments.visible_reply_count IS
+    'Derived: COUNT(*) FROM comments WHERE root_id = id AND status = ''published'' AND NOT is_hidden AND delete_time IS NULL';
 
 CREATE INDEX idx_comments_target_root ON comments (target_type, target_id, root_id, id DESC);
 CREATE INDEX idx_comments_root ON comments (root_id, id);

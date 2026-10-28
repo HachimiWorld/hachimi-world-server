@@ -119,14 +119,9 @@ fn business<T>(e: CommentError) -> ServiceResult<T, CommentError> {
     Err(ServiceError::BusinessError(e))
 }
 
-/// Published, not hidden and not deleted: seen by everyone who can see the target.
-fn is_public(comment: &Comment) -> bool {
-    comment.status == STATUS_PUBLISHED && !comment.is_hidden && comment.delete_time.is_none()
-}
-
-/// Seen by `viewer_uid` with its content: public, or their own and not deleted.
+/// Seen by `viewer_uid` with its content: visible to everyone, or their own and not deleted.
 fn is_shown_to(comment: &Comment, viewer_uid: Option<UserId>) -> bool {
-    is_public(comment) || (comment.delete_time.is_none() && viewer_uid == Some(comment.user_id))
+    comment.is_visible() || (comment.delete_time.is_none() && viewer_uid == Some(comment.user_id))
 }
 
 /// @since 261021
@@ -173,7 +168,7 @@ pub struct CommentThread {
     pub comment: CommentItem,
     /// Oldest first.
     pub replies: Vec<CommentItem>,
-    /// All replies the viewer can see.
+    /// Replies visible to everyone; the viewer's own pending ones aren't counted.
     pub reply_count: i64,
 }
 
@@ -247,10 +242,7 @@ pub async fn list(
     let roots = CommentDao::page_roots(pool, target.as_str(), target_id, viewer_uid, by_likes, page_size, page_index * page_size).await?;
     let root_ids: Vec<CommentId> = roots.iter().map(|x| x.id).collect();
     let replies = CommentDao::list_first_replies(pool, &root_ids, viewer_uid, FIRST_REPLIES).await?;
-    let reply_counts: HashMap<CommentId, i64> = CommentDao::count_replies(pool, &root_ids, viewer_uid).await?
-        .into_iter()
-        .map(|x| (x.root_id, x.count))
-        .collect();
+    let reply_counts: HashMap<CommentId, i64> = roots.iter().map(|x| (x.id, x.visible_reply_count as i64)).collect();
     let total = CommentDao::count_published_by_target(pool, target.as_str(), target_id).await?;
 
     let mut replies_by_root: HashMap<CommentId, Vec<CommentItem>> = HashMap::new();
@@ -290,7 +282,7 @@ pub async fn list_replies(
     };
     load_visible_target(pool, target, root.target_id, viewer_uid).await?;
     let replies = CommentDao::page_replies(pool, root_id, viewer_uid, page_size, page_index * page_size).await?;
-    let total = CommentDao::count_replies(pool, &[root_id], viewer_uid).await?.first().map(|x| x.count).unwrap_or(0);
+    let total = CommentDao::count_replies(pool, root_id, viewer_uid).await?;
     Ok(ReplyPage { total, replies: to_items(pool, replies, viewer_uid).await? })
 }
 
@@ -323,7 +315,7 @@ pub async fn create(
         None => (None, target_info.owner_uid),
         Some(reply_to_id) => {
             let parent = CommentDao::get_by_id(pool, reply_to_id).await?
-                .filter(|x| is_public(x) && x.target_type == target.as_str() && x.target_id == target_id);
+                .filter(|x| x.is_visible() && x.target_type == target.as_str() && x.target_id == target_id);
             let Some(parent) = parent else {
                 return business(CommentError::CommentNotFound);
             };
@@ -358,6 +350,7 @@ pub async fn create(
         status: STATUS_PUBLISHED.to_string(),
         is_hidden: false,
         like_count: 0,
+        visible_reply_count: 0,
         delete_time: None,
         create_time: now,
         update_time: now,
@@ -375,10 +368,13 @@ pub async fn create(
             }
             None => {
                 comment.status = STATUS_PENDING.to_string();
-                CommentDao::update_status(&mut *tx, comment.id, STATUS_PENDING, now).await?;
+                CommentDao::update_visibility(&mut *tx, &comment).await?;
                 content_review::enqueue(&mut tx, target.subject(), comment.id.0, now).await?;
             }
         }
+    }
+    if let Some(root_id) = comment.root_id && comment.is_visible() {
+        CommentDao::add_visible_reply_count(&mut *tx, root_id, 1).await?;
     }
     tx.commit().await?;
     Ok(to_items(pool, vec![comment], Some(uid)).await?.remove(0))
@@ -399,13 +395,15 @@ pub async fn delete(pool: &PgPool, uid: UserId, comment_id: CommentId) -> Servic
             return business(CommentError::PermissionDenied);
         }
     }
-    CommentDao::update_delete_time(pool, comment_id, Utc::now()).await?;
+    let mut tx = pool.begin().await?;
+    change_visibility(&mut tx, comment_id, |x| x.delete_time = Some(Utc::now())).await?;
+    tx.commit().await?;
     Ok(())
 }
 
 /// Likes a public comment. Liking it again does nothing.
 pub async fn like(pool: &PgPool, uid: UserId, comment_id: CommentId) -> ServiceResult<(), CommentError> {
-    if !CommentDao::get_by_id(pool, comment_id).await?.is_some_and(|x| is_public(&x)) {
+    if !CommentDao::get_by_id(pool, comment_id).await?.is_some_and(|x| x.is_visible()) {
         return business(CommentError::CommentNotFound);
     }
     let mut tx = pool.begin().await?;
@@ -440,12 +438,33 @@ pub async fn load_pending(pool: &PgPool, comment_id: CommentId) -> sqlx::Result<
 /// Publishes a pending comment, or rejects it.
 pub async fn settle_pending(pool: &PgPool, comment_id: CommentId, publish: bool) -> sqlx::Result<()> {
     let status = if publish { STATUS_PUBLISHED } else { STATUS_REJECTED };
-    CommentDao::update_status(pool, comment_id, status, Utc::now()).await
+    let mut tx = pool.begin().await?;
+    change_visibility(&mut tx, comment_id, |x| x.status = status.to_string()).await?;
+    tx.commit().await
 }
 
 /// Hides or shows a comment, for report decisions.
 pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId, hidden: bool) -> sqlx::Result<()> {
-    CommentDao::update_hidden(&mut **tx, comment_id, hidden, Utc::now()).await
+    change_visibility(tx, comment_id, |x| x.is_hidden = hidden).await
+}
+
+/// Changes what decides whether a comment is visible, through `change`, and keeps its root's
+/// derived [Comment::visible_reply_count] in step in the same transaction. Every change to the
+/// status, `is_hidden` or `delete_time` of a saved comment goes through here. Does nothing if
+/// there's no such comment.
+async fn change_visibility(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId, change: impl FnOnce(&mut Comment)) -> sqlx::Result<()> {
+    // Locked, so two changes at once can't both count the same change
+    let Some(before) = CommentDao::get_by_id_for_update(&mut **tx, comment_id).await? else {
+        return Ok(());
+    };
+    let mut after = before.clone();
+    change(&mut after);
+    after.update_time = Utc::now();
+    CommentDao::update_visibility(&mut **tx, &after).await?;
+    if let Some(root_id) = after.root_id && before.is_visible() != after.is_visible() {
+        CommentDao::add_visible_reply_count(&mut **tx, root_id, if after.is_visible() { 1 } else { -1 }).await?;
+    }
+    Ok(())
 }
 
 /// What a received reply is on.

@@ -1,7 +1,7 @@
 //! Comments as report targets.
 
 use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
-use crate::db::comment::{CommentDao, CommentId, STATUS_PUBLISHED};
+use crate::db::comment::{CommentDao, CommentId};
 use crate::service::comment::{self, CommentTarget};
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::web::state::AppState;
@@ -70,7 +70,7 @@ impl UgcAdapter for CommentAdapter {
         };
         Ok(Some(UgcTarget {
             owner_uid: x.user_id,
-            is_public: x.status == STATUS_PUBLISHED && !x.is_hidden && x.delete_time.is_none(),
+            is_public: x.is_visible(),
             is_hidden: x.is_hidden,
             preview: UgcPreview::Comment(CommentPreview { content: x.content, on }),
         }))
