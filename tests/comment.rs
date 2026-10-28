@@ -146,6 +146,7 @@ async fn comments_replies_and_likes() {
         // And can't be replied to or liked any more
         assert_eq!(post(&env, song_id, "还在吗", Some(first.id)).await.unwrap_err(), "comment_not_found");
         assert_eq!(act(&env, "like", first.id).await.unwrap_err(), "comment_not_found");
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -206,6 +207,7 @@ async fn invalid_comments_are_refused() {
         // Banned users can't comment
         sqlx::query("UPDATE users SET is_banned = TRUE WHERE id = $1").bind(user.uid).execute(&env.pool).await.unwrap();
         assert_eq!(post(&env, song_id, "好听", None).await.unwrap_err(), "user_banned");
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -224,6 +226,7 @@ async fn hidden_songs_hide_their_comments() {
         assert_eq!(post(&env, song_id, "还在吗", None).await.unwrap_err(), "target_not_found");
         login(&mut env, &owner);
         assert_eq!(list(&env, song_id, "hot").await.unwrap().threads.len(), 1);
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -248,6 +251,7 @@ async fn comments_are_limited_per_hour() {
                 status: STATUS_PUBLISHED.into(),
                 is_hidden: false,
                 like_count: 0,
+                visible_reply_count: 0,
                 // Deleted ones count too
                 delete_time: Some(now),
                 create_time: now,
@@ -262,6 +266,35 @@ async fn comments_are_limited_per_hour() {
 
 async fn summary(env: &TestEnvironment) -> SummaryResp {
     env.api.get("/message/summary").await.parse_resp().await.unwrap()
+}
+
+/// The derived counts on comments agree with what they count.
+async fn assert_counts_match(env: &TestEnvironment) {
+    assert!(CommentDao::list_miscounted(&env.pool).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn drifted_counts_can_be_recounted() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _) = new_song(&mut env, &contributor).await;
+        let user = with_new_random_test_user(&mut env).await;
+        login(&mut env, &user);
+        let root = post(&env, song_id, "好听", None).await.unwrap();
+        wait_lock().await;
+        post(&env, song_id, "同意", Some(root.id)).await.unwrap();
+        act(&env, "like", root.id).await.unwrap();
+        assert_counts_match(&env).await;
+
+        sqlx::query("UPDATE comments SET like_count = 5, visible_reply_count = 0 WHERE id = $1")
+            .bind(root.id.0).execute(&env.pool).await.unwrap();
+        let miscounted = CommentDao::list_miscounted(&env.pool).await.unwrap();
+        assert_eq!(miscounted.len(), 1);
+        assert_eq!((miscounted[0].likes, miscounted[0].visible_replies), (1, 1));
+
+        CommentDao::recount(&env.pool, &[root.id]).await.unwrap();
+        assert_counts_match(&env).await;
+    }).await
 }
 
 async fn received_replies(env: &TestEnvironment) -> ReceivedRepliesResp {
@@ -319,6 +352,7 @@ async fn replies_reach_the_message_center() {
         act(&env, "delete", reply.id).await.unwrap();
         login(&mut env, &alice);
         assert!(received_replies(&env).await.items.is_empty());
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -327,8 +361,8 @@ async fn unread_replies_are_counted_up_to_a_hundred() {
     with_test_environment(|env| async move {
         let (owner, other) = (UserId(1), UserId(2));
         sqlx::query(
-            "INSERT INTO comments (target_type, target_id, user_id, reply_to_uid, content, status, is_hidden, like_count, create_time, update_time)
-            SELECT 'song', 1, $2, $1, 'x', 'published', false, 0, now(), now() FROM generate_series(1, 150)"
+            "INSERT INTO comments (target_type, target_id, user_id, reply_to_uid, content, status, is_hidden, like_count, visible_reply_count, create_time, update_time)
+            SELECT 'song', 1, $2, $1, 'x', 'published', false, 0, 0, now(), now() FROM generate_series(1, 150)"
         ).bind(owner.0).bind(other.0).execute(&env.pool).await.unwrap();
 
         let since = Utc::now() - Duration::days(1);
@@ -388,6 +422,7 @@ async fn reported_comments_can_be_hidden() {
         assert_eq!(intent["action"], "song.comment.view");
         assert_eq!(intent["data"]["comment_id"], comment.id.0);
         assert!(intent["data"]["song_display_id"].as_str().is_some_and(|x| !x.is_empty()));
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -493,6 +528,7 @@ async fn waiting_comments_are_checked_again() {
         assert_eq!(root_ids(&mine), [bad.id, good.id]);
         assert_eq!(mine.threads[0].comment.status, "rejected");
         assert_eq!(mine.total, 1);
+        assert_counts_match(&env).await;
     }).await
 }
 
@@ -528,6 +564,7 @@ async fn comments_that_cant_be_checked_for_a_day_are_published() {
         assert!(out.contains(r#"content_review_settled_total{subject="song.comment",outcome="gave_up"} 1"#), "{out}");
         assert!(out.contains(r#"content_review_pending{subject="song.comment"} 0"#), "{out}");
         assert!(out.contains(r#"content_review_oldest_pending_seconds{subject="song.comment"} 0"#), "{out}");
+        assert_counts_match(&env).await;
     }}).await
 }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id = ANY($1)",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id IN (\n                SELECT r.id FROM UNNEST($1::bigint[]) AS root(id)\n                CROSS JOIN LATERAL (\n                    SELECT c.id FROM comments c\n                    WHERE c.root_id = root.id AND c.delete_time IS NULL\n                        AND ((c.status = 'published' AND NOT c.is_hidden) OR c.user_id = $2)\n                    ORDER BY c.id LIMIT $3\n                ) r\n            )\n            ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -126,6 +126,17 @@
       },
       {
         "ordinal": 11,
+        "name": "visible_reply_count",
+        "type_info": "Int4",
+        "origin": {
+          "Table": {
+            "table": "comments",
+            "name": "visible_reply_count"
+          }
+        }
+      },
+      {
+        "ordinal": 12,
         "name": "delete_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -136,7 +147,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +158,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -160,7 +171,9 @@
     ],
     "parameters": {
       "Left": [
-        "Int8Array"
+        "Int8Array",
+        "Int8",
+        "Int8"
       ]
     },
     "nullable": [
@@ -175,10 +188,11 @@
       false,
       false,
       false,
+      false,
       true,
       false,
       false
     ]
   },
-  "hash": "fe9c723c592edd78c1eff1a349dc1b7953e338be2624a207a0c8d12aadbeb770"
+  "hash": "29eed3305bb44e78d8df481a9b658379e1083351e32e43bf791b9d23cfa4eec8"
 }
