@@ -3,7 +3,7 @@ use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::service::committee;
 use crate::service::errors::ServiceError;
 use crate::service::report::{self, CaseSummary, Decision, ReportError, Verdict};
-use crate::service::ugc::{Preview, UgcKind, UgcPreview, UgcTarget};
+use crate::service::ugc::{UgcKind, UgcPreview, UgcTarget};
 use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -107,12 +107,6 @@ pub struct TargetInfo {
     /// How the target looks, by its kind, with `type` naming the kind.
     /// @since 261021
     pub preview: UgcPreview,
-    /// Deprecated: read `preview`. Song title, playlist name, username or comment text.
-    pub title: String,
-    /// Deprecated: read `preview`. For a comment, the cover of the song it's on.
-    pub cover_url: Option<String>,
-    /// Deprecated: read `preview`. Song display id, also for a comment on a song; empty otherwise.
-    pub display_id: String,
     pub owner: Option<UserBrief>,
 }
 
@@ -373,13 +367,9 @@ fn case_item(x: CaseSummary, users: &HashMap<UserId, UserBrief>) -> CaseItem {
 }
 
 fn target_info(t: UgcTarget, users: &HashMap<UserId, UserBrief>) -> TargetInfo {
-    let legacy = t.preview.legacy_card();
     TargetInfo {
         owner: users.get(&t.owner_uid).cloned(),
         preview: t.preview,
-        title: legacy.title,
-        cover_url: legacy.cover_url,
-        display_id: legacy.display_id,
     }
 }
 

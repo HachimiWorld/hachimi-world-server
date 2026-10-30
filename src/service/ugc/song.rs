@@ -1,6 +1,6 @@
 //! Songs as report targets.
 
-use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::song::{Song, SongDao, SongId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
@@ -32,10 +32,6 @@ pub struct SongPreview {
 impl Preview for SongPreview {
     fn headline(&self) -> &str {
         &self.title
-    }
-
-    fn legacy_card(&self) -> LegacyCard {
-        LegacyCard { title: self.title.clone(), cover_url: Some(self.cover_url.clone()), display_id: self.display_id.clone() }
     }
 }
 

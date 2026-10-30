@@ -1,6 +1,6 @@
 //! Playlists as report targets.
 
-use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::playlist::{PlaylistDao, PlaylistId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
@@ -30,10 +30,6 @@ pub struct PlaylistPreview {
 impl Preview for PlaylistPreview {
     fn headline(&self) -> &str {
         &self.name
-    }
-
-    fn legacy_card(&self) -> LegacyCard {
-        LegacyCard { title: self.name.clone(), cover_url: self.cover_url.clone(), display_id: String::new() }
     }
 }
 

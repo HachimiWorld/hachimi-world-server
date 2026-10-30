@@ -673,9 +673,9 @@ async fn posts_can_be_commented() {
         let detail: CaseResp = env.api.get_query("/report/case", &CaseReq { target_type: "comment".into(), target_id: comment.id.0 }).await
             .parse_resp().await.unwrap();
         let target = detail.case.target.unwrap();
-        let UgcPreview::Comment(CommentPreview { on: Some(on), .. }) = target.preview else { panic!("Not a comment on something: {:?}", target.preview) };
+        let UgcPreview::Comment(CommentPreview { content, on: Some(on), .. }) = target.preview else { panic!("Not a comment on something: {:?}", target.preview) };
         assert!(matches!(*on, UgcPreview::Post(ref p) if p.id == post_id));
-        assert_eq!(target.title, "终于有评论了");
+        assert_eq!(content, "终于有评论了");
         let _: ResolveResp = env.api.post("/report/resolve", &ResolveReq {
             target_type: "comment".into(),
             target_id: comment.id.0,

@@ -1,6 +1,6 @@
 //! Comments as report targets.
 
-use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::comment::{CommentDao, CommentId};
 use crate::service::comment::{self, CommentTarget};
 use crate::service::notification::to_plain_text;
@@ -31,12 +31,6 @@ pub struct CommentPreview {
 impl Preview for CommentPreview {
     fn headline(&self) -> &str {
         &self.content
-    }
-
-    /// The comment's text over the card of what it's on.
-    fn legacy_card(&self) -> LegacyCard {
-        let on = self.on.as_ref().map(|x| x.legacy_card()).unwrap_or_default();
-        LegacyCard { title: self.content.clone(), ..on }
     }
 }
 

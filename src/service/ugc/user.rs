@@ -1,6 +1,6 @@
 //! Users as report targets: their profile is the content.
 
-use super::{ContentAction, LegacyCard, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
+use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::user::{UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
@@ -37,10 +37,6 @@ pub struct UserPreview {
 impl Preview for UserPreview {
     fn headline(&self) -> &str {
         &self.username
-    }
-
-    fn legacy_card(&self) -> LegacyCard {
-        LegacyCard { title: self.username.clone(), cover_url: self.avatar_url.clone(), display_id: String::new() }
     }
 }
 

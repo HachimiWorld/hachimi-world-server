@@ -88,18 +88,6 @@ pub enum UgcPreview {
 pub trait Preview {
     /// The main line: a song's title, a playlist's name, a username or a comment's text.
     fn headline(&self) -> &str;
-
-    /// The flat fields report clients read before 261021, until they read the preview.
-    fn legacy_card(&self) -> LegacyCard;
-}
-
-/// The report target fields clients read before 261021.
-#[derive(Debug, Clone, Default)]
-pub struct LegacyCard {
-    pub title: String,
-    pub cover_url: Option<String>,
-    /// A song's display id, also for a comment on a song; empty otherwise.
-    pub display_id: String,
 }
 
 /// Something a decision can do to the content, declared by the kind's adapter. The report flow

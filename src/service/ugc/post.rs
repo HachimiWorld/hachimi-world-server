@@ -1,7 +1,7 @@
 //! How posts look where something on a post shows it. Posts can't be reported, so there is no
 //! adapter here.
 
-use super::{LegacyCard, Preview, UgcPreview};
+use super::{Preview, UgcPreview};
 use crate::db::post::Post;
 use serde::{Deserialize, Serialize};
 
@@ -16,10 +16,6 @@ pub struct PostPreview {
 impl Preview for PostPreview {
     fn headline(&self) -> &str {
         &self.title
-    }
-
-    fn legacy_card(&self) -> LegacyCard {
-        LegacyCard { title: self.title.clone(), cover_url: self.cover_url.clone(), display_id: String::new() }
     }
 }
 
