@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3\n                AND delete_time IS NULL AND (status <> 'published' OR is_hidden) AND visible_reply_count = 0\n            ORDER BY id DESC",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id = ANY($1)",
   "describe": {
     "columns": [
       {
@@ -93,17 +93,6 @@
       },
       {
         "ordinal": 8,
-        "name": "status",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "comments",
-            "name": "status"
-          }
-        }
-      },
-      {
-        "ordinal": 9,
         "name": "is_hidden",
         "type_info": "Bool",
         "origin": {
@@ -114,7 +103,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "like_count",
         "type_info": "Int4",
         "origin": {
@@ -125,7 +114,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "visible_reply_count",
         "type_info": "Int4",
         "origin": {
@@ -136,7 +125,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "delete_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +136,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -158,7 +147,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -171,9 +160,7 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
-        "Int8",
-        "Int8"
+        "Int8Array"
       ]
     },
     "nullable": [
@@ -188,11 +175,10 @@
       false,
       false,
       false,
-      false,
       true,
       false,
       false
     ]
   },
-  "hash": "e13b23d49eeb2b08a331b81651de2007f2348028d7379b65b85ad5bdb1881b42"
+  "hash": "5af55848c7998f9275e96971952f4ffcf85d7340f536322d438d3e8f6c82d3a1"
 }

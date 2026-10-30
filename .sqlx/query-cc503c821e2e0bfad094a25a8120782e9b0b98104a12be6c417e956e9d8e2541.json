@@ -1,12 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE comments SET status = $2, is_hidden = $3, delete_time = $4, update_time = $5 WHERE id = $1",
+  "query": "UPDATE comments SET is_hidden = $2, delete_time = $3, update_time = $4 WHERE id = $1",
   "describe": {
     "columns": [],
     "parameters": {
       "Left": [
         "Int8",
-        "Text",
         "Bool",
         "Timestamptz",
         "Timestamptz"
@@ -14,5 +13,5 @@
     },
     "nullable": []
   },
-  "hash": "3d8f650c44db77f48a8b87cc40e0564162f7facc16b4d303997a5a7dc976ef70"
+  "hash": "cc503c821e2e0bfad094a25a8120782e9b0b98104a12be6c417e956e9d8e2541"
 }

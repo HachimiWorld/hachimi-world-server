@@ -1,5 +1,7 @@
+use crate::db::user::UserId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use sqlx::PgExecutor;
 
 macro_rules! query_content_reviews {
@@ -10,6 +12,8 @@ macro_rules! query_content_reviews {
                 id,
                 subject,
                 target_id,
+                actor_uid as "actor_uid: _",
+                payload,
                 attempt_count,
                 available_time,
                 done_time,
@@ -29,8 +33,12 @@ pub struct ContentReview {
     pub id: i64,
     /// The content check subject, such as `song.comment`.
     pub subject: String,
-    /// The content, such as the comment id.
+    /// The id the content will have once saved, such as the comment id.
     pub target_id: i64,
+    /// Who submitted it.
+    pub actor_uid: UserId,
+    /// The content, in the shape its kind defines, saved to its own table once it passes.
+    pub payload: Value,
     pub attempt_count: i32,
     /// Not tried before this.
     pub available_time: DateTime<Utc>,
@@ -54,9 +62,10 @@ impl ContentReviewDao {
     /// The `id` of `value` is ignored; returns the new id.
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &ContentReview) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
-            "INSERT INTO content_reviews (subject, target_id, attempt_count, available_time, done_time, last_error, create_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
-            value.subject, value.target_id, value.attempt_count, value.available_time, value.done_time, value.last_error, value.create_time
+            "INSERT INTO content_reviews (subject, target_id, actor_uid, payload, attempt_count, available_time, done_time, last_error, create_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
+            value.subject, value.target_id, value.actor_uid as UserId, value.payload, value.attempt_count, value.available_time,
+            value.done_time, value.last_error, value.create_time
         ).fetch_one(executor).await
     }
 
@@ -84,12 +93,22 @@ impl ContentReviewDao {
         ).fetch_all(executor).await
     }
 
+    /// Not done, submitted by `actor_uid` with one of `subjects` after `after`.
+    pub async fn count_pending_by_actor_after<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, subjects: &[&str], after: DateTime<Utc>) -> sqlx::Result<i64> {
+        let subjects: Vec<String> = subjects.iter().map(|x| x.to_string()).collect();
+        sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!" FROM content_reviews
+            WHERE actor_uid = $1 AND create_time > $2 AND done_time IS NULL AND subject = ANY($3)"#,
+            actor_uid as UserId, after, &subjects
+        ).fetch_one(executor).await
+    }
+
     pub async fn list_by_subject_and_target<'e>(executor: impl PgExecutor<'e>, subject: &str, target_id: i64) -> sqlx::Result<Vec<ContentReview>> {
         query_content_reviews!("WHERE subject = $1 AND target_id = $2 ORDER BY id", subject, target_id)
             .fetch_all(executor).await
     }
 
-    /// Writes everything except the subject, the target and the create time.
+    /// Writes everything except the subject, the target, the actor, the payload and the create time.
     pub async fn update<'e>(executor: impl PgExecutor<'e>, value: &ContentReview) -> sqlx::Result<()> {
         sqlx::query!(
             "UPDATE content_reviews SET attempt_count = $2, available_time = $3, done_time = $4, last_error = $5 WHERE id = $1",

@@ -680,7 +680,7 @@
       "id": 13,
       "type": "timeseries",
       "title": "Rechecks by outcome",
-      "description": "Held-back content as its review ends, per minute. gave_up: published unchecked after 24 hours (alert); unchecked: published because checks are off; gone: deleted before it was checked.",
+      "description": "Held-back content as its review ends, per minute. gave_up: published unchecked after 24 hours (alert); unchecked: published because checks are off.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

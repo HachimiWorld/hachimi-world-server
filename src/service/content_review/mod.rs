@@ -1,10 +1,11 @@
 //! Content checked again in the background, because TypeSafe couldn't judge it when it was
 //! submitted. Only content that must not pass unchecked comes here, which so far is comments; the
-//! content waits unpublished, seen only by its author.
+//! content waits here, seen by no one, its author included.
 //!
-//! The content stays in its own table. Each kind of content that can wait here has an adapter
-//! (`comment.rs`) that reads the waiting text and settles it once judged; this module only keeps
-//! the queue and retries with backoff, and knows no kind by name. Content that still can't be
+//! The content waits in the review's payload and is saved to its own table once it passes; blocked
+//! content is dropped. Each kind of content that can wait here has an adapter (`comment.rs`) that
+//! reads its payload and saves it; this module only keeps the queue and retries with backoff, and
+//! knows no kind by name. Content that still can't be
 //! checked after [GIVE_UP_AFTER] is published, as there is no one to judge it by hand yet; a wrong
 //! pass can still be reported.
 //!
@@ -27,6 +28,7 @@ use crate::web::state::AppState;
 use chrono::{DateTime, Duration, Utc};
 use enum_dispatch::enum_dispatch;
 use metrics::{counter, gauge};
+use serde_json::Value;
 use sqlx::{PgPool, Postgres, Transaction};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -59,12 +61,12 @@ pub trait ReviewAdapter {
     /// The content check subjects this kind's content is checked as, also stored in the queue.
     fn subjects(&self) -> Vec<&'static str>;
 
-    /// Who wrote the content and its text, if it still waits. None if it was deleted or settled
-    /// some other way, which ends its review.
-    async fn load_pending(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<(UserId, String)>>;
+    /// The text to check, from the payload the content waits in.
+    fn text(&self, payload: &Value) -> serde_json::Result<String>;
 
-    /// Publishes the content if `pass`, or rejects it.
-    async fn settle(&self, pool: &PgPool, id: i64, pass: bool) -> sqlx::Result<()>;
+    /// Saves the content in its payload to its own table, in `tx`, the transaction that ends its
+    /// review, once it passed.
+    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()>;
 }
 
 impl ReviewKind {
@@ -73,12 +75,22 @@ impl ReviewKind {
     }
 }
 
-/// Adds content to check again in `tx`, the transaction that saves it as waiting.
-pub async fn enqueue(tx: &mut Transaction<'_, Postgres>, subject: &str, target_id: i64, now: DateTime<Utc>) -> sqlx::Result<()> {
+/// Adds content to check again, waiting in `payload`, the shape its kind's adapter reads.
+/// `target_id` is the id the content will have once saved.
+pub async fn enqueue(
+    tx: &mut Transaction<'_, Postgres>,
+    subject: &str,
+    target_id: i64,
+    actor_uid: UserId,
+    payload: Value,
+    now: DateTime<Utc>,
+) -> sqlx::Result<()> {
     ContentReviewDao::insert(&mut **tx, &ContentReview {
         id: 0,
         subject: subject.to_string(),
         target_id,
+        actor_uid,
+        payload,
         attempt_count: 0,
         available_time: now + retry_delay(0),
         done_time: None,
@@ -177,8 +189,6 @@ enum Outcome {
     GaveUp,
     /// Published unchecked because checks are off.
     Unchecked,
-    /// Deleted, or settled some other way, before it was checked.
-    Gone,
 }
 
 fn record_settled(subject: &str, outcome: Outcome) {
@@ -194,48 +204,50 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
         ContentReviewDao::update(pool, &review).await?;
         return Ok(());
     };
-    let Some((actor_uid, text)) = kind.load_pending(pool, review.target_id).await? else {
-        // Deleted, or settled some other way
-        review.done_time = Some(now);
-        ContentReviewDao::update(pool, &review).await?;
-        record_settled(&review.subject, Outcome::Gone);
-        return Ok(());
+    let text = match kind.text(&review.payload) {
+        Ok(x) => x,
+        Err(e) => {
+            // Likely written by a version whose payload this one can't read; leave it for one that can
+            error!(id = review.id, subject = review.subject, "Unreadable content review payload: {e}");
+            review.available_time = now + Duration::hours(1);
+            review.last_error = Some(format!("Unreadable payload: {e}"));
+            ContentReviewDao::update(pool, &review).await?;
+            return Ok(());
+        }
     };
 
     review.attempt_count += 1;
     let verdict = match checker {
-        Some(checker) => checker.try_check_text(pool, &review.subject, actor_uid, review.target_id, &text).await?,
+        Some(checker) => checker.try_check_text(pool, &review.subject, review.actor_uid, review.target_id, &text).await?,
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
         None => Some(Verdict::Pass),
     };
-    let outcome = match verdict {
-        Some(verdict) => {
-            kind.settle(pool, review.target_id, verdict == Verdict::Pass).await?;
-            review.done_time = Some(now);
-            review.last_error = None;
-            Some(match (checker, verdict) {
-                (None, _) => Outcome::Unchecked,
-                (Some(_), Verdict::Pass) => Outcome::Pass,
-                (Some(_), _) => Outcome::Block,
-            })
-        }
-        None if now - review.create_time >= GIVE_UP_AFTER => {
+    let outcome = match (checker, verdict) {
+        (None, _) => Outcome::Unchecked,
+        (Some(_), Some(Verdict::Pass)) => Outcome::Pass,
+        (Some(_), Some(Verdict::Blocked(_))) => Outcome::Block,
+        (Some(_), None) if now - review.create_time >= GIVE_UP_AFTER => {
             warn!(id = review.id, subject = review.subject, "Publishing content that couldn't be checked for {} attempts", review.attempt_count);
-            kind.settle(pool, review.target_id, true).await?;
-            review.done_time = Some(now);
-            review.last_error = Some("Gave up checking and published".to_string());
-            Some(Outcome::GaveUp)
+            Outcome::GaveUp
         }
-        None => {
+        (Some(_), None) => {
             review.available_time = now + retry_delay(review.attempt_count);
             review.last_error = Some("The content check failed; see content_checks".to_string());
-            None
+            ContentReviewDao::update(pool, &review).await?;
+            return Ok(());
         }
     };
-    ContentReviewDao::update(pool, &review).await?;
-    if let Some(outcome) = outcome {
-        record_settled(&review.subject, outcome);
+
+    // Saved and ended together, so a crash can't save it twice
+    let mut tx = pool.begin().await?;
+    if outcome != Outcome::Block {
+        kind.publish(&mut tx, &review.payload).await?;
     }
+    review.done_time = Some(now);
+    review.last_error = (outcome == Outcome::GaveUp).then(|| "Gave up checking and published".to_string());
+    ContentReviewDao::update(&mut *tx, &review).await?;
+    tx.commit().await?;
+    record_settled(&review.subject, outcome);
     Ok(())
 }
 

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE comments c SET\n                like_count = (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id),\n                visible_reply_count = (\n                    SELECT COUNT(*) FROM comments x\n                    WHERE x.root_id = c.id AND NOT x.is_hidden AND x.delete_time IS NULL\n                )\n            WHERE c.id = ANY($1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d5f5ea5bdb92ddf1baf32d5c922ca7f7076de6dcde7d34a46c2f46ac67e770de"
+}

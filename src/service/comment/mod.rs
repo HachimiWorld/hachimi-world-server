@@ -6,11 +6,14 @@
 //! owns it and who can see it, is in [CommentTarget]; something only one kind of target needs goes
 //! in a table of that kind, keyed by comment id.
 //!
-//! New comments are checked before they're published. One that can't be checked then waits as
-//! pending, seen only by its author, and [crate::service::content_review] checks it again.
+//! New comments are checked before they're saved. One that can't be checked then waits in
+//! [crate::service::content_review] as a [PendingComment], seen by no one, its author included,
+//! and is saved once it passes. Saved comments are seen by everyone who can see their target,
+//! unless hidden by a report decision or deleted.
 
-use crate::db::comment::{Comment, CommentDao, CommentId, CommentLikeDao, STATUS_PENDING, STATUS_PUBLISHED, STATUS_REJECTED};
+use crate::db::comment::{Comment, CommentDao, CommentId, CommentLikeDao};
 use crate::db::content_check::ContentCheckDao;
+use crate::db::content_review::ContentReviewDao;
 use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::db::CrudDao;
 use crate::service::content_check::{ContentChecker, Verdict};
@@ -131,11 +134,6 @@ fn business<T>(e: CommentError) -> ServiceResult<T, CommentError> {
     Err(ServiceError::BusinessError(e))
 }
 
-/// Seen by `viewer_uid` with its content: visible to everyone, or their own and not deleted.
-fn is_shown_to(comment: &Comment, viewer_uid: Option<UserId>) -> bool {
-    comment.is_visible() || (comment.delete_time.is_none() && viewer_uid == Some(comment.user_id))
-}
-
 /// @since 261021
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommentUser {
@@ -161,10 +159,6 @@ pub struct CommentItem {
     pub author: Option<CommentUser>,
     /// Empty when `removed`.
     pub content: String,
-    /// `published`; `pending` or `rejected` only for the viewer's own comments.
-    pub status: String,
-    /// Hidden by a report decision; only the viewer's own comments show it.
-    pub is_hidden: bool,
     /// Deleted or hidden, kept only so its replies have a place. Shown as "this comment was removed".
     pub removed: bool,
     pub like_count: i32,
@@ -180,7 +174,7 @@ pub struct CommentThread {
     pub comment: CommentItem,
     /// Oldest first.
     pub replies: Vec<CommentItem>,
-    /// Replies visible to everyone; the viewer's own pending ones aren't counted.
+    /// Visible replies.
     pub reply_count: i64,
 }
 
@@ -207,7 +201,7 @@ pub(crate) async fn to_items(pool: &PgPool, comments: Vec<Comment>, viewer_uid: 
     };
 
     Ok(comments.into_iter().map(|x| {
-        let removed = !is_shown_to(&x, viewer_uid);
+        let removed = !x.is_visible();
         CommentItem {
             id: x.id,
             target_type: x.target_type,
@@ -217,8 +211,6 @@ pub(crate) async fn to_items(pool: &PgPool, comments: Vec<Comment>, viewer_uid: 
             reply_to_user: reply_to_uids.get(&x.id).and_then(|uid| users.get(uid)).cloned(),
             author: if removed { None } else { users.get(&x.user_id).cloned() },
             content: if removed { String::new() } else { x.content },
-            status: if removed { STATUS_PUBLISHED.to_string() } else { x.status },
-            is_hidden: !removed && x.is_hidden,
             removed,
             like_count: x.like_count,
             liked: liked.contains(&x.id),
@@ -235,13 +227,12 @@ async fn load_visible_target(pool: &PgPool, target: CommentTarget, target_id: i6
 }
 
 pub struct CommentPage {
-    /// Published comments and replies on the target.
+    /// Visible comments and replies on the target.
     pub total: i64,
     pub threads: Vec<CommentThread>,
 }
 
-/// Top-level comments on a target, most liked first if `by_likes`, else newest first. The first
-/// page starts with the viewer's own that no one else sees, so it can hold more than `page_size`.
+/// Top-level comments on a target, most liked first if `by_likes`, else newest first.
 pub async fn list(
     pool: &PgPool,
     viewer_uid: Option<UserId>,
@@ -252,16 +243,11 @@ pub async fn list(
     page_size: i64,
 ) -> ServiceResult<CommentPage, CommentError> {
     load_visible_target(pool, target, target_id, viewer_uid).await?;
-    // The viewer's own comments that no one else sees come first on the first page
-    let mut roots = match viewer_uid {
-        Some(uid) if page_index == 0 => CommentDao::list_author_only_roots(pool, target.as_str(), target_id, uid).await?,
-        _ => vec![],
-    };
-    roots.extend(CommentDao::page_roots(pool, target.as_str(), target_id, by_likes, page_size, page_index * page_size).await?);
+    let roots = CommentDao::page_roots(pool, target.as_str(), target_id, by_likes, page_size, page_index * page_size).await?;
     let root_ids: Vec<CommentId> = roots.iter().map(|x| x.id).collect();
-    let replies = CommentDao::list_first_replies(pool, &root_ids, viewer_uid, FIRST_REPLIES).await?;
+    let replies = CommentDao::list_first_replies(pool, &root_ids, FIRST_REPLIES).await?;
     let reply_counts: HashMap<CommentId, i64> = roots.iter().map(|x| (x.id, x.visible_reply_count as i64)).collect();
-    let total = CommentDao::count_published_by_target(pool, target.as_str(), target_id).await?;
+    let total = CommentDao::count_visible_by_target(pool, target.as_str(), target_id).await?;
 
     let mut replies_by_root: HashMap<CommentId, Vec<CommentItem>> = HashMap::new();
     for reply in to_items(pool, replies, viewer_uid).await? {
@@ -278,7 +264,7 @@ pub async fn list(
 }
 
 pub struct ReplyPage {
-    /// All replies under the root the viewer can see.
+    /// Visible replies under the root.
     pub total: i64,
     /// Oldest first.
     pub replies: Vec<CommentItem>,
@@ -299,13 +285,13 @@ pub async fn list_replies(
         return business(CommentError::CommentNotFound);
     };
     load_visible_target(pool, target, root.target_id, viewer_uid).await?;
-    let replies = CommentDao::page_replies(pool, root_id, viewer_uid, page_size, page_index * page_size).await?;
-    let total = CommentDao::count_replies(pool, root_id, viewer_uid).await?;
-    Ok(ReplyPage { total, replies: to_items(pool, replies, viewer_uid).await? })
+    let replies = CommentDao::page_replies(pool, root_id, page_size, page_index * page_size).await?;
+    Ok(ReplyPage { total: root.visible_reply_count as i64, replies: to_items(pool, replies, viewer_uid).await? })
 }
 
 /// Posts a comment on a target, or a reply to `reply_to_id`. Checked first: blocked ones aren't
-/// saved, and ones that can't be checked now wait as pending.
+/// saved, and ones that can't be checked now wait to be checked again, seen by no one until they
+/// pass, and return `None`.
 #[allow(clippy::too_many_arguments)]
 pub async fn create(
     pool: &PgPool,
@@ -316,7 +302,7 @@ pub async fn create(
     target_id: i64,
     content: &str,
     reply_to_id: Option<CommentId>,
-) -> ServiceResult<CommentItem, CommentError> {
+) -> ServiceResult<Option<CommentItem>, CommentError> {
     let content = content.trim();
     if content.is_empty() {
         return business(CommentError::ContentEmpty);
@@ -348,7 +334,9 @@ pub async fn create(
     };
     let now = Utc::now().trunc_subsecs(6);
     let since = now - Duration::hours(1);
-    let mut count = CommentDao::count_by_user_after(pool, uid, since).await?;
+    let subjects: Vec<&str> = CommentTarget::iter().map(|x| x.subject()).collect();
+    let mut count = CommentDao::count_by_user_after(pool, uid, since).await?
+        + ContentReviewDao::count_pending_by_actor_after(pool, uid, &subjects, since).await?;
     if checker.is_some() {
         count += ContentCheckDao::count_blocked_by_actor_and_subject_since(pool, uid, target.subject(), since).await?;
     }
@@ -356,8 +344,8 @@ pub async fn create(
         return business(CommentError::RateLimited);
     }
 
-    let mut comment = Comment {
-        id: CommentId(0),
+    let pending = PendingComment {
+        id: CommentDao::next_id(pool).await?,
         target_type: target.as_str().to_string(),
         target_id,
         user_id: uid,
@@ -365,37 +353,79 @@ pub async fn create(
         reply_to_id,
         reply_to_uid,
         content: content.to_string(),
-        status: STATUS_PUBLISHED.to_string(),
+        create_time: now,
+    };
+    let verdict = match checker {
+        Some(checker) => checker.try_check_text(pool, target.subject(), uid, pending.id.0, content).await?,
+        None => Some(Verdict::Pass),
+    };
+    let mut tx = pool.begin().await?;
+    let saved = match verdict {
+        Some(Verdict::Pass) => Some(save(&mut tx, &pending).await?),
+        Some(Verdict::Blocked(_)) => return business(CommentError::Rejected),
+        None => {
+            let payload = serde_json::to_value(&pending)?;
+            content_review::enqueue(&mut tx, target.subject(), pending.id.0, uid, payload, now).await?;
+            None
+        }
+    };
+    tx.commit().await?;
+    Ok(match saved {
+        Some(comment) => Some(to_items(pool, vec![comment], Some(uid)).await?.remove(0)),
+        None => None,
+    })
+}
+
+/// A comment waiting for a content check, kept in its review's payload until it passes.
+///
+/// Old payloads stay in the queue across deploys, and a rollback or an older instance still
+/// running can read newer ones. So a field added later must have `#[serde(default)]` or be an
+/// `Option`, for payloads written before it; and must be safe to lose, as older code ignores it.
+/// Never add `#[serde(deny_unknown_fields)]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingComment {
+    pub id: CommentId,
+    pub target_type: String,
+    pub target_id: i64,
+    pub user_id: UserId,
+    pub root_id: Option<CommentId>,
+    pub reply_to_id: Option<CommentId>,
+    pub reply_to_uid: UserId,
+    pub content: String,
+    /// When it was posted, which it keeps once saved.
+    pub create_time: DateTime<Utc>,
+}
+
+/// Saves a comment that passed its content check, or was published without one, and counts it
+/// on its root.
+async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sqlx::Result<Comment> {
+    let comment = Comment {
+        id: pending.id,
+        target_type: pending.target_type.clone(),
+        target_id: pending.target_id,
+        user_id: pending.user_id,
+        root_id: pending.root_id,
+        reply_to_id: pending.reply_to_id,
+        reply_to_uid: pending.reply_to_uid,
+        content: pending.content.clone(),
         is_hidden: false,
         like_count: 0,
         visible_reply_count: 0,
         delete_time: None,
-        create_time: now,
-        update_time: now,
+        create_time: pending.create_time,
+        update_time: Utc::now(),
     };
-    // Inserted first so the check can name the comment, and rolled back if it's blocked. A blocked
-    // comment's check keeps an id that is never used.
-    let mut tx = pool.begin().await?;
-    comment.id = CommentDao::insert(&mut *tx, &comment).await?;
-    if let Some(checker) = checker {
-        match checker.try_check_text(pool, target.subject(), uid, comment.id.0, content).await? {
-            Some(Verdict::Pass) => {}
-            Some(Verdict::Blocked(_)) => {
-                tx.rollback().await?;
-                return business(CommentError::Rejected);
-            }
-            None => {
-                comment.status = STATUS_PENDING.to_string();
-                CommentDao::update_visibility(&mut *tx, &comment).await?;
-                content_review::enqueue(&mut tx, target.subject(), comment.id.0, now).await?;
-            }
-        }
+    CommentDao::insert(&mut **tx, &comment).await?;
+    if let Some(root_id) = comment.root_id {
+        CommentDao::add_visible_reply_count(&mut **tx, root_id, 1).await?;
     }
-    if let Some(root_id) = comment.root_id && comment.is_visible() {
-        CommentDao::add_visible_reply_count(&mut *tx, root_id, 1).await?;
-    }
-    tx.commit().await?;
-    Ok(to_items(pool, vec![comment], Some(uid)).await?.remove(0))
+    Ok(comment)
+}
+
+/// Saves a comment that waited for its content check, once it passes, in `tx`, the transaction
+/// that ends its review.
+pub async fn publish_pending(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sqlx::Result<()> {
+    save(tx, pending).await.map(|_| ())
 }
 
 /// Deletes a comment. Its author can, and so can the target's owner. Replies under a deleted
@@ -445,22 +475,6 @@ pub async fn unlike(pool: &PgPool, uid: UserId, comment_id: CommentId) -> Servic
     Ok(())
 }
 
-/// The author and text of a comment waiting for a content check; `None` if it no longer waits,
-/// such as when it was deleted.
-pub async fn load_pending(pool: &PgPool, comment_id: CommentId) -> sqlx::Result<Option<(UserId, String)>> {
-    Ok(CommentDao::get_by_id(pool, comment_id).await?
-        .filter(|x| x.status == STATUS_PENDING && x.delete_time.is_none())
-        .map(|x| (x.user_id, x.content)))
-}
-
-/// Publishes a pending comment, or rejects it.
-pub async fn settle_pending(pool: &PgPool, comment_id: CommentId, publish: bool) -> sqlx::Result<()> {
-    let status = if publish { STATUS_PUBLISHED } else { STATUS_REJECTED };
-    let mut tx = pool.begin().await?;
-    change_visibility(&mut tx, comment_id, |x| x.status = status.to_string()).await?;
-    tx.commit().await
-}
-
 /// Hides or shows a comment, for report decisions.
 pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId, hidden: bool) -> sqlx::Result<()> {
     change_visibility(tx, comment_id, |x| x.is_hidden = hidden).await
@@ -468,7 +482,7 @@ pub async fn set_hidden(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId,
 
 /// Changes what decides whether a comment is visible, through `change`, and keeps its root's
 /// derived [Comment::visible_reply_count] in step in the same transaction. Every change to the
-/// status, `is_hidden` or `delete_time` of a saved comment goes through here. Does nothing if
+/// `is_hidden` or `delete_time` of a saved comment goes through here. Does nothing if
 /// there's no such comment.
 async fn change_visibility(tx: &mut sqlx::PgTransaction<'_>, comment_id: CommentId, change: impl FnOnce(&mut Comment)) -> sqlx::Result<()> {
     // Locked, so two changes at once can't both count the same change
@@ -506,10 +520,10 @@ pub struct ReceivedReplyItem {
     pub replied_content: Option<String>,
 }
 
-/// How many comments replying to `uid` or on what they own others published after `after`, up to
-/// [MAX_UNREAD_REPLIES].
+/// How many visible comments replying to `uid` or on what they own others posted after `after`, up
+/// to [MAX_UNREAD_REPLIES].
 pub async fn count_received_replies_after(pool: &PgPool, uid: UserId, after: DateTime<Utc>) -> sqlx::Result<i64> {
-    CommentDao::count_published_replies_to_after(pool, uid, after, MAX_UNREAD_REPLIES).await
+    CommentDao::count_replies_to_after(pool, uid, after, MAX_UNREAD_REPLIES).await
 }
 
 /// Comments replying to `uid` or on what they own, by others, newest first. Ones on targets `uid`
@@ -520,7 +534,7 @@ pub async fn received_replies(
     before: Option<(DateTime<Utc>, CommentId)>,
     limit: i64,
 ) -> sqlx::Result<(Vec<ReceivedReplyItem>, bool)> {
-    let mut comments = CommentDao::list_published_replies_to(pool, uid, before, limit + 1).await?;
+    let mut comments = CommentDao::list_replies_to(pool, uid, before, limit + 1).await?;
     let has_more = comments.len() as i64 > limit;
     comments.truncate(limit as usize);
 

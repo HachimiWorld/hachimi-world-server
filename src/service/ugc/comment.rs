@@ -59,7 +59,7 @@ impl UgcAdapter for CommentAdapter {
     }
 
     /// The preview shows what the comment is on, as that target's kind shows it. Only a
-    /// published comment that isn't deleted can be reported.
+    /// visible comment can be reported.
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         let Some(x) = CommentDao::get_by_id(pool, CommentId(id)).await? else {
             return Ok(None);

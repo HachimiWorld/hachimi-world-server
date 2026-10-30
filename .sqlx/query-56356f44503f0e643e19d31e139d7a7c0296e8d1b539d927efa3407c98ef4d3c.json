@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id,\n                subject,\n                target_id,\n                attempt_count,\n                available_time,\n                done_time,\n                last_error,\n                create_time\n            FROM content_reviews\n            WHERE subject = $1 AND target_id = $2 ORDER BY id",
+  "query": "\n            SELECT\n                id,\n                subject,\n                target_id,\n                actor_uid as \"actor_uid: _\",\n                payload,\n                attempt_count,\n                available_time,\n                done_time,\n                last_error,\n                create_time\n            FROM content_reviews\n            WHERE done_time IS NULL AND available_time <= $1 ORDER BY available_time, id LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -38,6 +38,28 @@
       },
       {
         "ordinal": 3,
+        "name": "actor_uid: _",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "actor_uid"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "payload",
+        "type_info": "Jsonb",
+        "origin": {
+          "Table": {
+            "table": "content_reviews",
+            "name": "payload"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
         "name": "attempt_count",
         "type_info": "Int4",
         "origin": {
@@ -48,7 +70,7 @@
         }
       },
       {
-        "ordinal": 4,
+        "ordinal": 6,
         "name": "available_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -59,7 +81,7 @@
         }
       },
       {
-        "ordinal": 5,
+        "ordinal": 7,
         "name": "done_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +92,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 8,
         "name": "last_error",
         "type_info": "Text",
         "origin": {
@@ -81,7 +103,7 @@
         }
       },
       {
-        "ordinal": 7,
+        "ordinal": 9,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -94,11 +116,13 @@
     ],
     "parameters": {
       "Left": [
-        "Text",
+        "Timestamptz",
         "Int8"
       ]
     },
     "nullable": [
+      false,
+      false,
       false,
       false,
       false,
@@ -109,5 +133,5 @@
       false
     ]
   },
-  "hash": "e7a72f36301ef2abeff556db88881190924308bae242a2b607d9a456136771ea"
+  "hash": "56356f44503f0e643e19d31e139d7a7c0296e8d1b539d927efa3407c98ef4d3c"
 }

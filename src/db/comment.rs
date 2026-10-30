@@ -8,13 +8,6 @@ define_id!(
     CommentId
 );
 
-/// Waiting for a content check that couldn't be done when it was posted. Only its author sees it.
-pub const STATUS_PENDING: &str = "pending";
-/// Seen by everyone who can see the target.
-pub const STATUS_PUBLISHED: &str = "published";
-/// Blocked by a content check after it was posted. Only its author sees it.
-pub const STATUS_REJECTED: &str = "rejected";
-
 macro_rules! query_comments {
     ($($extra:literal)+ $(, $arg:expr)* $(,)?) => {
         sqlx::query_as!(
@@ -28,7 +21,6 @@ macro_rules! query_comments {
                 reply_to_id as "reply_to_id: _",
                 reply_to_uid as "reply_to_uid: _",
                 content,
-                status,
                 is_hidden,
                 like_count,
                 visible_reply_count,
@@ -42,7 +34,8 @@ macro_rules! query_comments {
     };
 }
 
-/// A comment on a target such as a song, or a reply under one.
+/// A comment on a target such as a song, or a reply under one. Only comments that passed their
+/// content check, or were published without one, are saved.
 /// @since 261021
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comment {
@@ -58,8 +51,6 @@ pub struct Comment {
     /// The author of `reply_to_id`, or the target's owner for a top-level comment.
     pub reply_to_uid: UserId,
     pub content: String,
-    /// [STATUS_PENDING], [STATUS_PUBLISHED] or [STATUS_REJECTED].
-    pub status: String,
     /// Hidden by a report decision.
     pub is_hidden: bool,
     /// Derived: how many rows `comment_likes` has for it, which is the source of truth. Changed
@@ -74,9 +65,9 @@ pub struct Comment {
 }
 
 impl Comment {
-    /// Shown to everyone: published, not hidden and not deleted.
+    /// Shown to everyone who can see the target: not hidden and not deleted.
     pub fn is_visible(&self) -> bool {
-        self.status == STATUS_PUBLISHED && !self.is_hidden && self.delete_time.is_none()
+        !self.is_hidden && self.delete_time.is_none()
     }
 }
 
@@ -92,18 +83,25 @@ pub struct Miscount {
 
 pub struct CommentDao;
 
-// "Shown" in the queries below means published, not hidden and not deleted, or, for `viewer_uid`,
-// written by them and not deleted.
+// "Visible" in the queries below means not hidden and not deleted, as in [Comment::is_visible].
 impl CommentDao {
-    /// The `id` of `value` is ignored; returns the new id.
-    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Comment) -> sqlx::Result<CommentId> {
-        sqlx::query_scalar!(
-            r#"INSERT INTO comments (target_type, target_id, user_id, root_id, reply_to_id, reply_to_uid, content, status, is_hidden, like_count, visible_reply_count, delete_time, create_time, update_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id as "id: CommentId""#,
-            value.target_type, value.target_id, value.user_id as UserId, value.root_id as Option<CommentId>,
-            value.reply_to_id as Option<CommentId>, value.reply_to_uid as UserId, value.content, value.status,
+    /// A new id, taken before the comment is checked so the check can name it. Ids taken for
+    /// comments that are blocked are never used.
+    pub async fn next_id<'e>(executor: impl PgExecutor<'e>) -> sqlx::Result<CommentId> {
+        sqlx::query_scalar!(r#"SELECT nextval(pg_get_serial_sequence('comments', 'id')) AS "id!: CommentId""#)
+            .fetch_one(executor).await
+    }
+
+    /// Saves `value` with its id, from [Self::next_id].
+    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Comment) -> sqlx::Result<()> {
+        sqlx::query!(
+            "INSERT INTO comments (id, target_type, target_id, user_id, root_id, reply_to_id, reply_to_uid, content, is_hidden, like_count, visible_reply_count, delete_time, create_time, update_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+            value.id as CommentId, value.target_type, value.target_id, value.user_id as UserId, value.root_id as Option<CommentId>,
+            value.reply_to_id as Option<CommentId>, value.reply_to_uid as UserId, value.content,
             value.is_hidden, value.like_count, value.visible_reply_count, value.delete_time, value.create_time, value.update_time
-        ).fetch_one(executor).await
+        ).execute(executor).await?;
+        Ok(())
     }
 
     pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: CommentId) -> sqlx::Result<Option<Comment>> {
@@ -123,12 +121,11 @@ impl CommentDao {
             .fetch_optional(executor).await
     }
 
-    /// Writes what decides whether it's visible: the status, `is_hidden` and `delete_time`, with
-    /// `update_time`.
+    /// Writes what decides whether it's visible, `is_hidden` and `delete_time`, with `update_time`.
     pub async fn update_visibility<'e>(executor: impl PgExecutor<'e>, value: &Comment) -> sqlx::Result<()> {
         sqlx::query!(
-            "UPDATE comments SET status = $2, is_hidden = $3, delete_time = $4, update_time = $5 WHERE id = $1",
-            value.id as CommentId, value.status, value.is_hidden, value.delete_time, value.update_time
+            "UPDATE comments SET is_hidden = $2, delete_time = $3, update_time = $4 WHERE id = $1",
+            value.id as CommentId, value.is_hidden, value.delete_time, value.update_time
         ).execute(executor).await?;
         Ok(())
     }
@@ -145,9 +142,8 @@ impl CommentDao {
         Ok(())
     }
 
-    /// Top-level comments on a target that everyone can see, plus deleted or hidden ones that still
-    /// have a visible reply, so their replies keep a place. Most liked first if `by_likes`, else
-    /// newest first.
+    /// Visible top-level comments on a target, plus deleted or hidden ones that still have a visible
+    /// reply, so their replies keep a place. Most liked first if `by_likes`, else newest first.
     pub async fn page_roots<'e>(
         executor: impl PgExecutor<'e>,
         target_type: &str,
@@ -161,7 +157,7 @@ impl CommentDao {
             ($order:literal) => {
                 query_comments!(
                     "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND (
-                        (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
+                        (NOT is_hidden AND delete_time IS NULL)
                         OR visible_reply_count > 0
                     ) "
                     $order
@@ -177,87 +173,43 @@ impl CommentDao {
         }
     }
 
-    /// Top-level comments by `user_id` on a target that no one else sees at all: pending, rejected
-    /// or hidden, not deleted, and without a visible reply (with one it's in [Self::page_roots]).
-    /// Newest first.
-    pub async fn list_author_only_roots<'e>(
-        executor: impl PgExecutor<'e>,
-        target_type: &str,
-        target_id: i64,
-        user_id: UserId,
-    ) -> sqlx::Result<Vec<Comment>> {
-        query_comments!(
-            "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3
-                AND delete_time IS NULL AND (status <> 'published' OR is_hidden) AND visible_reply_count = 0
-            ORDER BY id DESC",
-            target_type, target_id, user_id as UserId
-        ).fetch_all(executor).await
-    }
-
-    /// Published comments and replies on a target that aren't hidden or deleted.
-    pub async fn count_published_by_target<'e>(executor: impl PgExecutor<'e>, target_type: &str, target_id: i64) -> sqlx::Result<i64> {
+    /// Visible comments and replies on a target.
+    pub async fn count_visible_by_target<'e>(executor: impl PgExecutor<'e>, target_type: &str, target_id: i64) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
             r#"SELECT COUNT(*) AS "count!" FROM comments
-            WHERE target_type = $1 AND target_id = $2 AND status = 'published' AND NOT is_hidden AND delete_time IS NULL"#,
+            WHERE target_type = $1 AND target_id = $2 AND NOT is_hidden AND delete_time IS NULL"#,
             target_type, target_id
         ).fetch_one(executor).await
     }
 
-    /// The first `per_root` shown replies under each of `root_ids`, oldest first. Reads only those
+    /// The first `per_root` visible replies under each of `root_ids`, oldest first. Reads only those
     /// from `idx_comments_root`, however many replies a root has.
-    pub async fn list_first_replies<'e>(
-        executor: impl PgExecutor<'e>,
-        root_ids: &[CommentId],
-        viewer_uid: Option<UserId>,
-        per_root: i64,
-    ) -> sqlx::Result<Vec<Comment>> {
+    pub async fn list_first_replies<'e>(executor: impl PgExecutor<'e>, root_ids: &[CommentId], per_root: i64) -> sqlx::Result<Vec<Comment>> {
         if root_ids.is_empty() { return Ok(vec![]) }
         query_comments!(
             "WHERE id IN (
                 SELECT r.id FROM UNNEST($1::bigint[]) AS root(id)
                 CROSS JOIN LATERAL (
                     SELECT c.id FROM comments c
-                    WHERE c.root_id = root.id AND c.delete_time IS NULL
-                        AND ((c.status = 'published' AND NOT c.is_hidden) OR c.user_id = $2)
-                    ORDER BY c.id LIMIT $3
+                    WHERE c.root_id = root.id AND NOT c.is_hidden AND c.delete_time IS NULL
+                    ORDER BY c.id LIMIT $2
                 ) r
             )
             ORDER BY id",
-            root_ids as &[CommentId], viewer_uid as Option<UserId>, per_root
+            root_ids as &[CommentId], per_root
         ).fetch_all(executor).await
     }
 
-    /// How many shown replies `root_id` has.
-    pub async fn count_replies<'e>(executor: impl PgExecutor<'e>, root_id: CommentId, viewer_uid: Option<UserId>) -> sqlx::Result<i64> {
-        sqlx::query_scalar!(
-            r#"SELECT COUNT(*) AS "count!" FROM comments
-            WHERE root_id = $1 AND (
-                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
-                OR (user_id = $2 AND delete_time IS NULL)
-            )"#,
-            root_id as CommentId, viewer_uid as Option<UserId>
-        ).fetch_one(executor).await
-    }
-
-    /// Shown replies under `root_id`, oldest first.
-    pub async fn page_replies<'e>(
-        executor: impl PgExecutor<'e>,
-        root_id: CommentId,
-        viewer_uid: Option<UserId>,
-        limit: i64,
-        offset: i64,
-    ) -> sqlx::Result<Vec<Comment>> {
+    /// Visible replies under `root_id`, oldest first.
+    pub async fn page_replies<'e>(executor: impl PgExecutor<'e>, root_id: CommentId, limit: i64, offset: i64) -> sqlx::Result<Vec<Comment>> {
         query_comments!(
-            "WHERE root_id = $1 AND (
-                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
-                OR (user_id = $2 AND delete_time IS NULL)
-            )
-            ORDER BY id LIMIT $3 OFFSET $4",
-            root_id as CommentId, viewer_uid as Option<UserId>, limit, offset
+            "WHERE root_id = $1 AND NOT is_hidden AND delete_time IS NULL
+            ORDER BY id LIMIT $2 OFFSET $3",
+            root_id as CommentId, limit, offset
         ).fetch_all(executor).await
     }
 
-    /// Comments `user_id` posted after `after`, in any status and deleted or not.
+    /// Comments `user_id` posted after `after`, hidden, deleted or not.
     pub async fn count_by_user_after<'e>(executor: impl PgExecutor<'e>, user_id: UserId, after: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
             r#"SELECT COUNT(*) AS "count!" FROM comments WHERE user_id = $1 AND create_time > $2"#,
@@ -265,23 +217,23 @@ impl CommentDao {
         ).fetch_one(executor).await
     }
 
-    /// Published comments replying to `uid` by others, not hidden or deleted, posted after `after`,
-    /// counted up to `limit`: reads at most that many, however many there are.
-    pub async fn count_published_replies_to_after<'e>(executor: impl PgExecutor<'e>, uid: UserId, after: DateTime<Utc>, limit: i64) -> sqlx::Result<i64> {
+    /// Visible comments replying to `uid` by others, posted after `after`, counted up to `limit`:
+    /// reads at most that many, however many there are.
+    pub async fn count_replies_to_after<'e>(executor: impl PgExecutor<'e>, uid: UserId, after: DateTime<Utc>, limit: i64) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
             r#"SELECT COUNT(*) AS "count!" FROM (
                 SELECT 1 FROM comments
                 WHERE reply_to_uid = $1 AND user_id <> $1 AND create_time > $2
-                AND status = 'published' AND NOT is_hidden AND delete_time IS NULL
+                AND NOT is_hidden AND delete_time IS NULL
                 LIMIT $3
             ) AS unread"#,
             uid as UserId, after, limit
         ).fetch_one(executor).await
     }
 
-    /// Published comments replying to `uid` by others, not hidden or deleted, newest first. Pass the
-    /// create time and id of the previous page's last comment as `before`.
-    pub async fn list_published_replies_to<'e>(
+    /// Visible comments replying to `uid` by others, newest first. Pass the create time and id of the
+    /// previous page's last comment as `before`.
+    pub async fn list_replies_to<'e>(
         executor: impl PgExecutor<'e>,
         uid: UserId,
         before: Option<(DateTime<Utc>, CommentId)>,
@@ -290,7 +242,7 @@ impl CommentDao {
         let (before_time, before_id) = before.unzip();
         query_comments!(
             "WHERE reply_to_uid = $1 AND user_id <> $1
-            AND status = 'published' AND NOT is_hidden AND delete_time IS NULL
+            AND NOT is_hidden AND delete_time IS NULL
             AND ($2::timestamptz IS NULL OR (create_time, id) < ($2, $3::bigint))
             ORDER BY create_time DESC, id DESC
             LIMIT $4",
@@ -310,7 +262,7 @@ impl CommentDao {
             CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM comment_likes WHERE comment_id = c.id) l
             CROSS JOIN LATERAL (
                 SELECT COUNT(*) AS n FROM comments x
-                WHERE x.root_id = c.id AND x.status = 'published' AND NOT x.is_hidden AND x.delete_time IS NULL
+                WHERE x.root_id = c.id AND NOT x.is_hidden AND x.delete_time IS NULL
             ) r
             WHERE c.like_count <> l.n OR c.visible_reply_count <> r.n
             ORDER BY c.id"#
@@ -324,7 +276,7 @@ impl CommentDao {
                 like_count = (SELECT COUNT(*) FROM comment_likes WHERE comment_id = c.id),
                 visible_reply_count = (
                     SELECT COUNT(*) FROM comments x
-                    WHERE x.root_id = c.id AND x.status = 'published' AND NOT x.is_hidden AND x.delete_time IS NULL
+                    WHERE x.root_id = c.id AND NOT x.is_hidden AND x.delete_time IS NULL
                 )
             WHERE c.id = ANY($1)",
             ids as &[CommentId]
