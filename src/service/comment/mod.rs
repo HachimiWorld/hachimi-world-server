@@ -178,8 +178,9 @@ pub struct CommentThread {
     pub reply_count: i64,
 }
 
-/// Turns comments into what `viewer_uid` sees, looking up the users and likes they need.
-pub(crate) async fn to_items(pool: &PgPool, comments: Vec<Comment>, viewer_uid: Option<UserId>) -> sqlx::Result<Vec<CommentItem>> {
+/// Hydrates comments into what `viewer_uid` sees: looks up their authors, whom they reply to and
+/// whether the viewer liked them, a query each for the whole batch, and blanks removed ones.
+pub(crate) async fn hydrate(pool: &PgPool, comments: Vec<Comment>, viewer_uid: Option<UserId>) -> sqlx::Result<Vec<CommentItem>> {
     // The reply-to user is only named for replies to other replies
     let reply_to_uids: HashMap<CommentId, UserId> = comments.iter()
         .filter(|x| x.reply_to_id.is_some() && x.reply_to_id != x.root_id)
@@ -250,12 +251,12 @@ pub async fn list(
     let total = CommentDao::count_visible_by_target(pool, target.as_str(), target_id).await?;
 
     let mut replies_by_root: HashMap<CommentId, Vec<CommentItem>> = HashMap::new();
-    for reply in to_items(pool, replies, viewer_uid).await? {
+    for reply in hydrate(pool, replies, viewer_uid).await? {
         if let Some(root_id) = reply.root_id {
             replies_by_root.entry(root_id).or_default().push(reply);
         }
     }
-    let threads = to_items(pool, roots, viewer_uid).await?.into_iter().map(|comment| CommentThread {
+    let threads = hydrate(pool, roots, viewer_uid).await?.into_iter().map(|comment| CommentThread {
         replies: replies_by_root.remove(&comment.id).unwrap_or_default(),
         reply_count: reply_counts.get(&comment.id).copied().unwrap_or(0),
         comment,
@@ -286,7 +287,7 @@ pub async fn list_replies(
     };
     load_visible_target(pool, target, root.target_id, viewer_uid).await?;
     let replies = CommentDao::page_replies(pool, root_id, page_size, page_index * page_size).await?;
-    Ok(ReplyPage { total: root.visible_reply_count as i64, replies: to_items(pool, replies, viewer_uid).await? })
+    Ok(ReplyPage { total: root.visible_reply_count as i64, replies: hydrate(pool, replies, viewer_uid).await? })
 }
 
 /// Posts a comment on a target, or a reply to `reply_to_id`. Checked first: blocked ones aren't
@@ -371,7 +372,7 @@ pub async fn create(
     };
     tx.commit().await?;
     Ok(match saved {
-        Some(comment) => Some(to_items(pool, vec![comment], Some(uid)).await?.remove(0)),
+        Some(comment) => Some(hydrate(pool, vec![comment], Some(uid)).await?.remove(0)),
         None => None,
     })
 }
@@ -560,7 +561,7 @@ pub async fn received_replies(
         .map(|x| (x.id, x.content))
         .collect();
 
-    let items = to_items(pool, comments, Some(uid)).await?
+    let items = hydrate(pool, comments, Some(uid)).await?
         .into_iter()
         .filter_map(|comment| {
             let kind = CommentTarget::parse(&comment.target_type)?;
