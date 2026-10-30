@@ -20,8 +20,8 @@ CREATE TABLE comments
     update_time         TIMESTAMPTZ NOT NULL
 );
 
-CREATE INDEX idx_comments_target_root ON comments (target_type, target_id, root_id, id DESC);
-CREATE INDEX idx_comments_root ON comments (root_id, id);
+CREATE INDEX idx_comments_target_root ON comments (target_type, target_id, root_id, create_time DESC, id DESC);
+CREATE INDEX idx_comments_root ON comments (root_id, create_time, id);
 CREATE INDEX idx_comments_reply_to_uid ON comments (reply_to_uid, create_time DESC);
 CREATE INDEX idx_comments_user_time ON comments (user_id, create_time DESC);
 
