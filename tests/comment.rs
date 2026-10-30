@@ -188,14 +188,17 @@ async fn own_hidden_comments_come_first() {
         let bob = with_new_random_test_user(&mut env).await;
 
         login(&mut env, &alice);
-        let hidden = post(&env, song_id, "被隐藏了", None).await.unwrap();
+        let answered = post(&env, song_id, "有回复", None).await.unwrap();
+        wait_lock().await;
+        let lonely = post(&env, song_id, "没回复", None).await.unwrap();
         login(&mut env, &bob);
-        post(&env, song_id, "回复", Some(hidden.id)).await.unwrap();
+        post(&env, song_id, "回复", Some(answered.id)).await.unwrap();
         wait_lock().await;
         let older = post(&env, song_id, "早的", None).await.unwrap();
         wait_lock().await;
         let newer = post(&env, song_id, "晚的", None).await.unwrap();
-        sqlx::query("UPDATE comments SET is_hidden = TRUE WHERE id = $1").bind(hidden.id).execute(&env.pool).await.unwrap();
+        sqlx::query("UPDATE comments SET is_hidden = TRUE WHERE id = ANY($1)")
+            .bind(vec![answered.id.0, lonely.id.0]).execute(&env.pool).await.unwrap();
 
         async fn page(env: &TestEnvironment, song_id: SongId, page_index: i64) -> ListResp {
             env.api.get_query("/comment/list", &ListReq {
@@ -207,20 +210,20 @@ async fn own_hidden_comments_come_first() {
             }).await.parse_resp().await.unwrap()
         }
 
-        // Others see it in its place, without its content, as it still has a reply
+        // Others don't see the one without replies, and see the other in its place without content
         let first = page(&env, song_id, 0).await;
         assert_eq!(root_ids(&first), [newer.id, older.id]);
         let second = page(&env, song_id, 1).await;
-        assert_eq!(root_ids(&second), [hidden.id]);
+        assert_eq!(root_ids(&second), [answered.id]);
         assert!(second.threads[0].comment.removed);
 
-        // Its author sees it first on the first page, with its content, and not again in its place
+        // Their author sees the one no one else sees first, and the other in its place with content
         login(&mut env, &alice);
-        let first = page(&env, song_id, 0).await;
-        assert_eq!(root_ids(&first), [hidden.id, newer.id, older.id]);
-        assert_eq!(first.threads[0].comment.content, "被隐藏了");
-        assert_eq!(first.threads[0].reply_count, 1);
-        assert!(page(&env, song_id, 1).await.threads.is_empty());
+        assert_eq!(root_ids(&page(&env, song_id, 0).await), [lonely.id, newer.id, older.id]);
+        let second = page(&env, song_id, 1).await;
+        assert_eq!(root_ids(&second), [answered.id]);
+        assert_eq!(second.threads[0].comment.content, "有回复");
+        assert_eq!(second.threads[0].reply_count, 1);
         assert_counts_match(&env).await;
     }).await;
 }

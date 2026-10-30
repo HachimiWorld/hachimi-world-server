@@ -177,8 +177,9 @@ impl CommentDao {
         }
     }
 
-    /// Top-level comments by `user_id` on a target that only they can see: pending, rejected or
-    /// hidden, and not deleted. Newest first.
+    /// Top-level comments by `user_id` on a target that no one else sees at all: pending, rejected
+    /// or hidden, not deleted, and without a visible reply (with one it's in [Self::page_roots]).
+    /// Newest first.
     pub async fn list_author_only_roots<'e>(
         executor: impl PgExecutor<'e>,
         target_type: &str,
@@ -187,7 +188,7 @@ impl CommentDao {
     ) -> sqlx::Result<Vec<Comment>> {
         query_comments!(
             "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3
-                AND delete_time IS NULL AND (status <> 'published' OR is_hidden)
+                AND delete_time IS NULL AND (status <> 'published' OR is_hidden) AND visible_reply_count = 0
             ORDER BY id DESC",
             target_type, target_id, user_id as UserId
         ).fetch_all(executor).await
