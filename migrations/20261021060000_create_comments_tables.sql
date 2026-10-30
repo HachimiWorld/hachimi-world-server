@@ -13,19 +13,12 @@ CREATE TABLE comments
     content             TEXT        NOT NULL,
     status              TEXT        NOT NULL, -- pending / published / rejected, set by content checks
     is_hidden           BOOLEAN     NOT NULL, -- hidden by a report decision
-    like_count          INT         NOT NULL, -- derived, see below
-    visible_reply_count INT         NOT NULL, -- derived, see below
+    like_count          INT         NOT NULL,
+    visible_reply_count INT         NOT NULL,
     delete_time         TIMESTAMPTZ,          -- deleted by its author or the target's owner
     create_time         TIMESTAMPTZ NOT NULL,
     update_time         TIMESTAMPTZ NOT NULL
 );
-
--- Derived columns: copies of counts kept so lists don't count on every read. The source of truth is
--- the count; the server updates the copy in the same transaction as what it counts, and
--- src/bin/recount_comments.rs recounts them all if they ever drift.
-COMMENT ON COLUMN comments.like_count IS 'Derived: COUNT(*) FROM comment_likes WHERE comment_id = id';
-COMMENT ON COLUMN comments.visible_reply_count IS
-    'Derived: COUNT(*) FROM comments WHERE root_id = id AND status = ''published'' AND NOT is_hidden AND delete_time IS NULL';
 
 CREATE INDEX idx_comments_target_root ON comments (target_type, target_id, root_id, id DESC);
 CREATE INDEX idx_comments_root ON comments (root_id, id);
