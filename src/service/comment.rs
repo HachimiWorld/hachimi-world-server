@@ -444,12 +444,9 @@ pub async fn like(pool: &PgPool, uid: UserId, comment_id: CommentId) -> ServiceR
         return business(CommentError::CommentNotFound);
     }
     let mut tx = pool.begin().await?;
-    match CommentLikeDao::insert(&mut *tx, comment_id, uid, Utc::now()).await {
-        Ok(()) => {}
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => return Ok(()),
-        Err(e) => return Err(e.into()),
+    if CommentLikeDao::insert(&mut *tx, comment_id, uid, Utc::now()).await? {
+        CommentDao::add_like_count(&mut *tx, comment_id, 1).await?;
     }
-    CommentDao::add_like_count(&mut *tx, comment_id, 1).await?;
     tx.commit().await?;
     Ok(())
 }

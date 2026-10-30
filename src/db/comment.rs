@@ -286,13 +286,12 @@ impl CommentDao {
 pub struct CommentLikeDao;
 
 impl CommentLikeDao {
-    /// Fails on the primary key if `user_id` already liked it.
-    pub async fn insert<'e>(executor: impl PgExecutor<'e>, comment_id: CommentId, user_id: UserId, create_time: DateTime<Utc>) -> sqlx::Result<()> {
+    /// Returns false if `user_id` already liked it.
+    pub async fn insert<'e>(executor: impl PgExecutor<'e>, comment_id: CommentId, user_id: UserId, create_time: DateTime<Utc>) -> sqlx::Result<bool> {
         sqlx::query!(
-            "INSERT INTO comment_likes (comment_id, user_id, create_time) VALUES ($1, $2, $3)",
+            "INSERT INTO comment_likes (comment_id, user_id, create_time) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             comment_id as CommentId, user_id as UserId, create_time
-        ).execute(executor).await?;
-        Ok(())
+        ).execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 
     /// Returns whether there was a like to delete.
