@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3\n                AND delete_time IS NULL AND (status <> 'published' OR is_hidden)\n            ORDER BY id DESC",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3\n                AND delete_time IS NULL AND (status <> 'published' OR is_hidden) AND visible_reply_count = 0\n            ORDER BY id DESC",
   "describe": {
     "columns": [
       {
@@ -194,5 +194,5 @@
       false
     ]
   },
-  "hash": "17d05cca0adc7208e70502017b768fb9d875d5f9d731042ad79946fcd63841f2"
+  "hash": "e13b23d49eeb2b08a331b81651de2007f2348028d7379b65b85ad5bdb1881b42"
 }
