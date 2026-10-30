@@ -167,9 +167,9 @@ impl CommentDao {
             };
         }
         if by_likes {
-            ordered_by!("ORDER BY like_count DESC, id DESC")
+            ordered_by!("ORDER BY like_count DESC, create_time DESC, id DESC")
         } else {
-            ordered_by!("ORDER BY id DESC")
+            ordered_by!("ORDER BY create_time DESC, id DESC")
         }
     }
 
@@ -192,10 +192,10 @@ impl CommentDao {
                 CROSS JOIN LATERAL (
                     SELECT c.id FROM comments c
                     WHERE c.root_id = root.id AND NOT c.is_hidden AND c.delete_time IS NULL
-                    ORDER BY c.id LIMIT $2
+                    ORDER BY c.create_time, c.id LIMIT $2
                 ) r
             )
-            ORDER BY id",
+            ORDER BY create_time, id",
             root_ids as &[CommentId], per_root
         ).fetch_all(executor).await
     }
@@ -204,7 +204,7 @@ impl CommentDao {
     pub async fn page_replies<'e>(executor: impl PgExecutor<'e>, root_id: CommentId, limit: i64, offset: i64) -> sqlx::Result<Vec<Comment>> {
         query_comments!(
             "WHERE root_id = $1 AND NOT is_hidden AND delete_time IS NULL
-            ORDER BY id LIMIT $2 OFFSET $3",
+            ORDER BY create_time, id LIMIT $2 OFFSET $3",
             root_id as CommentId, limit, offset
         ).fetch_all(executor).await
     }
