@@ -180,6 +180,52 @@ async fn threads_show_their_first_replies() {
 }
 
 #[tokio::test]
+async fn own_hidden_comments_come_first() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _) = new_song(&mut env, &contributor).await;
+        let alice = with_new_random_test_user(&mut env).await;
+        let bob = with_new_random_test_user(&mut env).await;
+
+        login(&mut env, &alice);
+        let hidden = post(&env, song_id, "被隐藏了", None).await.unwrap();
+        login(&mut env, &bob);
+        post(&env, song_id, "回复", Some(hidden.id)).await.unwrap();
+        wait_lock().await;
+        let older = post(&env, song_id, "早的", None).await.unwrap();
+        wait_lock().await;
+        let newer = post(&env, song_id, "晚的", None).await.unwrap();
+        sqlx::query("UPDATE comments SET is_hidden = TRUE WHERE id = $1").bind(hidden.id).execute(&env.pool).await.unwrap();
+
+        async fn page(env: &TestEnvironment, song_id: SongId, page_index: i64) -> ListResp {
+            env.api.get_query("/comment/list", &ListReq {
+                target_type: "song".into(),
+                target_id: song_id.0,
+                sort: Some("new".into()),
+                page_index: Some(page_index),
+                page_size: Some(2),
+            }).await.parse_resp().await.unwrap()
+        }
+
+        // Others see it in its place, without its content, as it still has a reply
+        let first = page(&env, song_id, 0).await;
+        assert_eq!(root_ids(&first), [newer.id, older.id]);
+        let second = page(&env, song_id, 1).await;
+        assert_eq!(root_ids(&second), [hidden.id]);
+        assert!(second.threads[0].comment.removed);
+
+        // Its author sees it first on the first page, with its content, and not again in its place
+        login(&mut env, &alice);
+        let first = page(&env, song_id, 0).await;
+        assert_eq!(root_ids(&first), [hidden.id, newer.id, older.id]);
+        assert_eq!(first.threads[0].comment.content, "被隐藏了");
+        assert_eq!(first.threads[0].reply_count, 1);
+        assert!(page(&env, song_id, 1).await.threads.is_empty());
+        assert_counts_match(&env).await;
+    }).await;
+}
+
+#[tokio::test]
 async fn invalid_comments_are_refused() {
     with_test_environment(|mut env| async move {
         let contributor = with_test_contributor_user(&mut env).await;

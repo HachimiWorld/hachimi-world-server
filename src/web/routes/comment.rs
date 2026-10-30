@@ -51,7 +51,8 @@ pub struct ListResp {
 }
 
 /// Top-level comments on a target, each with its first few replies. Signed-in users also see their
-/// own comments that are waiting for a check, were rejected or were hidden.
+/// own comments that are waiting for a check, were rejected or were hidden, at the start of the
+/// first page, which can then hold more than `page_size`.
 #[framed]
 async fn list(claims: OptionalClaims, state: State<AppState>, req: Query<ListReq>) -> WebResult<ListResp> {
     let target = parse_target(&req.target_type)?;

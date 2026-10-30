@@ -145,13 +145,13 @@ impl CommentDao {
         Ok(())
     }
 
-    /// Top-level comments on a target that are shown, plus deleted or hidden ones that still have a
-    /// shown reply, so their replies keep a place. Most liked first if `by_likes`, else newest first.
+    /// Top-level comments on a target that everyone can see, plus deleted or hidden ones that still
+    /// have a visible reply, so their replies keep a place. Most liked first if `by_likes`, else
+    /// newest first.
     pub async fn page_roots<'e>(
         executor: impl PgExecutor<'e>,
         target_type: &str,
         target_id: i64,
-        viewer_uid: Option<UserId>,
         by_likes: bool,
         limit: i64,
         offset: i64,
@@ -162,12 +162,11 @@ impl CommentDao {
                 query_comments!(
                     "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND (
                         (status = 'published' AND NOT is_hidden AND delete_time IS NULL)
-                        OR (user_id = $3 AND delete_time IS NULL)
                         OR visible_reply_count > 0
                     ) "
                     $order
-                    " LIMIT $4 OFFSET $5",
-                    target_type, target_id, viewer_uid as Option<UserId>, limit, offset
+                    " LIMIT $3 OFFSET $4",
+                    target_type, target_id, limit, offset
                 ).fetch_all(executor).await
             };
         }
@@ -176,6 +175,22 @@ impl CommentDao {
         } else {
             ordered_by!("ORDER BY id DESC")
         }
+    }
+
+    /// Top-level comments by `user_id` on a target that only they can see: pending, rejected or
+    /// hidden, and not deleted. Newest first.
+    pub async fn list_author_only_roots<'e>(
+        executor: impl PgExecutor<'e>,
+        target_type: &str,
+        target_id: i64,
+        user_id: UserId,
+    ) -> sqlx::Result<Vec<Comment>> {
+        query_comments!(
+            "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND user_id = $3
+                AND delete_time IS NULL AND (status <> 'published' OR is_hidden)
+            ORDER BY id DESC",
+            target_type, target_id, user_id as UserId
+        ).fetch_all(executor).await
     }
 
     /// Published comments and replies on a target that aren't hidden or deleted.
