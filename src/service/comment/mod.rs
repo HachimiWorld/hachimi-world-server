@@ -240,7 +240,8 @@ pub struct CommentPage {
     pub threads: Vec<CommentThread>,
 }
 
-/// Top-level comments on a target, most liked first if `by_likes`, else newest first.
+/// Top-level comments on a target, most liked first if `by_likes`, else newest first. The first
+/// page starts with the viewer's own that only they can see, so it can hold more than `page_size`.
 pub async fn list(
     pool: &PgPool,
     viewer_uid: Option<UserId>,
@@ -251,7 +252,14 @@ pub async fn list(
     page_size: i64,
 ) -> ServiceResult<CommentPage, CommentError> {
     load_visible_target(pool, target, target_id, viewer_uid).await?;
-    let roots = CommentDao::page_roots(pool, target.as_str(), target_id, viewer_uid, by_likes, page_size, page_index * page_size).await?;
+    // The viewer's own comments that only they can see come first on the first page, and not in
+    // their place among the others
+    let mut roots = match viewer_uid {
+        Some(uid) if page_index == 0 => CommentDao::list_author_only_roots(pool, target.as_str(), target_id, uid).await?,
+        _ => vec![],
+    };
+    let others = CommentDao::page_roots(pool, target.as_str(), target_id, by_likes, page_size, page_index * page_size).await?;
+    roots.extend(others.into_iter().filter(|x| x.is_visible() || !is_shown_to(x, viewer_uid)));
     let root_ids: Vec<CommentId> = roots.iter().map(|x| x.id).collect();
     let replies = CommentDao::list_first_replies(pool, &root_ids, viewer_uid, FIRST_REPLIES).await?;
     let reply_counts: HashMap<CommentId, i64> = roots.iter().map(|x| (x.id, x.visible_reply_count as i64)).collect();
