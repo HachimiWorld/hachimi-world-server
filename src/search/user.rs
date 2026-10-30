@@ -158,7 +158,8 @@ async fn fully_index_users(
         indexes: (client.index_name("users"), new_index_name),
         rename: None,
     }]).await?
-        .wait_for_completion(client.client(), None, None);
+        .wait_for_completion(client.client(), None, None)
+        .await?;
     info!("swapping indexes successfully");
     new_index.delete().await?;
 
