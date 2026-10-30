@@ -65,7 +65,11 @@ pub struct User {
     pub last_login_time: Option<DateTime<Utc>>,
     pub create_time: DateTime<Utc>,
     pub update_time: DateTime<Utc>,
+    /// Derived: how many users follow them, counted from `follows`, which is the source of
+    /// truth. Changed with the follow or unfollow, in the same transaction. `None`, read as 0, for
+    /// users from before the count was added who haven't been followed since.
     pub follower_count: Option<i64>,
+    /// Derived: how many users they follow, kept like [User::follower_count].
     pub following_count: Option<i64>,
 }
 
