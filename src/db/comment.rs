@@ -9,7 +9,7 @@ define_id!(
 );
 
 macro_rules! query_comments {
-    ($($extra:literal)+ $(, $arg:expr)* $(,)?) => {
+    ($extra:literal $(, $arg:expr)* $(,)?) => {
         sqlx::query_as!(
             Comment, r#"
             SELECT
@@ -28,7 +28,7 @@ macro_rules! query_comments {
                 create_time,
                 update_time
             FROM comments
-            "# $(+ $extra)+,
+            "# + $extra,
             $($arg),*
         )
     };
@@ -152,24 +152,22 @@ impl CommentDao {
         limit: i64,
         offset: i64,
     ) -> sqlx::Result<Vec<Comment>> {
-        // One filter, two orders
-        macro_rules! ordered_by {
-            ($order:literal) => {
-                query_comments!(
-                    "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL AND (
-                        (NOT is_hidden AND delete_time IS NULL)
-                        OR visible_reply_count > 0
-                    ) "
-                    $order
-                    " LIMIT $3 OFFSET $4",
-                    target_type, target_id, limit, offset
-                ).fetch_all(executor).await
-            };
-        }
         if by_likes {
-            ordered_by!("ORDER BY like_count DESC, create_time DESC, id DESC")
+            query_comments!(
+                "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL
+                    AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)
+                ORDER BY like_count DESC, create_time DESC, id DESC
+                LIMIT $3 OFFSET $4",
+                target_type, target_id, limit, offset
+            ).fetch_all(executor).await
         } else {
-            ordered_by!("ORDER BY create_time DESC, id DESC")
+            query_comments!(
+                "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL
+                    AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)
+                ORDER BY create_time DESC, id DESC
+                LIMIT $3 OFFSET $4",
+                target_type, target_id, limit, offset
+            ).fetch_all(executor).await
         }
     }
 
