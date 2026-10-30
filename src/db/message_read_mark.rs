@@ -26,19 +26,13 @@ impl MessageReadMarkDao {
         ).fetch_all(executor).await
     }
 
-    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &MessageReadMark) -> sqlx::Result<()> {
+    /// Inserts the mark, or replaces the read time of the one already there.
+    pub async fn upsert<'e>(executor: impl PgExecutor<'e>, value: &MessageReadMark) -> sqlx::Result<()> {
         sqlx::query!(
-            "INSERT INTO message_read_marks(uid, channel, read_time, update_time) VALUES($1, $2, $3, $4)",
+            "INSERT INTO message_read_marks(uid, channel, read_time, update_time) VALUES($1, $2, $3, $4)
+            ON CONFLICT (uid, channel) DO UPDATE SET read_time = EXCLUDED.read_time, update_time = EXCLUDED.update_time",
             value.uid as UserId, value.channel, value.read_time, value.update_time
         ).execute(executor).await?;
         Ok(())
-    }
-
-    /// Returns whether a row was updated.
-    pub async fn update<'e>(executor: impl PgExecutor<'e>, value: &MessageReadMark) -> sqlx::Result<bool> {
-        sqlx::query!(
-            "UPDATE message_read_marks SET read_time = $3, update_time = $4 WHERE uid = $1 AND channel = $2",
-            value.uid as UserId, value.channel, value.read_time, value.update_time
-        ).execute(executor).await.map(|x| x.rows_affected() > 0)
     }
 }

@@ -96,9 +96,10 @@ impl ContentPolicyDao {
             .fetch_optional(executor).await
     }
 
+    /// Does nothing if the version is already stored.
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &ContentPolicy) -> sqlx::Result<()> {
         sqlx::query!(
-            "INSERT INTO content_policies (version, files, create_time) VALUES ($1, $2, $3)",
+            "INSERT INTO content_policies (version, files, create_time) VALUES ($1, $2, $3) ON CONFLICT (version) DO NOTHING",
             value.version, value.files, value.create_time
         ).execute(executor).await?;
         Ok(())

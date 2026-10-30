@@ -620,20 +620,14 @@ fn record_reuse_metrics(subject: &str, blocked: &[String]) {
 }
 
 async fn store_snapshot(pool: &PgPool, policy: &Policy) -> anyhow::Result<()> {
-    if ContentPolicyDao::get_by_version(pool, &policy.version).await?.is_some() {
-        return Ok(());
-    }
     let snapshot = ContentPolicy {
         version: policy.version.clone(),
         files: serde_json::to_value(&policy.files)?,
         create_time: Utc::now(),
     };
-    match ContentPolicyDao::insert(pool, &snapshot).await {
-        Ok(()) => Ok(()),
-        // Another instance starting at the same time stored it first
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Ok(()),
-        Err(e) => Err(e.into()),
-    }
+    // Another instance may have stored it already, or be storing it now
+    ContentPolicyDao::insert(pool, &snapshot).await?;
+    Ok(())
 }
 
 #[cfg(test)]
