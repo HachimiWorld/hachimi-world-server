@@ -45,14 +45,12 @@ pub struct ListReq {
 /// @since 261021
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListResp {
-    /// Published comments and replies on the target, for showing next to it.
+    /// Visible comments and replies on the target, for showing next to it.
     pub total: i64,
     pub threads: Vec<CommentThread>,
 }
 
-/// Top-level comments on a target, each with its first few replies. Signed-in users also see their
-/// own comments that are waiting for a check, were rejected or were hidden, at the start of the
-/// first page, which can then hold more than `page_size`.
+/// Top-level comments on a target, each with its first few replies.
 #[framed]
 async fn list(claims: OptionalClaims, state: State<AppState>, req: Query<ListReq>) -> WebResult<ListResp> {
     let target = parse_target(&req.target_type)?;
@@ -117,13 +115,20 @@ pub struct CreateReq {
     pub reply_to_id: Option<CommentId>,
 }
 
-/// Posts a comment or a reply. The new comment comes back with its `status`: `published`, or
-/// `pending` if it couldn't be checked now and waits to be checked again, seen only by its author.
-/// A comment the check blocks isn't saved and errors with `comment_rejected`.
+/// @since 261021
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateResp {
+    /// The new comment; `None` if it couldn't be checked now and waits to be checked again. It's
+    /// seen by no one, its author included, until it passes.
+    pub comment: Option<CommentItem>,
+}
+
+/// Posts a comment or a reply. A comment the check blocks isn't saved and errors with
+/// `comment_rejected`.
 #[framed]
-async fn create(claims: Claims, state: State<AppState>, req: Json<CreateReq>) -> WebResult<CommentItem> {
+async fn create(claims: Claims, state: State<AppState>, req: Json<CreateReq>) -> WebResult<CreateResp> {
     let target = parse_target(&req.target_type)?;
-    let item = comment::create(
+    let comment = comment::create(
         &state.sql_pool,
         &state.red_lock,
         state.content_checker.as_deref(),
@@ -133,7 +138,7 @@ async fn create(claims: Claims, state: State<AppState>, req: Json<CreateReq>) ->
         &req.content,
         req.reply_to_id,
     ).await?;
-    ok!(item)
+    ok!(CreateResp { comment })
 }
 
 /// @since 261021

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "INSERT INTO content_reviews (subject, target_id, attempt_count, available_time, done_time, last_error, create_time)\n            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id",
+  "query": "INSERT INTO content_reviews (subject, target_id, actor_uid, payload, attempt_count, available_time, done_time, last_error, create_time)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
   "describe": {
     "columns": [
       {
@@ -19,6 +19,8 @@
       "Left": [
         "Text",
         "Int8",
+        "Int8",
+        "Jsonb",
         "Int4",
         "Timestamptz",
         "Timestamptz",
@@ -30,5 +32,5 @@
       false
     ]
   },
-  "hash": "f4e3266a8d442618a20bd9d557ecf89a722cf3320fd739215a24b39f515d1044"
+  "hash": "4dd8f1c96996c1a0303e56961c38b823dd8e29e2dd1e30db8339589ead947a17"
 }

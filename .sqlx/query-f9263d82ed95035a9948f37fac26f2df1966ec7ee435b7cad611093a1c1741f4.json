@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                status,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE root_id = $1 AND (\n                (status = 'published' AND NOT is_hidden AND delete_time IS NULL)\n                OR (user_id = $2 AND delete_time IS NULL)\n            )\n            ORDER BY id LIMIT $3 OFFSET $4",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE id IN (\n                SELECT r.id FROM UNNEST($1::bigint[]) AS root(id)\n                CROSS JOIN LATERAL (\n                    SELECT c.id FROM comments c\n                    WHERE c.root_id = root.id AND NOT c.is_hidden AND c.delete_time IS NULL\n                    ORDER BY c.id LIMIT $2\n                ) r\n            )\n            ORDER BY id",
   "describe": {
     "columns": [
       {
@@ -93,17 +93,6 @@
       },
       {
         "ordinal": 8,
-        "name": "status",
-        "type_info": "Text",
-        "origin": {
-          "Table": {
-            "table": "comments",
-            "name": "status"
-          }
-        }
-      },
-      {
-        "ordinal": 9,
         "name": "is_hidden",
         "type_info": "Bool",
         "origin": {
@@ -114,7 +103,7 @@
         }
       },
       {
-        "ordinal": 10,
+        "ordinal": 9,
         "name": "like_count",
         "type_info": "Int4",
         "origin": {
@@ -125,7 +114,7 @@
         }
       },
       {
-        "ordinal": 11,
+        "ordinal": 10,
         "name": "visible_reply_count",
         "type_info": "Int4",
         "origin": {
@@ -136,7 +125,7 @@
         }
       },
       {
-        "ordinal": 12,
+        "ordinal": 11,
         "name": "delete_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -147,7 +136,7 @@
         }
       },
       {
-        "ordinal": 13,
+        "ordinal": 12,
         "name": "create_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -158,7 +147,7 @@
         }
       },
       {
-        "ordinal": 14,
+        "ordinal": 13,
         "name": "update_time",
         "type_info": "Timestamptz",
         "origin": {
@@ -171,9 +160,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int8",
-        "Int8",
-        "Int8",
+        "Int8Array",
         "Int8"
       ]
     },
@@ -189,11 +176,10 @@
       false,
       false,
       false,
-      false,
       true,
       false,
       false
     ]
   },
-  "hash": "484bbe7f3bb21f6148990e0f10ca88f543ceec0fc7276d022443ab3cab9804c9"
+  "hash": "f9263d82ed95035a9948f37fac26f2df1966ec7ee435b7cad611093a1c1741f4"
 }

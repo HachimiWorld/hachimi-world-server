@@ -1,13 +1,14 @@
 //! Comments waiting for a content check.
 
 use super::ReviewAdapter;
-use crate::db::comment::CommentId;
-use crate::db::user::UserId;
-use crate::service::comment::{self, CommentTarget};
-use sqlx::PgPool;
+use crate::service::comment::{self, CommentTarget, PendingComment};
+use serde::Deserialize;
+use serde_json::Value;
+use sqlx::{Postgres, Transaction};
 use strum::IntoEnumIterator;
 
-/// Comments on every kind of target, each checked as its target kind's subject.
+/// Comments on every kind of target, each checked as its target kind's subject. The payload is a
+/// [PendingComment].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CommentReview;
 
@@ -16,11 +17,12 @@ impl ReviewAdapter for CommentReview {
         CommentTarget::iter().map(|x| x.subject()).collect()
     }
 
-    async fn load_pending(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<(UserId, String)>> {
-        comment::load_pending(pool, CommentId(id)).await
+    fn text(&self, payload: &Value) -> serde_json::Result<String> {
+        PendingComment::deserialize(payload).map(|x| x.content)
     }
 
-    async fn settle(&self, pool: &PgPool, id: i64, pass: bool) -> sqlx::Result<()> {
-        comment::settle_pending(pool, CommentId(id), pass).await
+    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()> {
+        comment::publish_pending(tx, &PendingComment::deserialize(payload)?).await?;
+        Ok(())
     }
 }

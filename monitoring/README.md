@@ -78,11 +78,11 @@ unchecked.
 
 | Metric | Type | Labels |
 |---|---|---|
-| `content_review_settled_total` | counter | `subject`, `outcome` (`pass`, `block`, `gave_up`, `unchecked`, `gone`) |
+| `content_review_settled_total` | counter | `subject`, `outcome` (`pass`, `block`, `gave_up`, `unchecked`) |
 | `content_review_pending` | gauge | `subject` |
 | `content_review_oldest_pending_seconds` | gauge | `subject` |
 
-`gave_up` is content published unchecked after 24 hours, `unchecked` content published because checks
-are off, and `gone` content deleted before it could be checked. The gauges are read from the database
+`gave_up` is content published unchecked after 24 hours, and `unchecked` content published because
+checks are off. The gauges are read from the database
 every 30 seconds by every replica, so they are the same everywhere: read them with `max`. The
 rechecks themselves are calls to TypeSafe and also count in the content check metrics.

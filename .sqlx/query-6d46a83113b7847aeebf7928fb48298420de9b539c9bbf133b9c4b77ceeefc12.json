@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT c.id AS \"id: CommentId\", c.like_count, l.n AS \"likes!\", c.visible_reply_count, r.n AS \"visible_replies!\"\n            FROM comments c\n            CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM comment_likes WHERE comment_id = c.id) l\n            CROSS JOIN LATERAL (\n                SELECT COUNT(*) AS n FROM comments x\n                WHERE x.root_id = c.id AND x.status = 'published' AND NOT x.is_hidden AND x.delete_time IS NULL\n            ) r\n            WHERE c.like_count <> l.n OR c.visible_reply_count <> r.n\n            ORDER BY c.id",
+  "query": "SELECT c.id AS \"id: CommentId\", c.like_count, l.n AS \"likes!\", c.visible_reply_count, r.n AS \"visible_replies!\"\n            FROM comments c\n            CROSS JOIN LATERAL (SELECT COUNT(*) AS n FROM comment_likes WHERE comment_id = c.id) l\n            CROSS JOIN LATERAL (\n                SELECT COUNT(*) AS n FROM comments x\n                WHERE x.root_id = c.id AND NOT x.is_hidden AND x.delete_time IS NULL\n            ) r\n            WHERE c.like_count <> l.n OR c.visible_reply_count <> r.n\n            ORDER BY c.id",
   "describe": {
     "columns": [
       {
@@ -60,5 +60,5 @@
       null
     ]
   },
-  "hash": "30319388ffd3709ae155e43d19cedcbe63a1a33ab49d09091d5cc1aa336c9271"
+  "hash": "6d46a83113b7847aeebf7928fb48298420de9b539c9bbf133b9c4b77ceeefc12"
 }
