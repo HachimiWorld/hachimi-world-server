@@ -85,18 +85,8 @@ pub async fn mark_read(pool: &PgPool, uid: UserId, channel: Channel) -> sqlx::Re
         read_time: now,
         update_time: now,
     };
-    if MessageReadMarkDao::update(pool, &mark).await? {
-        return Ok(now);
-    }
-    match MessageReadMarkDao::insert(pool, &mark).await {
-        Ok(()) => Ok(now),
-        // Another request inserted it first
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            MessageReadMarkDao::update(pool, &mark).await?;
-            Ok(now)
-        }
-        Err(e) => Err(e),
-    }
+    MessageReadMarkDao::upsert(pool, &mark).await?;
+    Ok(now)
 }
 
 /// @since 261006
