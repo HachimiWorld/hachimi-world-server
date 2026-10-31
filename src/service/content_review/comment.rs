@@ -1,7 +1,7 @@
 //! Comments waiting for a content check.
 
 use super::ReviewAdapter;
-use crate::service::comment::{self, CommentTarget, PendingComment};
+use crate::service::comment::{self, CommentTarget, CommentTargetAdapter, PendingComment};
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::{Postgres, Transaction};

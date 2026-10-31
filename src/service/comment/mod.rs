@@ -1,6 +1,6 @@
-//! Comments on songs, and the replies under them. A comment has two levels: a top-level comment on
-//! the target, and replies under it; a reply to a reply stays under the same top-level comment and
-//! names whom it replies to.
+//! Comments on songs and posts, and the replies under them. A comment has two levels: a top-level
+//! comment on the target, and replies under it; a reply to a reply stays under the same top-level
+//! comment and names whom it replies to.
 //!
 //! The comments table holds what every kind of comment has. What differs by target, such as who
 //! owns it and who can see it, is in [CommentTarget]; something only one kind of target needs goes
@@ -14,20 +14,24 @@
 use crate::db::comment::{Comment, CommentDao, CommentId, CommentLikeDao};
 use crate::db::content_check::ContentCheckDao;
 use crate::db::content_review::ContentReviewDao;
-use crate::db::song::{ISongDao, SongDao, SongId};
 use crate::db::user::{IUserDao, UserDao, UserId};
 use crate::db::CrudDao;
-use crate::service::content_check::{self, ContentChecker, Verdict};
+use crate::service::content_check::{ContentChecker, Verdict};
 use crate::service::content_review;
 use crate::service::errors::{ServiceError, ServiceResult};
-use crate::service::ugc::{self, UgcPreview};
+use crate::service::notification::ContentIntent;
+use crate::service::ugc::UgcPreview;
 use crate::util::redlock::RedLock;
+use enum_dispatch::enum_dispatch;
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, SubsecRound, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use strum::{EnumIter, IntoEnumIterator};
+
+mod post;
+mod song;
 
 const CONTENT_MAX_CHARS: usize = 500;
 /// How many comments a user may post in an hour, counting ones blocked by content checks, so
@@ -43,11 +47,36 @@ const HOT_MIN_LIKES: i32 = 3;
 /// theirs in a long time. Badges show more than 99 as "99+".
 pub const MAX_UNREAD_REPLIES: i64 = 100;
 
-/// What a comment can be on. Each says who owns its targets and who can see them.
+/// What a comment can be on. Each variant carries the kind's adapter (`song.rs`, `post.rs`), and
+/// `enum_dispatch` forwards [CommentTargetAdapter] to it, as [crate::service::ugc::UgcKind] does
+/// for reports. Adding a kind means a new adapter and a variant for it; [CommentTarget::iter] finds
+/// it, and its content check subject goes in [content_check]'s subjects.
 /// @since 261021
+#[enum_dispatch(CommentTargetAdapter)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, EnumIter)]
 pub enum CommentTarget {
-    Song,
+    Song(song::SongComments),
+    /// @since 261024
+    Post(post::PostComments),
+}
+
+/// What every kind of comment target provides, implemented once per kind in its own file.
+// Only called through the concrete CommentTarget, so the futures' auto traits (Send) are known
+#[allow(async_fn_in_trait)]
+#[enum_dispatch]
+pub trait CommentTargetAdapter {
+    /// The kind's name in the API and in storage, such as `song`.
+    fn name(&self) -> &'static str;
+
+    /// The content check subject comments on this kind are checked as.
+    fn subject(&self) -> &'static str;
+
+    /// The targets of these ids that exist, by id.
+    async fn load_many(&self, pool: &PgPool, target_ids: &[i64]) -> sqlx::Result<HashMap<i64, TargetInfo>>;
+
+    /// Where a notification about comment `comment_id` takes its reader, given the preview of
+    /// what the comment is on. None if `on` isn't this kind's.
+    fn view_intent(&self, on: &UgcPreview, comment_id: CommentId) -> Option<ContentIntent>;
 }
 
 /// A target as comments need it, whatever its kind.
@@ -66,38 +95,21 @@ impl TargetInfo {
 
 impl CommentTarget {
     pub fn parse(s: &str) -> Option<Self> {
-        Self::iter().find(|x| x.as_str() == s)
+        Self::iter().find(|x| x.name() == s)
     }
 
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Song => "song",
-        }
-    }
-
-    /// The content check subject of comments on this kind of target.
-    pub fn subject(self) -> &'static str {
-        match self {
-            Self::Song => content_check::SUBJECT_SONG_COMMENT,
-        }
+        self.name()
     }
 
     pub async fn load(self, pool: &PgPool, target_id: i64) -> sqlx::Result<Option<TargetInfo>> {
         Ok(self.load_many(pool, &[target_id]).await?.remove(&target_id))
     }
 
-    /// The targets of these ids that exist, by id.
-    pub async fn load_many(self, pool: &PgPool, target_ids: &[i64]) -> sqlx::Result<HashMap<i64, TargetInfo>> {
-        match self {
-            Self::Song => {
-                let ids: Vec<SongId> = target_ids.iter().map(|x| SongId(*x)).collect();
-                Ok(SongDao::list_by_ids(pool, &ids).await?.into_iter().map(|x| (x.id.0, TargetInfo {
-                    owner_uid: x.uploader_uid,
-                    is_hidden: x.is_hidden,
-                    preview: ugc::song_preview(&x),
-                })).collect())
-            }
-        }
+    /// Where a notification about comment `comment_id` takes its reader, asking each kind
+    /// whether `on` is its own.
+    pub fn view_intent_of(on: &UgcPreview, comment_id: CommentId) -> Option<ContentIntent> {
+        Self::iter().find_map(|x| x.view_intent(on, comment_id))
     }
 }
 

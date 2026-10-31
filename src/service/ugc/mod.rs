@@ -16,12 +16,15 @@ use crate::db::user::UserId;
 
 mod comment;
 mod playlist;
+mod post;
 mod song;
 mod user;
 
+pub(crate) use post::preview as post_preview;
 pub(crate) use song::preview as song_preview;
 pub use comment::CommentPreview;
 pub use playlist::PlaylistPreview;
+pub use post::PostPreview;
 pub use song::SongPreview;
 pub use user::UserPreview;
 
@@ -74,6 +77,9 @@ pub enum UgcPreview {
     Playlist(PlaylistPreview),
     User(UserPreview),
     Comment(CommentPreview),
+    /// Not reportable, but comments can be on posts.
+    /// @since 261024
+    Post(PostPreview),
 }
 
 /// What every preview provides beyond its own fields. Implemented once per kind, next to its
@@ -100,7 +106,7 @@ pub struct OwnerMessage {
     pub notification_type: &'static str,
     pub title: &'static str,
     pub body: String,
-    pub intent: ContentIntent,
+    pub intent: Option<ContentIntent>,
 }
 
 /// What every reportable kind provides. Implemented once per kind, in its own file; a kind that

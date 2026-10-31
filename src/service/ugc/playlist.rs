@@ -80,7 +80,7 @@ impl UgcAdapter for PlaylistAdapter {
         let title = to_plain_text(target.preview.headline());
         let mut data = serde_json::Map::new();
         data.insert("playlist_id".into(), id.into());
-        let intent = ContentIntent::new("playlist.view", data);
+        let intent = Some(ContentIntent::new("playlist.view", data));
         if actions.contains(&HIDE) {
             Some(OwnerMessage {
                 notification_type: "governance.content_hidden",

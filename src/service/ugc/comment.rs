@@ -3,7 +3,7 @@
 use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::comment::{CommentDao, CommentId};
 use crate::service::comment::{self, CommentTarget};
-use crate::service::notification::{to_plain_text, ContentIntent};
+use crate::service::notification::to_plain_text;
 use crate::web::state::AppState;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
@@ -92,18 +92,10 @@ impl UgcAdapter for CommentAdapter {
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
         let text = quote(target.preview.headline());
-        // Comments are only on songs for now
-        let song_display_id = match &target.preview {
-            UgcPreview::Comment(CommentPreview { on: Some(on), .. }) => match on.as_ref() {
-                UgcPreview::Song(song) => song.display_id.clone(),
-                _ => String::new(),
-            },
-            _ => String::new(),
+        let intent = match &target.preview {
+            UgcPreview::Comment(CommentPreview { on: Some(on), .. }) => CommentTarget::view_intent_of(on, CommentId(id)),
+            _ => None,
         };
-        let mut data = serde_json::Map::new();
-        data.insert("song_display_id".into(), song_display_id.into());
-        data.insert("comment_id".into(), id.into());
-        let intent = ContentIntent::new("song.comment.view", data);
         if actions.contains(&HIDE) {
             Some(OwnerMessage {
                 notification_type: "governance.content_hidden",

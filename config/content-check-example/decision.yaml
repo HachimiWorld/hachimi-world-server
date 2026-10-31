@@ -6,8 +6,8 @@
 # is blocked.
 #
 # The server checks the subjects user.username, user.bio, user.avatar, playlist.name,
-# playlist.description, playlist.cover and song.comment; the avatar and the cover are images, the
-# rest text.
+# playlist.description, playlist.cover, song.comment and post.comment; the avatar and the cover are
+# images, the rest text.
 # A subject without its own policy uses the default of its kind, with questions in
 # questions/default.text.json or questions/default.image.json. To give a subject its own, add it
 # under `subjects` with questions in questions/<subject>.json, for example:

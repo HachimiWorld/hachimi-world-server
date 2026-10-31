@@ -99,7 +99,7 @@ impl UgcAdapter for UserAdapter {
             notification_type: "governance.profile_reset",
             title: "个人资料已被重置",
             body: format!("你的{}已被重置。{reason_suffix}", names.join("、")),
-            intent: ContentIntent::new("profile.edit", serde_json::Map::new()),
+            intent: Some(ContentIntent::new("profile.edit", serde_json::Map::new())),
         })
     }
 }
