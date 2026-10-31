@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL\n                    AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)\n                ORDER BY like_count DESC, create_time DESC, id DESC\n                LIMIT $3 OFFSET $4",
+  "query": "\n            SELECT\n                id as \"id: _\",\n                target_type,\n                target_id,\n                user_id as \"user_id: _\",\n                root_id as \"root_id: _\",\n                reply_to_id as \"reply_to_id: _\",\n                reply_to_uid as \"reply_to_uid: _\",\n                content,\n                is_hidden,\n                like_count,\n                visible_reply_count,\n                delete_time,\n                create_time,\n                update_time\n            FROM comments\n            WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL\n                    AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)\n                    AND ($3::timestamptz IS NULL OR (create_time, id) < ($3, $4::bigint))\n                ORDER BY create_time DESC, id DESC\n                LIMIT $5",
   "describe": {
     "columns": [
       {
@@ -162,6 +162,7 @@
       "Left": [
         "Text",
         "Int8",
+        "Timestamptz",
         "Int8",
         "Int8"
       ]
@@ -183,5 +184,5 @@
       false
     ]
   },
-  "hash": "603770062b36679fe4ccc89bbe63fa856c80d14da1e195fa9cec6caab3781887"
+  "hash": "58c3489ae34d18dd8a170729a172be9bc481e6a3a3d80c5f5fc35239e0dba11f"
 }

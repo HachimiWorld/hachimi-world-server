@@ -9,6 +9,7 @@ use async_backtrace::framed;
 use axum::extract::{Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Comments on songs. See [crate::service::comment].
@@ -16,6 +17,7 @@ use serde::{Deserialize, Serialize};
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/list", get(list))
+        .route("/hot", get(hot))
         .route("/replies", get(replies))
         .route("/create", post(create))
         .route("/delete", post(delete))
@@ -34,12 +36,14 @@ pub struct ListReq {
     pub target_type: String,
     /// The song id, not its display id.
     pub target_id: i64,
-    /// `hot` (most liked first, the default) or `new` (newest first).
-    pub sort: Option<String>,
-    /// From 0.
-    pub page_index: Option<i64>,
+    /// `newest` (the default) or `oldest`.
+    pub order: Option<String>,
+    /// `comment.create_time` of the previous page's last thread. Omit both for the first page.
+    pub after_time: Option<DateTime<Utc>>,
+    /// `comment.id` of the previous page's last thread.
+    pub after_comment_id: Option<CommentId>,
     /// 1..=50, defaults to 20.
-    pub page_size: Option<i64>,
+    pub limit: Option<i64>,
 }
 
 /// @since 261021
@@ -48,27 +52,58 @@ pub struct ListResp {
     /// Visible comments and replies on the target, for showing next to it.
     pub total: i64,
     pub threads: Vec<CommentThread>,
+    pub has_more: bool,
 }
 
-/// Top-level comments on a target, each with its first few replies.
+/// Top-level comments on a target by time, each with its first few replies.
 #[framed]
 async fn list(claims: OptionalClaims, state: State<AppState>, req: Query<ListReq>) -> WebResult<ListResp> {
     let target = parse_target(&req.target_type)?;
-    let by_likes = match req.sort.as_deref() {
-        None | Some("hot") => true,
-        Some("new") => false,
-        Some(_) => err!("invalid_sort", "Sort must be `hot` or `new`"),
+    let oldest_first = match req.order.as_deref() {
+        None | Some("newest") => false,
+        Some("oldest") => true,
+        Some(_) => err!("invalid_order", "Order must be `newest` or `oldest`"),
+    };
+    let after = match (req.after_time, req.after_comment_id) {
+        (Some(time), Some(id)) => Some((time, id)),
+        (None, None) => None,
+        _ => err!("invalid_cursor", "after_time and after_comment_id must be given together"),
     };
     let page = comment::list(
         &state.sql_pool,
         claims.0.map(|x| x.uid()),
         target,
         req.target_id,
-        by_likes,
-        req.page_index.unwrap_or(0).max(0),
-        req.page_size.unwrap_or(20).clamp(1, 50),
+        oldest_first,
+        after,
+        req.limit.unwrap_or(20).clamp(1, 50),
     ).await?;
-    ok!(ListResp { total: page.total, threads: page.threads })
+    ok!(ListResp { total: page.total, threads: page.threads, has_more: page.has_more })
+}
+
+/// @since 261021
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HotReq {
+    /// `song`
+    pub target_type: String,
+    /// The song id, not its display id.
+    pub target_id: i64,
+}
+
+/// @since 261021
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HotResp {
+    /// Most liked first. Also in `/comment/list`, in their place by time.
+    pub threads: Vec<CommentThread>,
+}
+
+/// The most liked top-level comments on a target, for showing above the rest: up to 10, each with
+/// at least 3 likes.
+#[framed]
+async fn hot(claims: OptionalClaims, state: State<AppState>, req: Query<HotReq>) -> WebResult<HotResp> {
+    let target = parse_target(&req.target_type)?;
+    let threads = comment::list_hot(&state.sql_pool, claims.0.map(|x| x.uid()), target, req.target_id).await?;
+    ok!(HotResp { threads })
 }
 
 /// @since 261021
