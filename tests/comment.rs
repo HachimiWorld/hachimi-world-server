@@ -13,7 +13,7 @@ use hachimi_world_server::db::content_review::ContentReviewDao;
 use hachimi_world_server::service::comment::{self, CommentItem};
 use hachimi_world_server::service::content_review;
 use hachimi_world_server::util::redlock::RedLock;
-use hachimi_world_server::web::routes::comment::{CommentIdReq, CreateReq, CreateResp, ListReq, ListResp, RepliesReq, RepliesResp};
+use hachimi_world_server::web::routes::comment::{CommentIdReq, CreateReq, CreateResp, HotReq, HotResp, ListReq, ListResp, RepliesReq, RepliesResp};
 use hachimi_world_server::web::routes::message::{MarkReadReq, MarkReadResp, ReceivedRepliesReq, ReceivedRepliesResp, SummaryResp};
 use hachimi_world_server::service::ugc::{CommentPreview, UgcPreview};
 use hachimi_world_server::web::routes::report::{CaseReq, CaseResp, ResolveReq, ResolveResp, SubmitReq, SubmitResp};
@@ -46,14 +46,27 @@ async fn post(env: &TestEnvironment, song_id: SongId, content: &str, reply_to_id
     try_post(env, song_id, content, reply_to_id).await.map(|x| x.expect("Published at once"))
 }
 
-async fn list(env: &TestEnvironment, song_id: SongId, sort: &str) -> Result<ListResp, String> {
+/// The first page, newest first.
+async fn list(env: &TestEnvironment, song_id: SongId) -> Result<ListResp, String> {
+    list_page(env, song_id, None, None, None).await
+}
+
+/// A page in `order`, after the thread `after`.
+async fn list_page(env: &TestEnvironment, song_id: SongId, order: Option<&str>, after: Option<&CommentItem>, limit: Option<i64>) -> Result<ListResp, String> {
     env.api.get_query("/comment/list", &ListReq {
         target_type: "song".into(),
         target_id: song_id.0,
-        sort: Some(sort.into()),
-        page_index: None,
-        page_size: None,
+        order: order.map(String::from),
+        after_time: after.map(|x| x.create_time),
+        after_comment_id: after.map(|x| x.id),
+        limit,
     }).await.parse_resp().await.map_err(|e| e.code)
+}
+
+async fn hot(env: &TestEnvironment, song_id: SongId) -> Vec<CommentId> {
+    let resp: HotResp = env.api.get_query("/comment/hot", &HotReq { target_type: "song".into(), target_id: song_id.0 }).await
+        .parse_resp().await.unwrap();
+    resp.threads.iter().map(|x| x.comment.id).collect()
 }
 
 async fn replies(env: &TestEnvironment, root_id: CommentId) -> RepliesResp {
@@ -100,8 +113,8 @@ async fn comments_replies_and_likes() {
         assert_eq!(answer.root_id, Some(first.id), "a reply to a reply stays under the same comment");
         assert_eq!(answer.reply_to_user.as_ref().map(|x| x.uid), Some(bob.uid));
 
-        // Newest first, then most liked first
-        let resp = list(&env, song_id, "new").await.unwrap();
+        // Newest first
+        let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [second.id, first.id]);
         assert_eq!(resp.total, 4);
         let thread = &resp.threads[1];
@@ -111,14 +124,13 @@ async fn comments_replies_and_likes() {
         login(&mut env, &bob);
         act(&env, "like", first.id).await.unwrap();
         act(&env, "like", first.id).await.unwrap();
-        let resp = list(&env, song_id, "hot").await.unwrap();
-        assert_eq!(root_ids(&resp), [first.id, second.id]);
-        assert_eq!(resp.threads[0].comment.like_count, 1, "liking twice counts once");
-        assert!(resp.threads[0].comment.liked);
-        assert!(!resp.threads[1].comment.liked);
+        let resp = list(&env, song_id).await.unwrap();
+        assert_eq!(resp.threads[1].comment.like_count, 1, "liking twice counts once");
+        assert!(resp.threads[1].comment.liked);
+        assert!(!resp.threads[0].comment.liked);
         act(&env, "unlike", first.id).await.unwrap();
         act(&env, "unlike", first.id).await.unwrap();
-        assert_eq!(list(&env, song_id, "hot").await.unwrap().threads[0].comment.like_count, 0);
+        assert_eq!(list(&env, song_id).await.unwrap().threads[1].comment.like_count, 0);
 
         // Anyone can read without signing in
         env.api.clear_token();
@@ -140,7 +152,7 @@ async fn comments_replies_and_likes() {
         assert_eq!(act(&env, "delete", first.id).await.unwrap_err(), "comment_not_found");
 
         // A deleted comment with replies keeps its place, without its author or text
-        let resp = list(&env, song_id, "new").await.unwrap();
+        let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [first.id]);
         let removed = &resp.threads[0].comment;
         assert!(removed.removed);
@@ -151,6 +163,78 @@ async fn comments_replies_and_likes() {
         // And can't be replied to or liked any more
         assert_eq!(post(&env, song_id, "还在吗", Some(first.id)).await.unwrap_err(), "comment_not_found");
         assert_eq!(act(&env, "like", first.id).await.unwrap_err(), "comment_not_found");
+        assert_counts_match(&env).await;
+    }).await
+}
+
+#[tokio::test]
+async fn pages_go_by_time() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _) = new_song(&mut env, &contributor).await;
+        let user = with_new_random_test_user(&mut env).await;
+        login(&mut env, &user);
+        let mut posted = vec![];
+        for content in ["一", "二", "三"] {
+            posted.push(post(&env, song_id, content, None).await.unwrap());
+            wait_lock().await;
+        }
+        let [one, two, three] = &posted[..] else { unreachable!() };
+
+        let first = list_page(&env, song_id, None, None, Some(2)).await.unwrap();
+        assert_eq!(root_ids(&first), [three.id, two.id]);
+        assert!(first.has_more);
+        // A comment posted meanwhile doesn't push the next page back
+        let four = post(&env, song_id, "四", None).await.unwrap();
+        let next = list_page(&env, song_id, None, Some(&first.threads[1].comment), Some(2)).await.unwrap();
+        assert_eq!(root_ids(&next), [one.id]);
+        assert!(!next.has_more);
+        assert_eq!(next.total, 4);
+
+        let first = list_page(&env, song_id, Some("oldest"), None, Some(2)).await.unwrap();
+        assert_eq!(root_ids(&first), [one.id, two.id]);
+        let next = list_page(&env, song_id, Some("oldest"), Some(&first.threads[1].comment), Some(2)).await.unwrap();
+        assert_eq!(root_ids(&next), [three.id, four.id]);
+        assert!(!next.has_more);
+
+        let err = env.api.get_query("/comment/list", &ListReq {
+            target_type: "song".into(), target_id: song_id.0, order: None, after_time: Some(one.create_time), after_comment_id: None, limit: None,
+        }).await.parse_resp::<ListResp>().await.unwrap_err();
+        assert_eq!(err.code, "invalid_cursor");
+    }).await
+}
+
+#[tokio::test]
+async fn hot_comments_need_three_likes() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _) = new_song(&mut env, &contributor).await;
+        let author = with_new_random_test_user(&mut env).await;
+        login(&mut env, &author);
+        let liked = post(&env, song_id, "热评", None).await.unwrap();
+        wait_lock().await;
+        let most_liked = post(&env, song_id, "更热", None).await.unwrap();
+        wait_lock().await;
+        let once = post(&env, song_id, "冷门", None).await.unwrap();
+
+        let mut fans = vec![];
+        for _ in 0..4 {
+            fans.push(with_new_random_test_user(&mut env).await);
+        }
+        for (i, fan) in fans.iter().enumerate() {
+            login(&mut env, fan);
+            if i < 3 { act(&env, "like", liked.id).await.unwrap(); }
+            act(&env, "like", most_liked.id).await.unwrap();
+            if i == 0 { act(&env, "like", once.id).await.unwrap(); }
+        }
+        assert_eq!(hot(&env, song_id).await, [most_liked.id, liked.id]);
+
+        // A removed comment is no longer hot, even with replies under it
+        login(&mut env, &fans[0]);
+        post(&env, song_id, "确实", Some(most_liked.id)).await.unwrap();
+        login(&mut env, &author);
+        act(&env, "delete", most_liked.id).await.unwrap();
+        assert_eq!(hot(&env, song_id).await, [liked.id]);
         assert_counts_match(&env).await;
     }).await
 }
@@ -175,7 +259,7 @@ async fn threads_show_their_first_replies() {
         let quiet_reply = post(&env, song_id, "就这一条", Some(quiet.id)).await.unwrap();
 
         // Each thread shows its own first 3 replies, oldest first
-        let resp = list(&env, song_id, "new").await.unwrap();
+        let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [quiet.id, busy.id]);
         assert_eq!(resp.threads[0].replies.iter().map(|x| x.id).collect::<Vec<_>>(), [quiet_reply.id]);
         assert_eq!(resp.threads[0].reply_count, 1);
@@ -201,7 +285,7 @@ async fn invalid_comments_are_refused() {
             target_type: "user".into(), target_id: user.uid.0, content: "好听".into(), reply_to_id: None,
         }).await.parse_resp::<CreateResp>().await.unwrap_err();
         assert_eq!(resp.code, "invalid_target_type");
-        assert_eq!(list(&env, song_id, "old").await.unwrap_err(), "invalid_sort");
+        assert_eq!(list_page(&env, song_id, Some("hot"), None, None).await.unwrap_err(), "invalid_order");
 
         // A reply must be to a comment on the same song
         wait_lock().await;
@@ -226,11 +310,11 @@ async fn hidden_songs_hide_their_comments() {
         post(&env, song_id, "好听", None).await.unwrap();
 
         sqlx::query("UPDATE songs SET is_hidden = TRUE WHERE id = $1").bind(song_id).execute(&env.pool).await.unwrap();
-        assert_eq!(list(&env, song_id, "hot").await.unwrap_err(), "target_not_found");
+        assert_eq!(list(&env, song_id).await.unwrap_err(), "target_not_found");
         wait_lock().await;
         assert_eq!(post(&env, song_id, "还在吗", None).await.unwrap_err(), "target_not_found");
         login(&mut env, &owner);
-        assert_eq!(list(&env, song_id, "hot").await.unwrap().threads.len(), 1);
+        assert_eq!(list(&env, song_id).await.unwrap().threads.len(), 1);
         assert_counts_match(&env).await;
     }).await
 }
@@ -417,10 +501,10 @@ async fn reported_comments_can_be_hidden() {
 
         // Hidden from everyone, its author too, who is told why
         login(&mut env, &reporter);
-        assert!(list(&env, song_id, "hot").await.unwrap().threads.is_empty());
+        assert!(list(&env, song_id).await.unwrap().threads.is_empty());
         assert_eq!(act(&env, "like", comment.id).await.unwrap_err(), "comment_not_found");
         login(&mut env, &author);
-        assert!(list(&env, song_id, "hot").await.unwrap().threads.is_empty());
+        assert!(list(&env, song_id).await.unwrap().threads.is_empty());
 
         let (title, intent): (String, serde_json::Value) = sqlx::query_as(
             "SELECT title, content_intent FROM notifications WHERE recipient_uid = $1 AND notification_type = 'governance.content_hidden'"
@@ -455,7 +539,7 @@ async fn comments_are_checked() {
         // A blocked comment isn't saved
         wait_lock().await;
         assert_eq!(post(&env, song_id, "#sexual", None).await.unwrap_err(), "comment_rejected");
-        assert_eq!(list(&env, song_id, "new").await.unwrap().threads.len(), 1);
+        assert_eq!(list(&env, song_id).await.unwrap().threads.len(), 1);
         assert_eq!(check_count(&env, author.uid).await, 2);
 
         // Blocked tries count towards the limit, as rewording to get past the check costs too
@@ -472,7 +556,7 @@ async fn comments_are_checked() {
         login(&mut env, &other);
         assert!(try_post(&env, song_id, "#down 好听", None).await.unwrap().is_none());
         let pending = last_review_target(&env, other.uid).await;
-        let resp = list(&env, song_id, "new").await.unwrap();
+        let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [comment.id]);
         assert_eq!(resp.total, 1);
         assert_eq!(act(&env, "like", pending).await.unwrap_err(), "comment_not_found");
@@ -536,7 +620,7 @@ async fn waiting_comments_are_checked_again() {
         assert_eq!(run_reviews(&env, get_recovered_typesafe_client(), now + Duration::days(2)).await, 0);
 
         // In its place by when it was posted
-        let resp = list(&env, song_id, "new").await.unwrap();
+        let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [later.id, good]);
         assert_eq!(resp.threads[1].comment.content, "#down 好听");
         assert!(resp.threads[1].comment.create_time < later.create_time);

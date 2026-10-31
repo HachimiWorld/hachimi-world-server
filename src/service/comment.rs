@@ -35,6 +35,10 @@ const CONTENT_MAX_CHARS: usize = 500;
 const COMMENTS_PER_HOUR: i64 = 30;
 /// Replies shown under each top-level comment in a list.
 const FIRST_REPLIES: i64 = 3;
+/// At most this many hot comments are shown above the rest.
+const HOT_COMMENTS: i64 = 10;
+/// Likes a comment needs to count as hot, so a new song's first like doesn't make one.
+const HOT_MIN_LIKES: i32 = 3;
 /// Unread replies are counted up to this, so a summary stays cheap for someone who hasn't read
 /// theirs in a long time. Badges show more than 99 as "99+".
 pub const MAX_UNREAD_REPLIES: i64 = 100;
@@ -219,24 +223,46 @@ pub struct CommentPage {
     /// Visible comments and replies on the target.
     pub total: i64,
     pub threads: Vec<CommentThread>,
+    pub has_more: bool,
 }
 
-/// Top-level comments on a target, most liked first if `by_likes`, else newest first.
+/// Top-level comments on a target, newest first or oldest first, continuing after `after`, the
+/// `(create_time, id)` of the previous page's last one.
 pub async fn list(
     pool: &PgPool,
     viewer_uid: Option<UserId>,
     target: CommentTarget,
     target_id: i64,
-    by_likes: bool,
-    page_index: i64,
-    page_size: i64,
+    oldest_first: bool,
+    after: Option<(DateTime<Utc>, CommentId)>,
+    limit: i64,
 ) -> ServiceResult<CommentPage, CommentError> {
     load_visible_target(pool, target, target_id, viewer_uid).await?;
-    let roots = CommentDao::page_roots(pool, target.as_str(), target_id, by_likes, page_size, page_index * page_size).await?;
+    let mut roots = CommentDao::page_roots(pool, target.as_str(), target_id, oldest_first, after, limit + 1).await?;
+    let has_more = roots.len() as i64 > limit;
+    roots.truncate(limit as usize);
+    let total = CommentDao::count_visible_by_target(pool, target.as_str(), target_id).await?;
+    Ok(CommentPage { total, threads: threads(pool, roots, viewer_uid).await?, has_more })
+}
+
+/// The most liked comments on a target, for showing above the rest. Only those with
+/// [HOT_MIN_LIKES] likes or more, up to [HOT_COMMENTS].
+pub async fn list_hot(
+    pool: &PgPool,
+    viewer_uid: Option<UserId>,
+    target: CommentTarget,
+    target_id: i64,
+) -> ServiceResult<Vec<CommentThread>, CommentError> {
+    load_visible_target(pool, target, target_id, viewer_uid).await?;
+    let roots = CommentDao::list_hot_roots(pool, target.as_str(), target_id, HOT_MIN_LIKES, HOT_COMMENTS).await?;
+    Ok(threads(pool, roots, viewer_uid).await?)
+}
+
+/// Hydrates top-level comments for `viewer_uid`, each with its first [FIRST_REPLIES] replies.
+async fn threads(pool: &PgPool, roots: Vec<Comment>, viewer_uid: Option<UserId>) -> sqlx::Result<Vec<CommentThread>> {
     let root_ids: Vec<CommentId> = roots.iter().map(|x| x.id).collect();
     let replies = CommentDao::list_first_replies(pool, &root_ids, FIRST_REPLIES).await?;
     let reply_counts: HashMap<CommentId, i64> = roots.iter().map(|x| (x.id, x.visible_reply_count as i64)).collect();
-    let total = CommentDao::count_visible_by_target(pool, target.as_str(), target_id).await?;
 
     let mut replies_by_root: HashMap<CommentId, Vec<CommentItem>> = HashMap::new();
     for reply in hydrate(pool, replies, viewer_uid).await? {
@@ -244,12 +270,11 @@ pub async fn list(
             replies_by_root.entry(root_id).or_default().push(reply);
         }
     }
-    let threads = hydrate(pool, roots, viewer_uid).await?.into_iter().map(|comment| CommentThread {
+    Ok(hydrate(pool, roots, viewer_uid).await?.into_iter().map(|comment| CommentThread {
         replies: replies_by_root.remove(&comment.id).unwrap_or_default(),
         reply_count: reply_counts.get(&comment.id).copied().unwrap_or(0),
         comment,
-    }).collect();
-    Ok(CommentPage { total, threads })
+    }).collect())
 }
 
 pub struct ReplyPage {

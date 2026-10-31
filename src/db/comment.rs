@@ -143,32 +143,54 @@ impl CommentDao {
     }
 
     /// Visible top-level comments on a target, plus deleted or hidden ones that still have a visible
-    /// reply, so their replies keep a place. Most liked first if `by_likes`, else newest first.
+    /// reply, so their replies keep a place. Newest first, or oldest first if `oldest_first`,
+    /// continuing after `after`, the `(create_time, id)` of the previous page's last one.
     pub async fn page_roots<'e>(
         executor: impl PgExecutor<'e>,
         target_type: &str,
         target_id: i64,
-        by_likes: bool,
+        oldest_first: bool,
+        after: Option<(DateTime<Utc>, CommentId)>,
         limit: i64,
-        offset: i64,
     ) -> sqlx::Result<Vec<Comment>> {
-        if by_likes {
+        let (after_time, after_id) = after.unzip();
+        if oldest_first {
             query_comments!(
                 "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL
                     AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)
-                ORDER BY like_count DESC, create_time DESC, id DESC
-                LIMIT $3 OFFSET $4",
-                target_type, target_id, limit, offset
+                    AND ($3::timestamptz IS NULL OR (create_time, id) > ($3, $4::bigint))
+                ORDER BY create_time, id
+                LIMIT $5",
+                target_type, target_id, after_time, after_id as Option<CommentId>, limit
             ).fetch_all(executor).await
         } else {
             query_comments!(
                 "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL
                     AND ((NOT is_hidden AND delete_time IS NULL) OR visible_reply_count > 0)
+                    AND ($3::timestamptz IS NULL OR (create_time, id) < ($3, $4::bigint))
                 ORDER BY create_time DESC, id DESC
-                LIMIT $3 OFFSET $4",
-                target_type, target_id, limit, offset
+                LIMIT $5",
+                target_type, target_id, after_time, after_id as Option<CommentId>, limit
             ).fetch_all(executor).await
         }
+    }
+
+    /// The `limit` most liked visible top-level comments on a target with at least `min_likes`
+    /// likes, newer first among equals.
+    pub async fn list_hot_roots<'e>(
+        executor: impl PgExecutor<'e>,
+        target_type: &str,
+        target_id: i64,
+        min_likes: i32,
+        limit: i64,
+    ) -> sqlx::Result<Vec<Comment>> {
+        query_comments!(
+            "WHERE target_type = $1 AND target_id = $2 AND root_id IS NULL
+                AND NOT is_hidden AND delete_time IS NULL AND like_count >= $3
+            ORDER BY like_count DESC, create_time DESC, id DESC
+            LIMIT $4",
+            target_type, target_id, min_likes, limit
+        ).fetch_all(executor).await
     }
 
     /// Visible comments and replies on a target.
