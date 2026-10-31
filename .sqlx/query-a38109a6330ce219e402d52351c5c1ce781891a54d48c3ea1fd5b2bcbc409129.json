@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO content_policies (version, files, create_time) VALUES ($1, $2, $3) ON CONFLICT (version) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Jsonb",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a38109a6330ce219e402d52351c5c1ce781891a54d48c3ea1fd5b2bcbc409129"
+}

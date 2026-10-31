@@ -1,11 +1,12 @@
 //! Playlists as report targets.
 
-use super::{ContentAction, OwnerMessage, UgcAdapter, UgcTarget};
+use super::{ContentAction, OwnerMessage, Preview, UgcAdapter, UgcPreview, UgcTarget};
 use crate::db::playlist::{PlaylistDao, PlaylistId};
 use crate::db::CrudDao;
 use crate::service::notification::{to_plain_text, ContentIntent};
 use crate::service::playlist;
 use crate::web::state::AppState;
+use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, PgTransaction};
 use tracing::warn;
 
@@ -15,8 +16,22 @@ const HIDE: ContentAction = ContentAction { id: "hide", penalty: true };
 const RESTORE: ContentAction = ContentAction { id: "restore", penalty: false };
 const ACTIONS: &[ContentAction] = &[HIDE, RESTORE];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PlaylistAdapter;
+
+/// How a playlist looks.
+/// @since 261021
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PlaylistPreview {
+    pub name: String,
+    pub cover_url: Option<String>,
+}
+
+impl Preview for PlaylistPreview {
+    fn headline(&self) -> &str {
+        &self.name
+    }
+}
 
 impl UgcAdapter for PlaylistAdapter {
     fn name(&self) -> &'static str {
@@ -30,11 +45,9 @@ impl UgcAdapter for PlaylistAdapter {
     async fn load(&self, pool: &PgPool, id: i64) -> sqlx::Result<Option<UgcTarget>> {
         Ok(PlaylistDao::get_by_id(pool, PlaylistId(id)).await?.map(|x| UgcTarget {
             owner_uid: x.user_id,
-            title: x.name,
-            cover_url: x.cover_url,
-            display_id: String::new(),
             is_public: x.is_public && !x.is_hidden,
             is_hidden: x.is_hidden,
+            preview: UgcPreview::Playlist(PlaylistPreview { name: x.name, cover_url: x.cover_url }),
         }))
     }
 
@@ -56,18 +69,18 @@ impl UgcAdapter for PlaylistAdapter {
         }
     }
 
-    fn mention(&self, title: Option<&str>) -> String {
-        match title {
+    fn mention(&self, target: Option<&UgcTarget>) -> String {
+        match target.map(|x| x.preview.headline()) {
             Some(x) => format!("歌单《{}》", to_plain_text(x)),
             None => "歌单".to_string(),
         }
     }
 
     fn owner_message(&self, id: i64, target: &UgcTarget, actions: &[ContentAction], reason_suffix: &str) -> Option<OwnerMessage> {
-        let title = to_plain_text(&target.title);
+        let title = to_plain_text(target.preview.headline());
         let mut data = serde_json::Map::new();
         data.insert("playlist_id".into(), id.into());
-        let intent = ContentIntent::new("playlist.view", data);
+        let intent = Some(ContentIntent::new("playlist.view", data));
         if actions.contains(&HIDE) {
             Some(OwnerMessage {
                 notification_type: "governance.content_hidden",

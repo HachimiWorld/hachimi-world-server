@@ -121,3 +121,10 @@ where
         Ok(())
     }
 }
+impl PostDao {
+    /// The posts of these ids that exist, in no particular order.
+    pub async fn list_by_ids<'e>(executor: impl PgExecutor<'e>, ids: &[i64]) -> Result<Vec<Post>> {
+        if ids.is_empty() { return Ok(vec![]); }
+        query_posts!("WHERE id = ANY($1)", ids).fetch_all(executor).await
+    }
+}

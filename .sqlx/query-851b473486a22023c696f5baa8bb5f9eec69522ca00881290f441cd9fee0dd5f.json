@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO message_read_marks(uid, channel, read_time, update_time) VALUES($1, $2, $3, $4)\n            ON CONFLICT (uid, channel) DO UPDATE SET read_time = EXCLUDED.read_time, update_time = EXCLUDED.update_time",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "851b473486a22023c696f5baa8bb5f9eec69522ca00881290f441cd9fee0dd5f"
+}

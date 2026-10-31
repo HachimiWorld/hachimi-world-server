@@ -85,6 +85,9 @@ pub struct ReportCase {
     pub status: String,
     /// New reports are recorded but don't reopen the case.
     pub ignore_reports: bool,
+    /// Derived: how many of its reports wait for a decision, which [ReportDao::count_pending]
+    /// counts from `reports`, the source of truth. Changed with each new report and recounted when
+    /// a decision is made, in the same transaction.
     pub pending_count: i32,
     pub last_report_time: DateTime<Utc>,
     pub create_time: DateTime<Utc>,

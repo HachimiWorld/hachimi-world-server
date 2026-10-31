@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE comments SET visible_reply_count = visible_reply_count + $2 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "7fd809c1370728fb08d4fc3d9d98aebddf2ad71005745258ce7da93c000b5bc9"
+}

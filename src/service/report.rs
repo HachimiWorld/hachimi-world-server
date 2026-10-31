@@ -448,7 +448,7 @@ fn report_resolved_notification(
     verdict: Verdict,
     occurred_at: DateTime<Utc>,
 ) -> NewNotification {
-    let target = kind.mention(target.map(|x| x.title.as_str()));
+    let target = kind.mention(target);
     let result = match verdict {
         Verdict::Agree => "已采取相应措施",
         Verdict::Disagree => "经审查未发现违规",
@@ -482,7 +482,7 @@ fn owner_notification(
         notification_type: message.notification_type,
         title: message.title.to_string(),
         body: message.body,
-        content_intent: Some(message.intent),
+        content_intent: message.intent,
         occurred_at,
     })
 }

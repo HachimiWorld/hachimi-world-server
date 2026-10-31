@@ -59,6 +59,21 @@ pub fn get_mock_typesafe_client() -> MockTypeSafeClient {
     mock
 }
 
+/// [get_mock_typesafe_client] after TypeSafe came back: `#down` no longer fails the call, and the
+/// other markers work as before.
+pub fn get_recovered_typesafe_client() -> MockTypeSafeClient {
+    let mut mock = MockTypeSafeClient::default();
+    mock.expect_system_one().returning(|model, state, questions| {
+        let result = answer(model, &state.replace("#down", ""), questions);
+        Box::pin(async move { result })
+    });
+    mock.expect_system_one_image().returning(|model, jpeg, questions| {
+        let result = image_marker(jpeg).and_then(|marker| answer(model, &marker.replace("#down", ""), questions));
+        Box::pin(async move { result })
+    });
+    mock
+}
+
 /// The marker a mock image stands for, by the average colour of the JPEG sent.
 fn image_marker(jpeg: &[u8]) -> anyhow::Result<&'static str> {
     let image = image::load_from_memory_with_format(jpeg, image::ImageFormat::Jpeg)?.to_rgb8();

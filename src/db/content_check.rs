@@ -96,9 +96,10 @@ impl ContentPolicyDao {
             .fetch_optional(executor).await
     }
 
+    /// Does nothing if the version is already stored.
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &ContentPolicy) -> sqlx::Result<()> {
         sqlx::query!(
-            "INSERT INTO content_policies (version, files, create_time) VALUES ($1, $2, $3)",
+            "INSERT INTO content_policies (version, files, create_time) VALUES ($1, $2, $3) ON CONFLICT (version) DO NOTHING",
             value.version, value.files, value.create_time
         ).execute(executor).await?;
         Ok(())
@@ -139,6 +140,15 @@ impl ContentCheckDao {
     pub async fn count_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
         sqlx::query_scalar!(
             r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3 AND reused_from IS NULL"#,
+            actor_uid as UserId, subject, since
+        ).fetch_one(executor).await
+    }
+
+    /// Counts blocked checks, reused ones included.
+    /// @since 261021
+    pub async fn count_blocked_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
+        sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3 AND blocked_by <> '{}'"#,
             actor_uid as UserId, subject, since
         ).fetch_one(executor).await
     }
