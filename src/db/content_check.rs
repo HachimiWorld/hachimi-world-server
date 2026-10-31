@@ -143,4 +143,13 @@ impl ContentCheckDao {
             actor_uid as UserId, subject, since
         ).fetch_one(executor).await
     }
+
+    /// Counts blocked checks, reused ones included.
+    /// @since 261021
+    pub async fn count_blocked_by_actor_and_subject_since<'e>(executor: impl PgExecutor<'e>, actor_uid: UserId, subject: &str, since: DateTime<Utc>) -> sqlx::Result<i64> {
+        sqlx::query_scalar!(
+            r#"SELECT COUNT(*) AS "count!" FROM content_checks WHERE actor_uid = $1 AND subject = $2 AND create_time > $3 AND blocked_by <> '{}'"#,
+            actor_uid as UserId, subject, since
+        ).fetch_one(executor).await
+    }
 }

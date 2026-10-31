@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO comments (id, target_type, target_id, user_id, root_id, reply_to_id, reply_to_uid, content, is_hidden, like_count, visible_reply_count, delete_time, create_time, update_time)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Text",
+        "Bool",
+        "Int4",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1bd3110f35e35cfaf7fbf4811283054a851d947eac3cdf8c4e9f7c2f65dc79de"
+}

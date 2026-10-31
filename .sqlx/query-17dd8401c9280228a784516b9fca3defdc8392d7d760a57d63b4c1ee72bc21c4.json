@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT COUNT(*) AS \"count!\" FROM (\n                SELECT 1 FROM comments\n                WHERE reply_to_uid = $1 AND user_id <> $1 AND create_time > $2\n                AND NOT is_hidden AND delete_time IS NULL\n                LIMIT $3\n            ) AS unread",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "count!",
+        "type_info": "Int8",
+        "origin": "Expression"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Timestamptz",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "17dd8401c9280228a784516b9fca3defdc8392d7d760a57d63b4c1ee72bc21c4"
+}
