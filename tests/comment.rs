@@ -729,7 +729,7 @@ async fn posts_can_be_commented() {
         let reply = post_on_post(&env, post_id, "+1", Some(comment.id)).await.unwrap();
 
         let resp: ListResp = env.api.get_query("/comment/list", &ListReq {
-            target_type: "post".into(), target_id: post_id, sort: None, page_index: None, page_size: None,
+            target_type: "post".into(), target_id: post_id, order: None, after_time: None, after_comment_id: None, limit: None,
         }).await.parse_resp().await.unwrap();
         assert_eq!(resp.total, 2);
         assert_eq!(resp.threads[0].replies[0].id, reply.id);
