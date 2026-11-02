@@ -111,7 +111,8 @@ mod tests {
     }
 
     // Same layering as start_main_server: the limiter sits inside the metrics layer, so
-    // rejected requests are counted under their route with status 429.
+    // rejected requests are counted under their route with status 429, and /health sits
+    // outside both, so it isn't counted.
     #[tokio::test(flavor = "current_thread")]
     async fn counts_rate_limited_requests_per_route() {
         use crate::web::governor::{governor_layer, RateLimitCfg};
@@ -126,16 +127,18 @@ mod tests {
 
         let api = Router::new()
             .nest("/api", Router::new().route("/song/{id}", get(|| async { "ok" })))
-            .layer(governor_layer(RateLimitCfg { per_second: 1, burst_size: 1 }));
-        let app = Router::new().merge(api).route_layer(axum::middleware::from_fn(super::track_metrics));
+            .layer(governor_layer(RateLimitCfg { per_second: 1, burst_size: 1 }))
+            .route_layer(axum::middleware::from_fn(super::track_metrics));
+        let app = Router::new().merge(api).route("/health", get(|| async { "ok" }));
 
-        for _ in 0..2 {
-            let req = Request::get("/api/song/1").header("x-real-ip", "1.2.3.4").body(Body::empty()).unwrap();
+        for uri in ["/api/song/1", "/api/song/1", "/health"] {
+            let req = Request::get(uri).header("x-real-ip", "1.2.3.4").body(Body::empty()).unwrap();
             app.clone().oneshot(req).await.unwrap();
         }
         let out = recorder.handle().render();
 
         assert!(out.contains(r#"http_requests_total{method="GET",path="/api/song/{id}",status="200"} 1"#), "{out}");
         assert!(out.contains(r#"http_requests_total{method="GET",path="/api/song/{id}",status="429"} 1"#), "{out}");
+        assert!(!out.contains("/health"), "{out}");
     }
 }
