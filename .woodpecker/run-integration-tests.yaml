@@ -53,8 +53,23 @@ steps:
         else
           echo "cargo-llvm-cov cached at $(command -v cargo-llvm-cov)"
         fi
-      # Lives in the image's RUSTUP_HOME, not the cache, so it is fetched on every run.
-      - rustup component add llvm-tools-preview
+      # llvm-tools is a rustup component, and the image's RUSTUP_HOME is not cached. Copy RUSTUP_HOME
+      # into the cache once per Rust version (about 800M), add llvm-tools there, and use that copy.
+      # Old versions are left behind after an image bump; delete /cache/rustup/<old version> by hand.
+      - |
+        RUSTUP_CACHE="/cache/rustup/$RUST_VERSION"
+        if [ ! -d "$RUSTUP_CACHE" ]; then
+          echo "rustup for $RUST_VERSION not cached, copying from the image and adding llvm-tools"
+          mkdir -p /cache/rustup
+          tmp="$(mktemp -d /cache/rustup/tmp.XXXXXX)"
+          cp -a "$RUSTUP_HOME/." "$tmp/"
+          RUSTUP_HOME="$tmp" rustup component add llvm-tools-preview || { rm -rf "$tmp"; exit 1; }
+          # Another pipeline may have filled the cache meanwhile; then keep its copy.
+          mv -T "$tmp" "$RUSTUP_CACHE" || rm -rf "$tmp"
+        else
+          echo "rustup cached at $RUSTUP_CACHE"
+        fi
+      - export RUSTUP_HOME="/cache/rustup/$RUST_VERSION"
       # Instrumented build goes to $CARGO_TARGET_DIR/llvm-cov-target, next to the old plain build.
       - cargo llvm-cov nextest --no-fail-fast --tests --no-report
       - cargo llvm-cov report --summary-only
