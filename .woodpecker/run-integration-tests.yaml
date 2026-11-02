@@ -30,6 +30,9 @@ steps:
       TEST_MEILISEARCH_URL: http://meilisearch:7700
       CARGO_HOME: /cache/cargo
       CARGO_TARGET_DIR: /cache/target/run-integration-tests
+      # Coverage needs no debug info. With it, every test binary carries full debug info and the
+      # target dir grows several times larger (about 29G vs 5.5G locally).
+      CARGO_PROFILE_DEV_DEBUG: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - woodpecker-hachimi-world-cache:/cache
@@ -43,7 +46,35 @@ steps:
         else
           echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
-      - cargo nextest run --no-fail-fast --tests
+      - |
+        if ! command -v cargo-llvm-cov >/dev/null; then
+          echo "cargo-llvm-cov not found, downloading"
+          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar zxf - -C "$CARGO_HOME/bin"
+        else
+          echo "cargo-llvm-cov cached at $(command -v cargo-llvm-cov)"
+        fi
+      # Lives in the image's RUSTUP_HOME, not the cache, so it is fetched on every run.
+      - rustup component add llvm-tools-preview
+      # Instrumented build goes to $CARGO_TARGET_DIR/llvm-cov-target, next to the old plain build.
+      - cargo llvm-cov nextest --no-fail-fast --tests --no-report
+      - cargo llvm-cov report --summary-only
+      # In the workspace, not the cache, so the upload step can read it.
+      - cargo llvm-cov report --lcov --output-path lcov.info
+  # A separate step so only the upload sees the token. It runs only when the tests passed.
+  - name: upload-coverage
+    image: rust:1.96.0
+    environment:
+      CODECOV_TOKEN:
+        from_secret: CODECOV_TOKEN
+    commands:
+      - curl -LsSfO https://cli.codecov.io/latest/linux/codecov
+      - curl -LsSfO https://cli.codecov.io/latest/linux/codecov.SHA256SUM
+      - sha256sum -c codecov.SHA256SUM
+      - chmod +x codecov
+      # The CLI reads the commit, branch and PR from Woodpecker's CI_* variables, and the token from CODECOV_TOKEN.
+      - ./codecov upload-process --fail-on-error --git-service github --file lcov.info --disable-search --plugin noop --build "$CI_PIPELINE_NUMBER" --build-url "$CI_PIPELINE_URL"
+    # A Codecov outage should not mark the pipeline as failed
+    failure: ignore
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success
