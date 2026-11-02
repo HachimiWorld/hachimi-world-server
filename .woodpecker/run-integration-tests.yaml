@@ -66,13 +66,27 @@ steps:
     environment:
       CODECOV_TOKEN:
         from_secret: CODECOV_TOKEN
+      # Pinned so the cached binary stays valid. Bump to upgrade; the new version downloads once.
+      CODECOV_CLI_VERSION: v11.3.2
+      CODECOV_CLI_DIR: /cache/codecov-cli
+    volumes:
+      - woodpecker-hachimi-world-cache:/cache
     commands:
-      - curl -LsSfO https://cli.codecov.io/latest/linux/codecov
-      - curl -LsSfO https://cli.codecov.io/latest/linux/codecov.SHA256SUM
-      - sha256sum -c codecov.SHA256SUM
-      - chmod +x codecov
+      - |
+        if [ ! -x "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov" ]; then
+          echo "codecov CLI $CODECOV_CLI_VERSION not cached, downloading"
+          mkdir -p "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION"
+          cd "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION"
+          curl -LsSfO "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov"
+          curl -LsSfO "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov.SHA256SUM"
+          sha256sum -c codecov.SHA256SUM
+          chmod +x codecov
+          cd -
+        else
+          echo "codecov CLI cached at $CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov"
+        fi
       # The CLI reads the commit, branch and PR from Woodpecker's CI_* variables, and the token from CODECOV_TOKEN.
-      - ./codecov upload-process --fail-on-error --git-service github --file lcov.info --disable-search --plugin noop --build "$CI_PIPELINE_NUMBER" --build-url "$CI_PIPELINE_URL"
+      - '"$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov" upload-process --fail-on-error --git-service github --file lcov.info --disable-search --plugin noop --build "$CI_PIPELINE_NUMBER" --build-url "$CI_PIPELINE_URL"'
     # A Codecov outage should not mark the pipeline as failed
     failure: ignore
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
