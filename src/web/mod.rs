@@ -61,17 +61,19 @@ pub async fn start_main_server(
     info!("HTTP Server started at {}", listener.local_addr()?);
 
     let allow_origins = allow_origins.iter().map(|x| x.as_str()).collect::<Vec<&str>>();
-    // /health stays outside the rate limiter so health checks never get a 429.
+    // /health stays outside the rate limiter and the metrics layer, so health checks never get
+    // a 429 and don't show up in the HTTP metrics. The limiter sits inside the metrics layer, so
+    // rejected requests are still counted.
     let api = Router::new()
         .nest("/api", routes::router())
-        .layer(governor::governor_layer(rate_limit));
+        .layer(governor::governor_layer(rate_limit))
+        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
     let app = Router::new()
         .merge(api)
         .route("/health", get(health))
         .with_state(app_state)
         .layer(request_id::request_id_layer())
-        .layer(cors::cors_layer(&allow_origins))
-        .route_layer(axum::middleware::from_fn(web_metrics::track_metrics));
+        .layer(cors::cors_layer(&allow_origins));
 
     axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
         .with_graceful_shutdown(async move {
