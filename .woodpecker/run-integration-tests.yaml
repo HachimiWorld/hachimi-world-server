@@ -30,6 +30,9 @@ steps:
       TEST_MEILISEARCH_URL: http://meilisearch:7700
       CARGO_HOME: /cache/cargo
       CARGO_TARGET_DIR: /cache/target/run-integration-tests
+      # Coverage needs no debug info. With it, every test binary carries full debug info and the
+      # target dir grows several times larger (about 29G vs 5.5G locally).
+      CARGO_PROFILE_DEV_DEBUG: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - woodpecker-hachimi-world-cache:/cache
@@ -43,7 +46,64 @@ steps:
         else
           echo "cargo-nextest cached at $(command -v cargo-nextest)"
         fi
-      - cargo nextest run --no-fail-fast --tests
+      - |
+        if ! command -v cargo-llvm-cov >/dev/null; then
+          echo "cargo-llvm-cov not found, downloading"
+          curl -LsSf https://github.com/taiki-e/cargo-llvm-cov/releases/latest/download/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz | tar zxf - -C "$CARGO_HOME/bin"
+        else
+          echo "cargo-llvm-cov cached at $(command -v cargo-llvm-cov)"
+        fi
+      # llvm-tools is a rustup component, and the image's RUSTUP_HOME is not cached. Copy RUSTUP_HOME
+      # into the cache once per Rust version (about 800M), add llvm-tools there, and use that copy.
+      # Old versions are left behind after an image bump; delete /cache/rustup/<old version> by hand.
+      - |
+        RUSTUP_CACHE="/cache/rustup/$RUST_VERSION"
+        if [ ! -d "$RUSTUP_CACHE" ]; then
+          echo "rustup for $RUST_VERSION not cached, copying from the image and adding llvm-tools"
+          mkdir -p /cache/rustup
+          tmp="$(mktemp -d /cache/rustup/tmp.XXXXXX)"
+          cp -a "$RUSTUP_HOME/." "$tmp/"
+          RUSTUP_HOME="$tmp" rustup component add llvm-tools-preview || { rm -rf "$tmp"; exit 1; }
+          # Another pipeline may have filled the cache meanwhile; then keep its copy.
+          mv -T "$tmp" "$RUSTUP_CACHE" || rm -rf "$tmp"
+        else
+          echo "rustup cached at $RUSTUP_CACHE"
+        fi
+      - export RUSTUP_HOME="/cache/rustup/$RUST_VERSION"
+      # Instrumented build goes to $CARGO_TARGET_DIR/llvm-cov-target, next to the old plain build.
+      - cargo llvm-cov nextest --no-fail-fast --tests --no-report
+      - cargo llvm-cov report --summary-only
+      # In the workspace, not the cache, so the upload step can read it.
+      - cargo llvm-cov report --lcov --output-path lcov.info
+  # A separate step so only the upload sees the token. It runs only when the tests passed.
+  - name: upload-coverage
+    image: rust:1.96.0
+    environment:
+      CODECOV_TOKEN:
+        from_secret: CODECOV_TOKEN
+      # Pinned so the cached binary stays valid. Bump to upgrade; the new version downloads once.
+      CODECOV_CLI_VERSION: v11.3.2
+      CODECOV_CLI_DIR: /cache/codecov-cli
+    volumes:
+      - woodpecker-hachimi-world-cache:/cache
+    commands:
+      - |
+        if [ ! -x "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov" ]; then
+          echo "codecov CLI $CODECOV_CLI_VERSION not cached, downloading"
+          mkdir -p "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION"
+          cd "$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION"
+          curl -LsSfO "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov"
+          curl -LsSfO "https://cli.codecov.io/$CODECOV_CLI_VERSION/linux/codecov.SHA256SUM"
+          sha256sum -c codecov.SHA256SUM
+          chmod +x codecov
+          cd -
+        else
+          echo "codecov CLI cached at $CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov"
+        fi
+      # The CLI reads the commit, branch and PR from Woodpecker's CI_* variables, and the token from CODECOV_TOKEN.
+      - '"$CODECOV_CLI_DIR/$CODECOV_CLI_VERSION/codecov" upload-process --fail-on-error --git-service github --file lcov.info --disable-search --plugin noop --build "$CI_PIPELINE_NUMBER" --build-url "$CI_PIPELINE_URL"'
+    # A Codecov outage should not mark the pipeline as failed
+    failure: ignore
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success
