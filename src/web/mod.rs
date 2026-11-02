@@ -67,7 +67,7 @@ pub async fn start_main_server(
         .layer(governor::governor_layer(rate_limit));
     let app = Router::new()
         .merge(api)
-        .route("/health", get(health))
+        .route(web_metrics::HEALTH_PATH, get(health))
         .with_state(app_state)
         .layer(request_id::request_id_layer())
         .layer(cors::cors_layer(&allow_origins))

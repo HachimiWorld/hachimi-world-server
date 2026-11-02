@@ -57,6 +57,8 @@ fn prometheus_builder() -> PrometheusBuilder {
         .unwrap()
 }
 
+pub const HEALTH_PATH: &str = "/health";
+
 pub async fn track_metrics(req: Request, next: Next) -> impl IntoResponse {
     let start = Instant::now();
     let path = if let Some(matched_path) = req.extensions().get::<MatchedPath>() {
@@ -64,6 +66,10 @@ pub async fn track_metrics(req: Request, next: Next) -> impl IntoResponse {
     } else {
         req.uri().path().to_owned()
     };
+    // Health checks run every few seconds and would drown out real traffic, so they aren't counted.
+    if path == HEALTH_PATH {
+        return next.run(req).await;
+    }
     let method = req.method().clone();
 
     let response = next.run(req).await;
@@ -137,5 +143,30 @@ mod tests {
 
         assert!(out.contains(r#"http_requests_total{method="GET",path="/api/song/{id}",status="200"} 1"#), "{out}");
         assert!(out.contains(r#"http_requests_total{method="GET",path="/api/song/{id}",status="429"} 1"#), "{out}");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn skips_health_checks() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use axum::routing::get;
+        use axum::Router;
+        use tower::ServiceExt;
+
+        let recorder = prometheus_builder().build_recorder();
+        let _guard = metrics::set_default_local_recorder(&recorder);
+
+        let app = Router::new()
+            .route("/api/song/{id}", get(|| async { "ok" }))
+            .route(super::HEALTH_PATH, get(|| async { "ok" }))
+            .route_layer(axum::middleware::from_fn(super::track_metrics));
+
+        for uri in ["/health", "/api/song/1"] {
+            app.clone().oneshot(Request::get(uri).body(Body::empty()).unwrap()).await.unwrap();
+        }
+        let out = recorder.handle().render();
+
+        assert!(out.contains(r#"http_requests_total{method="GET",path="/api/song/{id}",status="200"} 1"#), "{out}");
+        assert!(!out.contains("/health"), "{out}");
     }
 }
