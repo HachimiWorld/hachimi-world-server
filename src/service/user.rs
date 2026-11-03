@@ -173,6 +173,12 @@ pub fn username_problem(name: &str) -> Option<String> {
     if name.chars().any(char::is_control) {
         return Some("Username cannot contain control characters such as line breaks".to_string());
     }
+    if name.starts_with(char::is_whitespace) || name.ends_with(char::is_whitespace) {
+        return Some("Username cannot start or end with a space".to_string());
+    }
+    if let Some(c) = invisible_char(name) {
+        return Some(format!("Username cannot contain invisible characters such as U+{:04X}", c as u32));
+    }
     let width = name.width();
     if width == 0 {
         return Some("Username cannot be empty".to_string());
@@ -183,6 +189,35 @@ pub fn username_problem(name: &str) -> Option<String> {
         ));
     }
     None
+}
+
+/// The first character in `name` that shows nothing by itself, so that two names could look the
+/// same or an @mention could miss: zero-width characters, bidirectional text controls and the rest
+/// of Default_Ignorable_Code_Point (UAX #44), and the blank Braille pattern. Emoji keep what their
+/// sequences need: a ZWJ between emoji, a variation selector after an emoji, and tags after 🏴.
+/// @since 261027
+fn invisible_char(name: &str) -> Option<char> {
+    use icu_properties::CodePointSetData;
+    use icu_properties::props::{DefaultIgnorableCodePoint, Emoji, EmojiModifier, ExtendedPictographic};
+    let ignorable = CodePointSetData::new::<DefaultIgnorableCodePoint>();
+    let emoji = CodePointSetData::new::<Emoji>();
+    let pictographic = CodePointSetData::new::<ExtendedPictographic>();
+    let modifier = CodePointSetData::new::<EmojiModifier>();
+    let chars: Vec<char> = name.chars().collect();
+    chars.iter().enumerate().find_map(|(i, &c)| {
+        let prev = i.checked_sub(1).map(|j| chars[j]);
+        let next = chars.get(i + 1).copied();
+        let allowed = match c {
+            '\u{2800}' => false,
+            // Digits, # and * are emoji only as keycaps, followed by U+20E3
+            '\u{FE0E}' | '\u{FE0F}' => prev.is_some_and(|p| emoji.contains(p) && (!p.is_ascii() || next == Some('\u{20E3}'))),
+            '\u{200D}' => prev.is_some_and(|p| pictographic.contains(p) || modifier.contains(p) || p == '\u{FE0F}')
+                && next.is_some_and(|n| pictographic.contains(n)),
+            '\u{E0020}'..='\u{E007F}' => prev.is_some_and(|p| p == '\u{1F3F4}' || ('\u{E0020}'..='\u{E007E}').contains(&p)),
+            _ => !ignorable.contains(c),
+        };
+        (!allowed).then_some(c)
+    })
 }
 
 pub fn generate_username() -> String {
@@ -273,5 +308,42 @@ mod username_tests {
         assert!(username_problem("tab\there").is_some());
         // Zero-width characters add no width, so the character cap stops padding with them
         assert!(username_problem(&format!("a{}", "\u{200B}".repeat(40))).is_some());
+    }
+
+    #[test]
+    fn rejects_hidden_characters_inside_names() {
+        assert!(username_problem("哈基\u{200B}米").is_some()); // zero-width space
+        assert!(username_problem("哈基\u{200D}米").is_some()); // ZWJ between letters
+        assert!(username_problem("哈基\u{2060}米").is_some()); // word joiner
+        assert!(username_problem("\u{FEFF}哈基米").is_some()); // BOM
+        assert!(username_problem("abc\u{202E}fed").is_some()); // right-to-left override
+        assert!(username_problem("abc\u{2066}def\u{2069}").is_some()); // bidi isolate
+        assert!(username_problem("哈基米\u{00AD}").is_some()); // soft hyphen
+        assert!(username_problem("哈\u{3164}米").is_some()); // Hangul filler
+        assert!(username_problem("哈\u{2800}米").is_some()); // blank Braille pattern
+        assert!(username_problem("Alice\u{FE0F}").is_some()); // variation selector on a letter
+        assert!(username_problem("Alice1\u{FE0F}").is_some()); // on a digit, not a keycap
+    }
+
+    #[test]
+    fn rejects_surrounding_spaces() {
+        assert!(username_problem(" 哈基米").is_some());
+        assert!(username_problem("哈基米 ").is_some());
+        assert!(username_problem("哈基米\u{3000}").is_some()); // ideographic space
+        assert!(username_problem("\u{00A0}哈基米").is_some()); // no-break space
+        assert!(username_problem("   ").is_some());
+    }
+
+    #[test]
+    fn keeps_spaces_punctuation_and_emoji() {
+        assert_eq!(username_problem("Hachimi World"), None);
+        assert_eq!(username_problem("哈基米 の 歌"), None);
+        assert_eq!(username_problem("Mr.O'Neil-Jr_"), None);
+        assert_eq!(username_problem("哈基米❤️"), None); // variation selector after an emoji
+        assert_eq!(username_problem("❤️‍🔥哈基米"), None); // ZWJ sequence
+        assert_eq!(username_problem("👨🏽‍💻coder"), None); // skin tone then ZWJ
+        assert_eq!(username_problem("🏳️‍🌈"), None);
+        assert_eq!(username_problem("1️⃣号"), None); // keycap
+        assert_eq!(username_problem("🏴\u{E0067}\u{E0062}\u{E0065}\u{E006E}\u{E0067}\u{E007F}"), None); // England flag
     }
 }
