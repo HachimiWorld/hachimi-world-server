@@ -6,7 +6,7 @@ use hachimi_world_server::db::song::SongId;
 use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
     CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
-    ListContainingResp, ListResp, PageFavoritesReq, PageFavoritesResp, RemoveSongReq, SearchReq,
+    ListContainingResp, ListPublicByUserReq, ListPublicByUserResp, ListResp, PageFavoritesReq, PageFavoritesResp, RemoveSongReq, SearchReq,
     SearchResp, SetCoverReq,
 };
 use image::{ImageFormat, Rgb, RgbImage};
@@ -182,6 +182,42 @@ async fn test_add_song_rejects_duplicates() {
             },
         ).await.parse_resp::<()>().await;
         assert_eq!(resp.unwrap_err().code, "song_existed");
+    }).await;
+}
+
+#[tokio::test]
+async fn test_list_public_by_user() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        let public_id = create_playlist(&env, "Public Playlist", None, true).await;
+        let private_id = create_playlist(&env, "Private Playlist", None, false).await;
+        let req = ListPublicByUserReq { user_id: owner.uid };
+
+        let ids = |resp: ListPublicByUserResp| {
+            let mut ids = resp.playlists.into_iter().map(|p| p.id).collect::<Vec<_>>();
+            ids.sort_by_key(|id| id.0);
+            ids
+        };
+
+        // The owner sees their private playlists too
+        let mine = env.api.get_query("/playlist/list_public_by_user", &req).await
+            .parse_resp::<ListPublicByUserResp>().await.unwrap();
+        let mut expected = vec![public_id, private_id];
+        expected.sort_by_key(|id| id.0);
+        assert_eq!(ids(mine), expected);
+
+        // Another user only sees the public ones
+        let _other = with_new_random_test_user(&mut env).await;
+        let others = env.api.get_query("/playlist/list_public_by_user", &req).await
+            .parse_resp::<ListPublicByUserResp>().await.unwrap();
+        assert_eq!(ids(others), vec![public_id]);
+
+        // So does a guest, without being turned away with a 401
+        env.api.clear_token();
+        let resp = env.api.get_query("/playlist/list_public_by_user", &req).await;
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        let guests = resp.parse_resp::<ListPublicByUserResp>().await.unwrap();
+        assert_eq!(ids(guests), vec![public_id]);
     }).await;
 }
 
