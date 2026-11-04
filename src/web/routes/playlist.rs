@@ -8,7 +8,7 @@ use crate::service::playlist::{GetDetailError, PlaylistMetadata};
 use crate::service::upload::ResizeType;
 use crate::service::user::PublicUserProfile;
 use crate::util::IsBlank;
-use crate::web::jwt::Claims;
+use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
@@ -189,13 +189,15 @@ pub struct ListPublicByUserResp {
 
 #[framed]
 async fn list_public_by_user(
-    claims: Claims,
+    OptionalClaims(claims): OptionalClaims,
     state: State<AppState>,
     req: Query<ListPublicByUserReq>,
 ) -> WebResult<ListPublicByUserResp> {
+    // Guests can see the public playlists on anyone's profile too. The owner also sees their private ones.
+    let viewer = claims.map(|c| c.uid());
     let playlists = PlaylistDao::list_by_user(&state.sql_pool, req.user_id).await?;
     let public_playlists = playlists.into_iter()
-        .filter(|x| x.is_public || x.user_id == claims.uid())
+        .filter(|x| x.is_public || Some(x.user_id) == viewer)
         .collect_vec();
 
     let playlist_ids = public_playlists.iter().map(|x| x.id).collect_vec();
