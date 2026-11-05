@@ -16,6 +16,7 @@ pub mod follow;
 pub mod sitemap;
 pub mod notification;
 pub mod email_outbox;
+pub mod email_change;
 pub mod message_center;
 pub mod ugc;
 pub mod report;

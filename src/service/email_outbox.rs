@@ -9,7 +9,7 @@ use crate::db::email_outbox::{EmailOutbox, EmailOutboxDao};
 use crate::service::mailer::{self, EmailConfig, NotificationEmail};
 use crate::util::redlock::RedLock;
 use crate::web::state::AppState;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
 use std::time::Instant;
 use tokio::sync::Notify;
@@ -36,6 +36,17 @@ static RELAY_WAKE: Notify = Notify::const_new();
 /// Adds an email to the outbox. It is sent after `tx` commits, and never if it rolls back. Call
 /// [wake_relay] after committing to send it right away.
 pub async fn enqueue(tx: &mut Transaction<'_, Postgres>, to: &str, email: NotificationEmail) -> sqlx::Result<Uuid> {
+    enqueue_at(tx, to, email, Utc::now()).await
+}
+
+/// [enqueue], but not sent before `available_time`.
+/// @since 261105
+pub async fn enqueue_at(
+    tx: &mut Transaction<'_, Postgres>,
+    to: &str,
+    email: NotificationEmail,
+    available_time: DateTime<Utc>,
+) -> sqlx::Result<Uuid> {
     let now = Utc::now();
     let id = Uuid::now_v7();
     EmailOutboxDao::insert(&mut **tx, &EmailOutbox {
@@ -43,7 +54,7 @@ pub async fn enqueue(tx: &mut Transaction<'_, Postgres>, to: &str, email: Notifi
         to_address: to.to_string(),
         subject: email.subject,
         body: email.body,
-        available_time: now,
+        available_time,
         attempt_count: 0,
         sent_time: None,
         dead_time: None,
