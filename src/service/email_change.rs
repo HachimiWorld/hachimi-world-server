@@ -56,7 +56,7 @@ pub struct AccountCfg {
 }
 
 fn default_revert_url() -> String {
-    "https://hachimi.world/app/#/auth/revert_email_change?token=".to_string()
+    "https://hachimi.world/account/revert-email/?token=".to_string()
 }
 
 impl Default for AccountCfg {

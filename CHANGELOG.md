@@ -14,7 +14,7 @@
   - `/auth/email/request_change` (POST): `new_email`, `new_code`, `password`. Response: the pending change. Errors: the ones above, `pending_exists`, `too_frequent`, `password_not_match`, `too_many_attempts` (5 wrong passwords in an hour), `invalid_new_code`
   - `/auth/email/cancel_change` (POST): cancels the pending change, if any
   - `/auth/email/revert_change` (POST, no login): `token` (from the link), `new_password`. Errors: `invalid_password`, `invalid_token` (unknown, used or expired), `old_email_taken`
-  - The link is the new optional config `account.email_change_revert_url` followed by the token. Defaults to `https://hachimi.world/app/#/auth/revert_email_change?token=`
+  - The link is the new optional config `account.email_change_revert_url` followed by the token. Defaults to `https://hachimi.world/account/revert-email/?token=`
   - Changes are kept in the new `email_change_requests` table
 
 ## 261031

@@ -66,4 +66,4 @@ content_check:
 # Optional.
 account:
   # The link in emails to the old address when the account email changes: this followed by the token.
-  email_change_revert_url: "https://hachimi.world/app/#/auth/revert_email_change?token="
+  email_change_revert_url: "https://hachimi.world/account/revert-email/?token="
