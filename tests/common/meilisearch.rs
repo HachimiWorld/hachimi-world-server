@@ -4,7 +4,7 @@
 //! that server and keep apart by giving their indexes a random prefix. Without it, each test starts
 //! its own container.
 
-use crate::common::images::Meilisearch1_32;
+use crate::common::images::Meilisearch1_56;
 use hachimi_world_server::search::SearchClient;
 use meilisearch_sdk::client::Client;
 use meilisearch_sdk::indexes::IndexesQuery;
@@ -17,7 +17,7 @@ const MASTER_KEY: &str = "12345678";
 
 /// Keeps the test indexes alive; call [TestMeilisearch::cleanup] when the test is done.
 pub enum TestMeilisearch {
-    Container(ContainerAsync<Meilisearch1_32>),
+    Container(ContainerAsync<Meilisearch1_56>),
     Shared,
 }
 
@@ -59,7 +59,7 @@ impl TestMeilisearch {
 }
 
 async fn start_container() -> (TestMeilisearch, SearchClient) {
-    let instance = Meilisearch1_32::default().start().await.unwrap();
+    let instance = Meilisearch1_56::default().start().await.unwrap();
     let host_ip = instance.get_host().await.unwrap();
     let host_port = instance.get_host_port_ipv4(7700).await.unwrap();
     let url = format!("http://{host_ip}:{host_port}");

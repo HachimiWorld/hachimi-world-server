@@ -5,12 +5,12 @@ use testcontainers_modules::testcontainers::core::WaitFor;
 use testcontainers_modules::testcontainers::{CopyToContainer, Image};
 
 #[derive(Debug, Default, Clone)]
-pub struct Redis8;
+pub struct Valkey9;
 
-impl Image for Redis8 {
-    fn name(&self) -> &str { "redis" }
+impl Image for Valkey9 {
+    fn name(&self) -> &str { "valkey/valkey" }
 
-    fn tag(&self) -> &str { "8.4-alpine" }
+    fn tag(&self) -> &str { "9.1-alpine" }
 
     fn ready_conditions(&self) -> Vec<WaitFor> {
         vec![WaitFor::message_on_stdout("Ready to accept connections")]
@@ -67,11 +67,11 @@ impl Image for Postgres17 {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Meilisearch1_32;
+pub struct Meilisearch1_56;
 
-impl Image for Meilisearch1_32 {
+impl Image for Meilisearch1_56 {
     fn name(&self) -> &str { "getmeili/meilisearch" }
-    fn tag(&self) -> &str { "v1.32" }
+    fn tag(&self) -> &str { "v1.56" }
     fn ready_conditions(&self) -> Vec<WaitFor> {
         vec![WaitFor::http(
             HttpWaitStrategy::new("/health")

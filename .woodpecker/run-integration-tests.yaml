@@ -6,7 +6,7 @@ when:
     - push
     - manual
 # One Postgres and one Meilisearch for the whole run. Each test clones its own database and uses
-# its own index prefix (see tests/common/postgres.rs and meilisearch.rs). Redis still starts per
+# its own index prefix (see tests/common/postgres.rs and meilisearch.rs). Valkey still starts per
 # test via testcontainers.
 services:
   - name: postgres
@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
   - name: meilisearch
-    image: getmeili/meilisearch:v1.32
+    image: getmeili/meilisearch:v1.56
     environment:
       MEILI_NO_ANALYTICS: true
       MEILI_MASTER_KEY: "12345678"
@@ -22,7 +22,7 @@ steps:
   # Named volume is the cache; do not tar/zstd (write amplification).
   # Share CARGO_HOME with other workflows; keep CARGO_TARGET_DIR isolated.
   - name: run-tests
-    image: rust:1.96.0
+    image: rust:1.99.1
     environment:
       SQLX_OFFLINE: true
       RUST_BACKTRACE: 1
@@ -77,7 +77,7 @@ steps:
       - cargo llvm-cov report --lcov --output-path lcov.info
   # A separate step so only the upload sees the token. It runs only when the tests passed.
   - name: upload-coverage
-    image: rust:1.96.0
+    image: rust:1.99.1
     environment:
       CODECOV_TOKEN:
         from_secret: CODECOV_TOKEN
