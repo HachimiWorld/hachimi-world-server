@@ -185,4 +185,21 @@ impl FollowDao {
         ).fetch_all(executor).await?;
         Ok(rows.into_iter().map(|r| r.follower_id).collect())
     }
+
+    // Given a list of candidate user IDs, return which ones `uid` follows,
+    // i.e., candidate appears as followed_id where follower_id = uid.
+    pub async fn filter_followed_by<'e, E>(executor: E, uid: UserId, candidate_ids: &[UserId]) -> Result<HashSet<UserId>>
+    where
+        E: PgExecutor<'e>,
+    {
+        if candidate_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+        let rows = sqlx::query!(
+            r#"SELECT followed_id as "followed_id: UserId" FROM follows WHERE follower_id = $1 AND followed_id = ANY($2)"#,
+            uid as UserId,
+            candidate_ids as &[UserId]
+        ).fetch_all(executor).await?;
+        Ok(rows.into_iter().map(|r| r.followed_id).collect())
+    }
 }

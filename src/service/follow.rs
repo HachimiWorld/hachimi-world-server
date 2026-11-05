@@ -183,8 +183,8 @@ pub async fn get_followers(
     }
 
     let follower_ids: Vec<UserId> = rows.iter().map(|r| r.uid).collect();
-    let mutual_ids = FollowDao::filter_following_back(pool, my_uid, &follower_ids).await?;
-    let mutual_ids_set: HashSet<UserId> = mutual_ids.into_iter().collect();
+    // They already follow me, so the relation is mutual when I follow them back.
+    let mutual_ids_set: HashSet<UserId> = FollowDao::filter_followed_by(pool, my_uid, &follower_ids).await?;
     let profiles = crate::service::user::get_common_user_profile(redis, pool, &follower_ids).await?;
 
     let items: Vec<FollowerItem> = rows
