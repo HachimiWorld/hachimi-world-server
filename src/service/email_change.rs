@@ -121,13 +121,13 @@ pub fn reminder_email(
     total: usize,
 ) -> NotificationEmail {
     NotificationEmail {
-        subject: format!("你的基米天堂账号正在更换邮箱（{nth}/{total}）"),
+        subject: format!("基米天堂账号邮箱更换提醒（{nth}/{total}）"),
         body: format!(
             "亲爱的 {user_name}：\n\n\
-            有人在 {} 申请把你账号的绑定邮箱从本邮箱更换为 {}。因为申请时没有验证本邮箱，这次更换要等到 {} 才会生效。\n\n\
-            如果这是你本人的操作，请忽略这封邮件。\n\n\
-            如果不是你本人操作，说明你的密码可能已经泄露。请在更换生效前打开下面的链接，取消这次更换并重新设置密码：\n{link}\n\n\
-            请不要把这个链接转发给别人。这是第 {nth} 封提醒，共 {total} 封。",
+            {} 有人在你的账号中提交了邮箱更换申请，绑定邮箱将由本邮箱更换为 {}。由于申请时未验证本邮箱，此次更换将于 {} 生效。\n\n\
+            如果这是你本人的操作，无需处理此邮件。\n\n\
+            如果不是你本人的操作，你的密码可能已经泄露。请在更换生效前打开以下链接撤销更换，并设置新密码：\n{link}\n\n\
+            此链接仅供你本人使用，请勿转发。这是第 {nth} 封提醒，共 {total} 封。",
             format_time(request_time), mask_email(new_email), format_time(effective_time)
         ),
     }
@@ -135,13 +135,13 @@ pub fn reminder_email(
 
 pub fn applied_with_wait_email(user_name: &str, new_email: &str, revert_until: DateTime<Utc>, link: &str) -> NotificationEmail {
     NotificationEmail {
-        subject: "你的基米天堂账号已更换邮箱".to_string(),
+        subject: "基米天堂账号邮箱已更换".to_string(),
         body: format!(
             "亲爱的 {user_name}：\n\n\
-            你账号的绑定邮箱已从本邮箱更换为 {}。\n\n\
-            如果这是你本人的操作，请忽略这封邮件。\n\n\
-            如果不是你本人操作，请在 {} 前打开下面的链接，把邮箱改回本邮箱并重新设置密码：\n{link}\n\n\
-            请不要把这个链接转发给别人。",
+            你账号的绑定邮箱已由本邮箱更换为 {}。\n\n\
+            如果这是你本人的操作，无需处理此邮件。\n\n\
+            如果不是你本人的操作，请在 {} 前打开以下链接撤销更换。撤销后，绑定邮箱将改回本邮箱，同时需要设置新密码：\n{link}\n\n\
+            此链接仅供你本人使用，请勿转发。",
             mask_email(new_email), format_time(revert_until)
         ),
     }
@@ -149,11 +149,11 @@ pub fn applied_with_wait_email(user_name: &str, new_email: &str, revert_until: D
 
 pub fn applied_with_old_email_email(user_name: &str, new_email: &str, time: DateTime<Utc>) -> NotificationEmail {
     NotificationEmail {
-        subject: "你的基米天堂账号已更换邮箱".to_string(),
+        subject: "基米天堂账号邮箱已更换".to_string(),
         body: format!(
             "亲爱的 {user_name}：\n\n\
-            你账号的绑定邮箱已在 {} 从本邮箱更换为 {}，更换时验证了本邮箱收到的验证码。\n\n\
-            如果这是你本人的操作，请忽略这封邮件。如果不是，说明本邮箱和你的账号可能已被他人登录，请尽快修改邮箱密码并联系我们。",
+            你账号的绑定邮箱已于 {} 由本邮箱更换为 {}。此次更换已通过本邮箱收到的验证码验证。\n\n\
+            如果这是你本人的操作，无需处理此邮件。如果不是，本邮箱和你的账号可能均已被他人登录，请立即修改本邮箱的密码，并联系我们。",
             format_time(time), mask_email(new_email)
         ),
     }
