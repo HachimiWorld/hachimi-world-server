@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE email_change_requests\n        SET status = $2, finish_time = $3, revert_token_hash = $4, revert_expire_time = $5\n        WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Timestamptz",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ee59dfc0890217b8fcdc24fa08b9a36546f10678aa2450de56c3792e0925d616"
+}

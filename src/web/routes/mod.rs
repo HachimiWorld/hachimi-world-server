@@ -1,5 +1,6 @@
 pub mod user;
 pub mod auth;
+pub mod email_change;
 pub mod song;
 pub mod playlist;
 pub mod version;

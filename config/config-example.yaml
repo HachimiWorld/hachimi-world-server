@@ -63,3 +63,7 @@ content_check:
     api_key: change-me
     base_url: https://api.typesafe.ai
     timeout_ms: 3000
+# Optional.
+account:
+  # The link in emails to the old address when the account email changes: this followed by the token.
+  email_change_revert_url: "https://hachimi.world/account/revert-email/?token="

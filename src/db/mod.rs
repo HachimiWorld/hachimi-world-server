@@ -31,6 +31,7 @@ macro_rules! define_id {
 
 
 pub mod refresh_token;
+pub mod email_change_request;
 pub mod user;
 pub mod song;
 pub mod song_tag;

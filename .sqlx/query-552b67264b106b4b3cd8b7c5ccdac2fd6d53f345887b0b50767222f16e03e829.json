@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM email_outbox WHERE id = ANY($1) AND sent_time IS NULL AND dead_time IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "UuidArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "552b67264b106b4b3cd8b7c5ccdac2fd6d53f345887b0b50767222f16e03e829"
+}
