@@ -41,7 +41,7 @@ impl Default for Postgres17 {
 
 impl Image for Postgres17 {
     fn name(&self) -> &str { "postgres" }
-    fn tag(&self) -> &str { "17.6-alpine" }
+    fn tag(&self) -> &str { "17.11-alpine" }
     fn ready_conditions(&self) -> Vec<WaitFor> {
         vec![
             WaitFor::message_on_stderr("database system is ready to accept connections"),

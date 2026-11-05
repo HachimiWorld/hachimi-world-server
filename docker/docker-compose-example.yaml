@@ -14,7 +14,7 @@ services:
       retries: 3
     restart: unless-stopped
   postgresql:
-    image: postgres:17.6-alpine
+    image: postgres:17.11-alpine
     volumes:
       - postgresql-data:/var/lib/postgresql/data
     ports:

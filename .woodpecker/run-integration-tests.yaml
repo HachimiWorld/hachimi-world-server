@@ -10,7 +10,7 @@ when:
 # test via testcontainers.
 services:
   - name: postgres
-    image: postgres:17.6-alpine
+    image: postgres:17.11-alpine
     environment:
       POSTGRES_PASSWORD: postgres
   - name: meilisearch
