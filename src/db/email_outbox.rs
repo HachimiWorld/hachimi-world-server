@@ -144,4 +144,15 @@ impl EmailOutboxDao {
             before, limit
         ).execute(executor).await.map(|x| x.rows_affected())
     }
+
+    /// Deletes the emails in `ids` that haven't been sent or given up yet, so they are never sent.
+    /// Returns how many were deleted.
+    /// @since 261105
+    pub async fn delete_pending_by_ids<'e>(executor: impl PgExecutor<'e>, ids: &[Uuid]) -> sqlx::Result<u64> {
+        if ids.is_empty() { return Ok(0) }
+        sqlx::query!(
+            "DELETE FROM email_outbox WHERE id = ANY($1) AND sent_time IS NULL AND dead_time IS NULL",
+            ids
+        ).execute(executor).await.map(|x| x.rows_affected())
+    }
 }

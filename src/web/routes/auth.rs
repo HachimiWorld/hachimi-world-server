@@ -38,6 +38,7 @@ pub fn router() -> Router<AppState> {
         .route("/captcha", get(captcha))
         .route("/captcha/generate", get(generate_captcha))
         .route("/captcha/submit", post(submit_captcha))
+        .nest("/email", super::email_change::router())
 }
 
 #[derive(Debug, Serialize, Deserialize)]

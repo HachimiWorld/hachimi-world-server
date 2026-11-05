@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### New
+
+- Changing the account email, under `/auth/email`. All endpoints except `/revert_change` require login. Two ways:
+  - With a code from the current email and one from the new email, applied at once. The current email gets a notice
+  - For users who can't read their current email any more: with the password and a code from the new email, applied after 7 days. The current email gets 3 reminders (at once, after 3 days and after 6 days) with a link that cancels the change. Once applied it gets a notice with a link that undoes it for 30 days. Following either link sets a new password and logs out every device. Allowed once in 30 days, one at a time; a background job applies due changes every minute
+  - `/auth/email/info` (GET): `email`, `pending` (`new_email`, `effective_time`, `create_time`, or null), `next_request_time` (when a change without the current email can be requested again, or null)
+  - `/auth/email/send_old_code` (POST): sends a code to the current email. Errors with `too_many_requests`
+  - `/auth/email/send_new_code` (POST): body `new_email`. Sending is limited to once a minute per user. Errors: `invalid_email`, `same_email`, `email_existed`, `too_many_requests`
+  - `/auth/email/change` (POST): `new_email`, `old_code`, `new_code`. Errors: the ones above, `invalid_old_code`, `invalid_new_code`. Cancels a pending change
+  - `/auth/email/request_change` (POST): `new_email`, `new_code`, `password`. Response: the pending change. Errors: the ones above, `pending_exists`, `too_frequent`, `password_not_match`, `too_many_attempts` (5 wrong passwords in an hour), `invalid_new_code`
+  - `/auth/email/cancel_change` (POST): cancels the pending change, if any
+  - `/auth/email/revert_change` (POST, no login): `token` (from the link), `new_password`. Errors: `invalid_password`, `invalid_token` (unknown, used or expired), `old_email_taken`
+  - The link is the new optional config `account.email_change_revert_url` followed by the token. Defaults to `https://hachimi.world/app/#/auth/revert_email_change?token=`
+  - Changes are kept in the new `email_change_requests` table
+
 ## 261031
 
 ### New
