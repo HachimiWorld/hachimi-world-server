@@ -356,6 +356,43 @@ async fn test_followers_list() {
 }
 
 #[tokio::test]
+async fn test_followers_list_mutual_flag() {
+    with_test_environment(|mut env| async move {
+        let user_a = auth::with_new_random_test_user(&mut env).await;
+        let user_b = auth::with_new_random_test_user(&mut env).await;
+        let user_c = auth::with_new_random_test_user(&mut env).await;
+
+        // B and C follow A
+        env.api.set_token(user_b.token.access_token.clone());
+        do_follow(&mut env, user_a.uid).await;
+        env.api.set_token(user_c.token.access_token.clone());
+        do_follow(&mut env, user_a.uid).await;
+
+        // A follows B back, but not C
+        env.api.set_token(user_a.token.access_token.clone());
+        do_follow(&mut env, user_b.uid).await;
+
+        let resp = env
+            .api
+            .get_query("/user/followers", &FollowingListReq {
+                after: None,
+                limit: 20,
+            })
+            .await
+            .parse_resp::<FollowersListResp>()
+            .await
+            .unwrap();
+
+        assert_eq!(resp.items.len(), 2);
+        let item_b = resp.items.iter().find(|i| i.user.uid == user_b.uid).unwrap();
+        let item_c = resp.items.iter().find(|i| i.user.uid == user_c.uid).unwrap();
+        assert!(item_b.is_mutual);
+        assert!(!item_c.is_mutual);
+    })
+    .await
+}
+
+#[tokio::test]
 async fn test_following_pagination() {
     with_test_environment(|mut env| async move {
         let user_a = auth::with_new_random_test_user(&mut env).await;

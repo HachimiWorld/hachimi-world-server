@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT followed_id as \"followed_id: UserId\" FROM follows WHERE follower_id = $1 AND followed_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "followed_id: UserId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "follows",
+            "name": "followed_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "a5a87ce79b4979e096cbc064260c722c87c1c7df98203a30b388888ce50b9bc2"
+}
