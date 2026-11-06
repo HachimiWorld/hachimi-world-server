@@ -85,23 +85,15 @@ pub struct CommentDao;
 
 // "Visible" in the queries below means not hidden and not deleted, as in [Comment::is_visible].
 impl CommentDao {
-    /// A new id, taken before the comment is checked so the check can name it. Ids taken for
-    /// comments that are blocked are never used.
-    pub async fn next_id<'e>(executor: impl PgExecutor<'e>) -> sqlx::Result<CommentId> {
-        sqlx::query_scalar!(r#"SELECT nextval(pg_get_serial_sequence('comments', 'id')) AS "id!: CommentId""#)
-            .fetch_one(executor).await
-    }
-
-    /// Saves `value` with its id, from [Self::next_id].
-    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Comment) -> sqlx::Result<()> {
-        sqlx::query!(
-            "INSERT INTO comments (id, target_type, target_id, user_id, root_id, reply_to_id, reply_to_uid, content, is_hidden, like_count, visible_reply_count, delete_time, create_time, update_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)",
-            value.id as CommentId, value.target_type, value.target_id, value.user_id as UserId, value.root_id as Option<CommentId>,
+    /// The `id` of `value` is ignored; returns the new id.
+    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Comment) -> sqlx::Result<CommentId> {
+        sqlx::query_scalar!(
+            r#"INSERT INTO comments (target_type, target_id, user_id, root_id, reply_to_id, reply_to_uid, content, is_hidden, like_count, visible_reply_count, delete_time, create_time, update_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id AS "id: CommentId""#,
+            value.target_type, value.target_id, value.user_id as UserId, value.root_id as Option<CommentId>,
             value.reply_to_id as Option<CommentId>, value.reply_to_uid as UserId, value.content,
             value.is_hidden, value.like_count, value.visible_reply_count, value.delete_time, value.create_time, value.update_time
-        ).execute(executor).await?;
-        Ok(())
+        ).fetch_one(executor).await
     }
 
     pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: CommentId) -> sqlx::Result<Option<Comment>> {

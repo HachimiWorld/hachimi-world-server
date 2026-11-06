@@ -25,9 +25,8 @@ impl ReviewAdapter for CommentReview {
         Ok(vec![ReviewItem::Text { subject, text: comment.content }])
     }
 
-    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()> {
-        comment::publish_pending(tx, &PendingComment::deserialize(payload)?).await?;
-        Ok(())
+    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<i64> {
+        Ok(comment::publish_pending(tx, &PendingComment::deserialize(payload)?).await?.0)
     }
 
     /// Blocked comments are dropped without a word, as when blocked on posting.

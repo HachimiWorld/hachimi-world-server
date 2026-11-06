@@ -5,6 +5,7 @@ use crate::common::publish::create_approved_song;
 use crate::common::typesafe::{get_mock_typesafe_client, get_recovered_typesafe_client, new_content_checker};
 use crate::common::{with_test_environment, with_test_environment_with, CommonParse, TestEnvironment, TestOptions};
 use chrono::{Duration, Utc};
+use hachimi_world_server::db::content_review::ContentReviewDao;
 use hachimi_world_server::db::moment::{MomentDao, MomentId};
 use hachimi_world_server::db::playlist::PlaylistId;
 use hachimi_world_server::db::song::SongId;
@@ -112,11 +113,17 @@ async fn run_reviews(env: &TestEnvironment, client: hachimi_world_server::util::
     content_review::run(&env.pool, &red_lock, Some(&checker), env.file_host.as_ref(), now).await.unwrap()
 }
 
-/// The id the moment `uid` posted last that waits for content checks will have.
-async fn last_review_target(env: &TestEnvironment, user: &TestUser) -> MomentId {
-    let id: i64 = sqlx::query_scalar("SELECT target_id FROM content_reviews WHERE actor_uid = $1 ORDER BY id DESC LIMIT 1")
-        .bind(user.uid).fetch_one(&env.pool).await.unwrap();
-    MomentId(id)
+/// The review of the moment `user` posted last that waits for content checks.
+async fn last_review(env: &TestEnvironment, user: &TestUser) -> i64 {
+    sqlx::query_scalar("SELECT id FROM content_reviews WHERE actor_uid = $1 ORDER BY id DESC LIMIT 1")
+        .bind(user.uid).fetch_one(&env.pool).await.unwrap()
+}
+
+/// The moment that waited in `review`, once it's saved.
+async fn saved(env: &TestEnvironment, review: i64) -> Option<MomentId> {
+    let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
+    if review.target_id == 0 { return None }
+    Some(MomentDao::get_by_id(&env.pool, MomentId(review.target_id)).await.unwrap().unwrap().id)
 }
 
 #[tokio::test]
@@ -267,6 +274,15 @@ async fn images_and_text_are_checked() {
         wait_lock().await;
         let moment = try_create(&env, "正常的", vec![fine.image_id], vec![]).await.unwrap().unwrap();
         assert_eq!(moment.images.len(), 1);
+
+        // Its checks, the image's on upload and the text's on posting, name it; the blocked ones
+        // name nothing
+        let named: Vec<String> = sqlx::query_scalar("SELECT subject FROM content_checks WHERE target_id = $1 ORDER BY id")
+            .bind(moment.id.0).fetch_all(&env.pool).await.unwrap();
+        assert_eq!(named, ["moment.image", "moment.text"]);
+        let unnamed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE actor_uid = $1 AND target_id = 0")
+            .bind(alice.uid).fetch_one(&env.pool).await.unwrap();
+        assert_eq!(unnamed, 2);
     }).await
 }
 
@@ -281,15 +297,15 @@ async fn moments_that_cant_be_checked_wait() {
         login(&mut env, &alice);
         let unchecked = upload(&env, png(BLUE, 300, 200)).await.unwrap();
         assert!(try_create(&env, "图审不了", vec![unchecked.image_id], vec![]).await.unwrap().is_none());
-        let with_image = last_review_target(&env, &alice).await;
+        let with_image = last_review(&env, &alice).await;
         // Fine once only `#down` is gone
         login(&mut env, &bob);
         assert!(try_create(&env, "#down 好听", vec![], vec![]).await.unwrap().is_none());
-        let good = last_review_target(&env, &bob).await;
+        let good = last_review(&env, &bob).await;
         // Blocked once TypeSafe is back
         login(&mut env, &carol);
         assert!(try_create(&env, "#down #sexual", vec![], vec![]).await.unwrap().is_none());
-        let bad = last_review_target(&env, &carol).await;
+        let bad = last_review(&env, &carol).await;
 
         // Seen by no one while waiting, their authors included
         login(&mut env, &alice);
@@ -299,14 +315,18 @@ async fn moments_that_cant_be_checked_wait() {
         // Still down: tried again later
         let now = Utc::now();
         assert_eq!(run_reviews(&env, get_mock_typesafe_client(), now + Duration::minutes(2)).await, 3);
-        assert!(MomentDao::get_by_id(&env.pool, good).await.unwrap().is_none());
+        assert!(saved(&env, good).await.is_none());
 
         // Back up: saved if everything passes, dropped and the author told if not
         wait_lock().await;
         assert_eq!(run_reviews(&env, get_recovered_typesafe_client(), now + Duration::minutes(10)).await, 3);
-        assert!(MomentDao::get_by_id(&env.pool, with_image).await.unwrap().is_some());
-        assert!(MomentDao::get_by_id(&env.pool, good).await.unwrap().is_some());
-        assert!(MomentDao::get_by_id(&env.pool, bad).await.unwrap().is_none());
+        let with_image = saved(&env, with_image).await.unwrap();
+        let good = saved(&env, good).await.unwrap();
+        assert!(saved(&env, bad).await.is_none());
+        // The image's check, made when it was posted, names the moment
+        let named: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE subject = 'moment.image' AND target_id = $1")
+            .bind(with_image.0).fetch_one(&env.pool).await.unwrap();
+        assert_eq!(named, 1);
         // In their place by when they were posted
         assert_eq!(square(&env).await, [good, with_image]);
         let told: Vec<String> = sqlx::query_scalar("SELECT body FROM notifications WHERE recipient_uid = $1 AND notification_type = 'moment.rejected'")

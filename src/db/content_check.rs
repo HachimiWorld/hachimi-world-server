@@ -62,7 +62,8 @@ pub struct ContentCheck {
     pub id: i64,
     /// What was checked, such as `user.username` or `user.bio`.
     pub subject: String,
-    /// The object the content belongs to.
+    /// The object the content belongs to. 0 for content checked before it's saved, until it's
+    /// saved, and for good if it never is.
     pub target_id: i64,
     pub actor_uid: UserId,
     /// The text as submitted, or the storage key of an image; which one depends on `subject`.
@@ -117,6 +118,15 @@ impl ContentCheckDao {
             value.subject, value.target_id, value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
             value.model, value.answers, value.error, &value.blocked_by, value.latency_ms, value.reused_from, value.create_time
         ).fetch_one(executor).await
+    }
+
+    /// Names what `ids` checked, once it's saved: content checked before it's saved is recorded
+    /// with `target_id` 0.
+    pub async fn set_target_id<'e>(executor: impl PgExecutor<'e>, ids: &[i64], target_id: i64) -> sqlx::Result<()> {
+        if ids.is_empty() { return Ok(()) }
+        sqlx::query!("UPDATE content_checks SET target_id = $2 WHERE id = ANY($1)", ids, target_id)
+            .execute(executor).await?;
+        Ok(())
     }
 
     /// Newest first.

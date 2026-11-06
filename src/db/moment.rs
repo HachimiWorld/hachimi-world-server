@@ -69,22 +69,14 @@ pub struct MomentDao;
 // generic plan for the prepared statement, the OR makes the cursor a filter instead of an index
 // condition, and a deep page reads every row before it, as OFFSET would.
 impl MomentDao {
-    /// A new id, taken before the moment is checked so the checks can name it. Ids taken for
-    /// moments that are blocked are never used.
-    pub async fn next_id<'e>(executor: impl PgExecutor<'e>) -> sqlx::Result<MomentId> {
-        sqlx::query_scalar!(r#"SELECT nextval(pg_get_serial_sequence('moments', 'id')) AS "id!: MomentId""#)
-            .fetch_one(executor).await
-    }
-
-    /// Saves `value` with its id, from [Self::next_id].
-    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Moment) -> sqlx::Result<()> {
-        sqlx::query!(
-            "INSERT INTO moments (id, user_id, content, images, attachments, is_hidden, like_count, delete_time, create_time, update_time)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-            value.id as MomentId, value.user_id as UserId, value.content, value.images, value.attachments,
+    /// The `id` of `value` is ignored; returns the new id.
+    pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Moment) -> sqlx::Result<MomentId> {
+        sqlx::query_scalar!(
+            r#"INSERT INTO moments (user_id, content, images, attachments, is_hidden, like_count, delete_time, create_time, update_time)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id AS "id: MomentId""#,
+            value.user_id as UserId, value.content, value.images, value.attachments,
             value.is_hidden, value.like_count, value.delete_time, value.create_time, value.update_time
-        ).execute(executor).await?;
-        Ok(())
+        ).fetch_one(executor).await
     }
 
     pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: MomentId) -> sqlx::Result<Option<Moment>> {

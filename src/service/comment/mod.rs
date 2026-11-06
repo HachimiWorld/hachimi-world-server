@@ -374,7 +374,6 @@ pub async fn create(
     }
 
     let pending = PendingComment {
-        id: CommentDao::next_id(pool).await?,
         target_type: target.as_str().to_string(),
         target_id,
         user_id: uid,
@@ -384,17 +383,23 @@ pub async fn create(
         content: content.to_string(),
         create_time: now,
     };
-    let verdict = match checker {
-        Some(checker) => checker.try_check_text(pool, target.subject(), uid, pending.id.0, content).await?,
-        None => Some(Verdict::Pass),
+    let checked = match checker {
+        Some(checker) => Some(checker.try_check_text(pool, target.subject(), uid, 0, content).await?),
+        None => None,
     };
+    let verdict = checked.as_ref().map_or(Some(Verdict::Pass), |x| x.verdict.clone());
     let mut tx = pool.begin().await?;
     let saved = match verdict {
-        Some(Verdict::Pass) => Some(save(&mut tx, &pending).await?),
+        Some(Verdict::Pass) => {
+            let comment = save(&mut tx, &pending).await?;
+            let record_ids: Vec<i64> = checked.iter().map(|x| x.record_id).collect();
+            ContentCheckDao::set_target_id(&mut *tx, &record_ids, comment.id.0).await?;
+            Some(comment)
+        }
         Some(Verdict::Blocked(_)) => return business(CommentError::Rejected),
         None => {
             let payload = serde_json::to_value(&pending)?;
-            content_review::enqueue(&mut tx, target.subject(), pending.id.0, uid, payload, now).await?;
+            content_review::enqueue(&mut tx, target.subject(), uid, payload, now).await?;
             None
         }
     };
@@ -411,9 +416,11 @@ pub async fn create(
 /// running can read newer ones. So a field added later must have `#[serde(default)]` or be an
 /// `Option`, for payloads written before it; and must be safe to lose, as older code ignores it.
 /// Never add `#[serde(deny_unknown_fields)]`.
+///
+/// Payloads written before 261106 also have the `id` taken for it then, which is ignored: it gets
+/// a new one when saved.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingComment {
-    pub id: CommentId,
     pub target_type: String,
     pub target_id: i64,
     pub user_id: UserId,
@@ -428,8 +435,8 @@ pub struct PendingComment {
 /// Saves a comment that passed its content check, or was published without one, and counts it
 /// on its root.
 async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sqlx::Result<Comment> {
-    let comment = Comment {
-        id: pending.id,
+    let mut comment = Comment {
+        id: CommentId(0),
         target_type: pending.target_type.clone(),
         target_id: pending.target_id,
         user_id: pending.user_id,
@@ -444,7 +451,7 @@ async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sql
         create_time: pending.create_time,
         update_time: Utc::now(),
     };
-    CommentDao::insert(&mut **tx, &comment).await?;
+    comment.id = CommentDao::insert(&mut **tx, &comment).await?;
     if let Some(root_id) = comment.root_id {
         CommentDao::add_visible_reply_count(&mut **tx, root_id, 1).await?;
     }
@@ -452,9 +459,9 @@ async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sql
 }
 
 /// Saves a comment that waited for its content check, once it passes, in `tx`, the transaction
-/// that ends its review.
-pub async fn publish_pending(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sqlx::Result<()> {
-    save(tx, pending).await.map(|_| ())
+/// that ends its review. Returns its new id.
+pub async fn publish_pending(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingComment) -> sqlx::Result<CommentId> {
+    save(tx, pending).await.map(|x| x.id)
 }
 
 /// Deletes a comment. Its author can, and so can the target's owner. Replies under a deleted

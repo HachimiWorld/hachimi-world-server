@@ -24,10 +24,11 @@
 mod comment;
 mod moment;
 
+use crate::db::content_check::ContentCheckDao;
 use crate::db::content_review::{ContentReview, ContentReviewDao};
 use crate::file_hosting::FileHost;
 use crate::db::user::UserId;
-use crate::service::content_check::{ContentChecker, Verdict};
+use crate::service::content_check::{Checked, ContentChecker, Verdict};
 use crate::service::upload;
 use crate::util::redlock::RedLock;
 use crate::web::state::AppState;
@@ -83,8 +84,8 @@ pub trait ReviewAdapter {
     fn items(&self, payload: &Value) -> serde_json::Result<Vec<ReviewItem>>;
 
     /// Saves the content in its payload to its own table, in `tx`, the transaction that ends its
-    /// review, once it passed.
-    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()>;
+    /// review, once it passed. Returns its new id.
+    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<i64>;
 
     /// Called in `tx`, the transaction that ends its review, when an item was blocked and the
     /// content is dropped, such as to tell its author.
@@ -97,12 +98,11 @@ impl ReviewKind {
     }
 }
 
-/// Adds content to check again, waiting in `payload`, the shape its kind's adapter reads.
-/// `target_id` is the id the content will have once saved.
+/// Adds content to check again, waiting in `payload`, the shape its kind's adapter reads. It gets
+/// its id when it's saved, which is then written to the review's `target_id`.
 pub async fn enqueue(
     tx: &mut Transaction<'_, Postgres>,
     subject: &str,
-    target_id: i64,
     actor_uid: UserId,
     payload: Value,
     now: DateTime<Utc>,
@@ -110,7 +110,7 @@ pub async fn enqueue(
     ContentReviewDao::insert(&mut **tx, &ContentReview {
         id: 0,
         subject: subject.to_string(),
-        target_id,
+        target_id: 0,
         actor_uid,
         payload,
         attempt_count: 0,
@@ -239,10 +239,10 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, file_host: 
     };
 
     review.attempt_count += 1;
-    let verdict = match checker {
+    let (verdict, record_ids) = match checker {
         Some(checker) => check_items(pool, checker, file_host, &review, &items).await?,
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
-        None => Some(Verdict::Pass),
+        None => (Some(Verdict::Pass), vec![]),
     };
     let outcome = match (checker, verdict) {
         (None, _) => Outcome::Unchecked,
@@ -263,7 +263,8 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, file_host: 
     // Saved and ended together, so a crash can't save it twice
     let mut tx = pool.begin().await?;
     if outcome != Outcome::Block {
-        kind.publish(&mut tx, &review.payload).await?;
+        review.target_id = kind.publish(&mut tx, &review.payload).await?;
+        ContentCheckDao::set_target_id(&mut *tx, &record_ids, review.target_id).await?;
     } else {
         kind.reject(&mut tx, &review.payload).await?;
     }
@@ -276,32 +277,35 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, file_host: 
 }
 
 /// Checks every item: blocked if any is, `None` if any can't be checked now, else passed. Stops at
-/// the first blocked one, as the content is dropped anyway.
+/// the first blocked one, as the content is dropped anyway. Returns the records of the checks too,
+/// which name the content once it's saved.
 async fn check_items(
     pool: &PgPool,
     checker: &ContentChecker,
     file_host: &dyn FileHost,
     review: &ContentReview,
     items: &[ReviewItem],
-) -> anyhow::Result<Option<Verdict>> {
+) -> anyhow::Result<(Option<Verdict>, Vec<i64>)> {
     let mut unchecked = false;
+    let mut record_ids = vec![];
     for item in items {
-        let verdict = match item {
+        let checked = match item {
             ReviewItem::Text { subject, text } => {
-                checker.try_check_text(pool, subject, review.actor_uid, review.target_id, text).await?
+                Some(checker.try_check_text(pool, subject, review.actor_uid, 0, text).await?)
             }
             ReviewItem::Image { subject, key } => check_stored_image(pool, checker, file_host, review, subject, key).await?,
         };
-        match verdict {
+        record_ids.extend(checked.as_ref().map(|x| x.record_id));
+        match checked.and_then(|x| x.verdict) {
             Some(Verdict::Pass) => {}
-            Some(blocked @ Verdict::Blocked(_)) => return Ok(Some(blocked)),
+            Some(blocked @ Verdict::Blocked(_)) => return Ok((Some(blocked), record_ids)),
             None => unchecked = true,
         }
     }
-    Ok(if unchecked { None } else { Some(Verdict::Pass) })
+    Ok((if unchecked { None } else { Some(Verdict::Pass) }, record_ids))
 }
 
-/// Checks an image stored at `key`. `None` if it can't be read back now either, like a failed call.
+/// Checks an image stored at `key`. `None` if it can't be read back, so nothing was checked.
 async fn check_stored_image(
     pool: &PgPool,
     checker: &ContentChecker,
@@ -309,7 +313,7 @@ async fn check_stored_image(
     review: &ContentReview,
     subject: &str,
     key: &str,
-) -> anyhow::Result<Option<Verdict>> {
+) -> anyhow::Result<Option<Checked>> {
     let stored = match file_host.download(key).await {
         Ok(x) => x,
         Err(e) => {
@@ -323,7 +327,7 @@ async fn check_stored_image(
     }).await??;
     // Already stored where it would be served from, which the record keeps either way; a blocked
     // one is never referenced
-    checker.try_check_image(pool, subject, review.actor_uid, review.target_id, &stored, &jpeg, key, key).await
+    Ok(Some(checker.try_check_image(pool, subject, review.actor_uid, 0, &stored, &jpeg, key, key).await?))
 }
 
 #[cfg(test)]

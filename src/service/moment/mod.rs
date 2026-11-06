@@ -166,12 +166,15 @@ pub struct MomentItem {
 /// Never add `#[serde(deny_unknown_fields)]`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PendingMoment {
-    pub id: MomentId,
     pub user_id: UserId,
     pub content: String,
     pub images: Vec<StoredImage>,
     /// Keys of the images that couldn't be checked when uploaded, to check with the moment.
     pub unchecked_image_keys: Vec<String>,
+    /// Records of the checks already made, of its images when uploaded and of the rest when it
+    /// was posted, named after it once it's saved.
+    #[serde(default)]
+    pub check_record_ids: Vec<i64>,
     pub attachments: Vec<StoredAttachment>,
     /// When it was posted, which it keeps once saved.
     pub create_time: DateTime<Utc>,
@@ -196,6 +199,17 @@ impl PendingMoment {
     }
 }
 
+/// How an uploaded image did in its content check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageCheck {
+    /// Passed; `record_id` is the record of the check, named after the moment once it's saved.
+    Passed { record_id: i64 },
+    /// Couldn't be checked; checked again with the moment.
+    Unchecked,
+    /// Checks are off.
+    Off,
+}
+
 /// An uploaded image, kept in Redis until it's posted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct UploadedImage {
@@ -203,6 +217,9 @@ struct UploadedImage {
     image: StoredImage,
     /// Passed its content check, or checks are off.
     checked: bool,
+    /// The record of the check it passed.
+    #[serde(default)]
+    check_record_id: Option<i64>,
 }
 
 fn uploaded_image_key(image_id: &str) -> String {
@@ -237,11 +254,16 @@ pub fn prepare_image(bytes: Bytes) -> anyhow::Result<PreparedImage> {
     })
 }
 
-/// Keeps an uploaded and stored image for `uid` to post, and returns its id. `checked` is whether
-/// it passed its content check; an unchecked one is checked again with the moment.
-pub async fn keep_uploaded_image(state: &AppState, uid: UserId, image: StoredImage, checked: bool) -> anyhow::Result<String> {
+/// Keeps an uploaded and stored image for `uid` to post, and returns its id. An unchecked one is
+/// checked again with the moment.
+pub async fn keep_uploaded_image(state: &AppState, uid: UserId, image: StoredImage, check: ImageCheck) -> anyhow::Result<String> {
     let image_id = uuid::Uuid::new_v4().simple().to_string();
-    let value = serde_json::to_string(&UploadedImage { uid, image, checked })?;
+    let (checked, check_record_id) = match check {
+        ImageCheck::Passed { record_id } => (true, Some(record_id)),
+        ImageCheck::Unchecked => (false, None),
+        ImageCheck::Off => (true, None),
+    };
+    let value = serde_json::to_string(&UploadedImage { uid, image, checked, check_record_id })?;
     let mut redis = state.redis_conn.clone();
     let _: () = redis.set_ex(uploaded_image_key(&image_id), value, UPLOADED_IMAGE_TTL_SECS).await?;
     Ok(image_id)
@@ -336,8 +358,7 @@ pub async fn create(
         }
     }
 
-    let pending = PendingMoment {
-        id: MomentDao::next_id(pool).await?,
+    let mut pending = PendingMoment {
         user_id: uid,
         content: content.to_string(),
         images: images.iter().map(|x| x.image.clone()).collect(),
@@ -346,11 +367,16 @@ pub async fn create(
         } else {
             vec![]
         },
+        check_record_ids: images.iter().filter_map(|x| x.check_record_id).collect(),
         attachments: stored_attachments,
         create_time: now,
     };
     let verdict = match checker {
-        Some(checker) => check_now(pool, checker, &pending).await?,
+        Some(checker) => {
+            let (verdict, record_ids) = check_now(pool, checker, &pending).await?;
+            pending.check_record_ids.extend(record_ids);
+            verdict
+        }
         None => Some(Verdict::Pass),
     };
     let mut tx = pool.begin().await?;
@@ -359,7 +385,7 @@ pub async fn create(
         Some(Verdict::Blocked(_)) => return business(MomentError::Rejected),
         None => {
             let payload = serde_json::to_value(&pending)?;
-            content_review::enqueue(&mut tx, content_check::SUBJECT_MOMENT_TEXT, pending.id.0, uid, payload, now).await?;
+            content_review::enqueue(&mut tx, content_check::SUBJECT_MOMENT_TEXT, uid, payload, now).await?;
             None
         }
     };
@@ -377,27 +403,32 @@ pub async fn create(
 }
 
 /// Checks what can be checked now: the text and what the attachments need. Unchecked images aren't
-/// tried again so soon, so a moment with any waits.
-async fn check_now(pool: &PgPool, checker: &ContentChecker, pending: &PendingMoment) -> anyhow::Result<Option<Verdict>> {
+/// tried again so soon, so a moment with any waits. Returns the records of the checks too.
+async fn check_now(pool: &PgPool, checker: &ContentChecker, pending: &PendingMoment) -> anyhow::Result<(Option<Verdict>, Vec<i64>)> {
     let mut unchecked = false;
+    let mut record_ids = vec![];
     for item in pending.review_items()? {
         let verdict = match item {
-            ReviewItem::Text { subject, text } => checker.try_check_text(pool, subject, pending.user_id, pending.id.0, &text).await?,
+            ReviewItem::Text { subject, text } => {
+                let checked = checker.try_check_text(pool, subject, pending.user_id, 0, &text).await?;
+                record_ids.push(checked.record_id);
+                checked.verdict
+            }
             ReviewItem::Image { .. } => None,
         };
         match verdict {
             Some(Verdict::Pass) => {}
-            Some(blocked @ Verdict::Blocked(_)) => return Ok(Some(blocked)),
+            Some(blocked @ Verdict::Blocked(_)) => return Ok((Some(blocked), record_ids)),
             None => unchecked = true,
         }
     }
-    Ok(if unchecked { None } else { Some(Verdict::Pass) })
+    Ok((if unchecked { None } else { Some(Verdict::Pass) }, record_ids))
 }
 
 /// Saves a moment that passed its content checks, or was published without them.
 async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingMoment) -> anyhow::Result<Moment> {
-    let moment = Moment {
-        id: pending.id,
+    let mut moment = Moment {
+        id: MomentId(0),
         user_id: pending.user_id,
         content: pending.content.clone(),
         images: serde_json::to_value(&pending.images)?,
@@ -408,14 +439,15 @@ async fn save(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingMoment) -> anyh
         create_time: pending.create_time,
         update_time: Utc::now(),
     };
-    MomentDao::insert(&mut **tx, &moment).await?;
+    moment.id = MomentDao::insert(&mut **tx, &moment).await?;
+    ContentCheckDao::set_target_id(&mut **tx, &pending.check_record_ids, moment.id.0).await?;
     Ok(moment)
 }
 
 /// Saves a moment that waited for its content checks, once everything passes, in `tx`, the
-/// transaction that ends its review.
-pub async fn publish_pending(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingMoment) -> anyhow::Result<()> {
-    save(tx, pending).await.map(|_| ())
+/// transaction that ends its review. Returns its new id.
+pub async fn publish_pending(tx: &mut sqlx::PgTransaction<'_>, pending: &PendingMoment) -> anyhow::Result<MomentId> {
+    save(tx, pending).await.map(|x| x.id)
 }
 
 /// Tells the author that a moment that waited for its content checks was blocked and dropped, in

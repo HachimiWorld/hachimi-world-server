@@ -21,8 +21,8 @@ impl ReviewAdapter for MomentReview {
         PendingMoment::deserialize(payload)?.review_items().map_err(serde::de::Error::custom)
     }
 
-    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()> {
-        moment::publish_pending(tx, &PendingMoment::deserialize(payload)?).await
+    async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<i64> {
+        Ok(moment::publish_pending(tx, &PendingMoment::deserialize(payload)?).await?.0)
     }
 
     /// A moment is longer than a comment, so its author is told rather than left wondering.

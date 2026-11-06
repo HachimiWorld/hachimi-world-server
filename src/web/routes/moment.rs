@@ -2,7 +2,7 @@ use crate::db::moment::MomentId;
 use crate::db::user::UserId;
 use crate::service::content_check::{self, ImageUpload, Verdict};
 use crate::service::errors::ServiceError;
-use crate::service::moment::{self, AttachmentInput, MomentCursor, MomentError, MomentItem, StoredImage};
+use crate::service::moment::{self, AttachmentInput, ImageCheck, MomentCursor, MomentError, MomentItem, StoredImage};
 use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -73,9 +73,9 @@ async fn upload_image(claims: Claims, state: State<AppState>, mut multipart: Mul
         .map_err(|_| common!("invalid_image", "The image is not supported"))?;
 
     // Held until the image is stored, so the user's uploads are checked one at a time
-    let (checked, _lock) = match &state.content_checker {
+    let (check, _lock) = match &state.content_checker {
         Some(checker) => {
-            let (verdict, lock) = content_check::try_check_image_upload(checker, &state, ImageUpload {
+            let (checked, lock) = content_check::try_check_image_upload(checker, &state, ImageUpload {
                 subject: content_check::SUBJECT_MOMENT_IMAGE,
                 actor_uid: uid,
                 target_id: 0,
@@ -84,14 +84,14 @@ async fn upload_image(claims: Claims, state: State<AppState>, mut multipart: Mul
                 key: &prepared.key,
                 blocked_dir: "moment",
             }).await?;
-            match verdict {
-                Some(Verdict::Pass) => (true, Some(lock)),
+            match checked.verdict {
+                Some(Verdict::Pass) => (ImageCheck::Passed { record_id: checked.record_id }, Some(lock)),
                 Some(Verdict::Blocked(_)) => err!("image_rejected", "Image contains inappropriate content"),
                 // Kept, and checked again with the moment
-                None => (false, Some(lock)),
+                None => (ImageCheck::Unchecked, Some(lock)),
             }
         }
-        None => (true, None),
+        None => (ImageCheck::Off, None),
     };
 
     let image = state.file_host.upload(Bytes::from(prepared.webp), &prepared.key).await?;
@@ -103,7 +103,7 @@ async fn upload_image(claims: Claims, state: State<AppState>, mut multipart: Mul
         width: prepared.width,
         height: prepared.height,
     };
-    let image_id = moment::keep_uploaded_image(&state, uid, stored.clone(), checked).await?;
+    let image_id = moment::keep_uploaded_image(&state, uid, stored.clone(), check).await?;
     ok!(UploadImageResp { image_id, url: stored.url, thumb_url: stored.thumb_url, width: stored.width, height: stored.height })
 }
 

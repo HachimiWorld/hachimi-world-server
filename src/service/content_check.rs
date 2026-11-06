@@ -392,12 +392,13 @@ impl ContentChecker {
         target_id: i64,
         text: &str,
     ) -> anyhow::Result<Verdict> {
-        Ok(self.try_check_text(pool, subject, actor_uid, target_id, text).await?.unwrap_or(Verdict::Pass))
+        Ok(self.try_check_text(pool, subject, actor_uid, target_id, text).await?.verdict.unwrap_or(Verdict::Pass))
     }
 
-    /// [ContentChecker::check_text], but `None` when TypeSafe fails or its answer doesn't match the
-    /// policy, for content that waits to be checked again instead of passing. The failure is
-    /// recorded either way.
+    /// [ContentChecker::check_text], but the verdict is `None` when TypeSafe fails or its answer
+    /// doesn't match the policy, for content that waits to be checked again instead of passing. The
+    /// failure is recorded either way. Content checked before it's saved has no id yet: pass 0 as
+    /// `target_id`, and set it on the record once saved, with [ContentCheckDao::set_target_id].
     /// @since 261021
     pub async fn try_check_text(
         &self,
@@ -406,11 +407,11 @@ impl ContentChecker {
         actor_uid: UserId,
         target_id: i64,
         text: &str,
-    ) -> anyhow::Result<Option<Verdict>> {
+    ) -> anyhow::Result<Checked> {
         let policy = self.subject_policy(subject)?;
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(text.as_bytes()) };
-        if let Some(verdict) = self.reuse(pool, &record, |_| text.to_string()).await? {
-            return Ok(Some(verdict));
+        if let Some(checked) = self.reuse(pool, &record, |_| text.to_string()).await? {
+            return Ok(checked);
         }
         let call = self.client.system_one(&self.model, text, &policy.questions);
         self.check(pool, policy, record, call, |_| text.to_string()).await
@@ -434,12 +435,12 @@ impl ContentChecker {
         passed_key: &str,
         blocked_key: &str,
     ) -> anyhow::Result<Verdict> {
-        let verdict = self.try_check_image(pool, subject, actor_uid, target_id, uploaded, jpeg, passed_key, blocked_key).await?;
-        Ok(verdict.unwrap_or(Verdict::Pass))
+        let checked = self.try_check_image(pool, subject, actor_uid, target_id, uploaded, jpeg, passed_key, blocked_key).await?;
+        Ok(checked.verdict.unwrap_or(Verdict::Pass))
     }
 
-    /// [ContentChecker::check_image], but `None` when TypeSafe fails or its answer doesn't match
-    /// the policy, as [ContentChecker::try_check_text].
+    /// [ContentChecker::check_image], but the verdict is `None` when TypeSafe fails or its answer
+    /// doesn't match the policy, as [ContentChecker::try_check_text].
     /// @since 261106
     #[allow(clippy::too_many_arguments)]
     pub async fn try_check_image(
@@ -452,7 +453,7 @@ impl ContentChecker {
         jpeg: &[u8],
         passed_key: &str,
         blocked_key: &str,
-    ) -> anyhow::Result<Option<Verdict>> {
+    ) -> anyhow::Result<Checked> {
         let policy = self.subject_policy(subject)?;
         let call = self.client.system_one_image(&self.image_model, jpeg, &policy.questions);
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
@@ -463,6 +464,7 @@ impl ContentChecker {
 
     /// The verdict of an earlier check of the same image file, recorded the same way as
     /// [ContentChecker::check_image]; `None` when there's none to reuse. See [ContentChecker::reuse].
+    /// The verdict in it is never `None`.
     /// @since 261019
     pub async fn reuse_image(
         &self,
@@ -473,7 +475,7 @@ impl ContentChecker {
         uploaded: &[u8],
         passed_key: &str,
         blocked_key: &str,
-    ) -> anyhow::Result<Option<Verdict>> {
+    ) -> anyhow::Result<Option<Checked>> {
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
         self.reuse(pool, &record, |blocked| {
             if blocked { blocked_key } else { passed_key }.to_string()
@@ -499,13 +501,13 @@ impl ContentChecker {
     /// verdict, and returns the verdict: the same content would get the same answers, so asking
     /// again only costs tokens. A new policy or model asks TypeSafe again. Failed calls aren't
     /// reused, so content that passed because TypeSafe was down is judged next time.
-    async fn reuse(&self, pool: &PgPool, record: &Record<'_>, content: impl FnOnce(bool) -> String) -> anyhow::Result<Option<Verdict>> {
+    async fn reuse(&self, pool: &PgPool, record: &Record<'_>, content: impl FnOnce(bool) -> String) -> anyhow::Result<Option<Checked>> {
         let Record { subject, actor_uid, target_id, content_hash } = record;
         let Some(earlier) = ContentCheckDao::get_latest_succeeded(pool, subject, content_hash, &self.policy.version, self.model_of(subject)).await? else {
             return Ok(None);
         };
         record_reuse_metrics(subject, &earlier.blocked_by);
-        ContentCheckDao::insert(pool, &ContentCheck {
+        let record_id = ContentCheckDao::insert(pool, &ContentCheck {
             id: 0,
             subject: subject.to_string(),
             target_id: *target_id,
@@ -522,7 +524,8 @@ impl ContentChecker {
             create_time: Utc::now(),
         }).await?;
         let blocked = earlier.blocked_by;
-        Ok(Some(if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) }))
+        let verdict = if blocked.is_empty() { Verdict::Pass } else { Verdict::Blocked(blocked) };
+        Ok(Some(Checked { verdict: Some(verdict), record_id }))
     }
 
     fn subject_policy(&self, subject: &str) -> anyhow::Result<&SubjectPolicy> {
@@ -539,7 +542,7 @@ impl ContentChecker {
         record: Record<'_>,
         call: impl Future<Output = anyhow::Result<SystemOneResponse>>,
         content: impl FnOnce(bool) -> String,
-    ) -> anyhow::Result<Option<Verdict>> {
+    ) -> anyhow::Result<Checked> {
         let Record { subject, actor_uid, target_id, content_hash } = record;
         let started = Instant::now();
         let result = call.await;
@@ -560,7 +563,7 @@ impl ContentChecker {
         record_metrics(subject, error.is_some(), &blocked, input_tokens, elapsed);
         let failed = error.is_some();
 
-        ContentCheckDao::insert(pool, &ContentCheck {
+        let record_id = ContentCheckDao::insert(pool, &ContentCheck {
             id: 0,
             subject: subject.to_string(),
             target_id,
@@ -577,14 +580,24 @@ impl ContentChecker {
             create_time: Utc::now(),
         }).await?;
 
-        Ok(if failed {
+        let verdict = if failed {
             None
         } else if blocked.is_empty() {
             Some(Verdict::Pass)
         } else {
             Some(Verdict::Blocked(blocked))
-        })
+        };
+        Ok(Checked { verdict, record_id })
     }
+}
+
+/// What a check found: its verdict, `None` if it couldn't be made, and the `content_checks` record
+/// it wrote.
+/// @since 261106
+#[derive(Debug, Clone)]
+pub struct Checked {
+    pub verdict: Option<Verdict>,
+    pub record_id: i64,
 }
 
 /// A new image to check before it's saved.
@@ -613,18 +626,19 @@ pub async fn check_image_upload(
     state: &AppState,
     upload: ImageUpload<'_>,
 ) -> Result<(Verdict, RedLockGuard), WebError<CommonError>> {
-    let (verdict, lock) = try_check_image_upload(checker, state, upload).await?;
-    Ok((verdict.unwrap_or(Verdict::Pass), lock))
+    let (checked, lock) = try_check_image_upload(checker, state, upload).await?;
+    Ok((checked.verdict.unwrap_or(Verdict::Pass), lock))
 }
 
 /// [check_image_upload], but the verdict is `None` when the image can't be checked now, for images
-/// that must not pass unchecked: the caller keeps it and has it checked again later.
+/// that must not pass unchecked: the caller keeps it and has it checked again later. Returns the
+/// record of the check too.
 /// @since 261106
 pub async fn try_check_image_upload(
     checker: &ContentChecker,
     state: &AppState,
     upload: ImageUpload<'_>,
-) -> Result<(Option<Verdict>, RedLockGuard), WebError<CommonError>> {
+) -> Result<(Checked, RedLockGuard), WebError<CommonError>> {
     let ImageUpload { subject, actor_uid, target_id, uploaded, webp, key, blocked_dir } = upload;
     let lock = state.red_lock.lock_with_timeout(&format!("content_check:{subject}:{actor_uid}"), std::time::Duration::from_secs(10)).await?
         .ok_or_else(|| common!("rate_limited", "Too many uploads, try again later"))?;
@@ -633,8 +647,8 @@ pub async fn try_check_image_upload(
 
     // A reused verdict costs nothing and tells nothing new, so it isn't limited
     let reused = checker.reuse_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, key, &blocked_key).await?;
-    let verdict = match reused {
-        Some(verdict) => Some(verdict),
+    let checked = match reused {
+        Some(checked) => checked,
         None => {
             if checker.image_limit_reached(&state.sql_pool, subject, actor_uid).await? {
                 err!("rate_limited", "Too many uploads, try again later");
@@ -646,13 +660,13 @@ pub async fn try_check_image_upload(
             checker.try_check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?
         }
     };
-    if matches!(verdict, Some(Verdict::Blocked(_))) {
+    if matches!(checked.verdict, Some(Verdict::Blocked(_))) {
         // The check is recorded either way; losing the copy only makes a wrong block harder to see
         if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
             warn!(subject, actor_uid = actor_uid.0, "Failed to store a blocked image: {e:#}");
         }
     }
-    Ok((verdict, lock))
+    Ok((checked, lock))
 }
 
 /// Who and what a check is about, for its record.

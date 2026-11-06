@@ -35,6 +35,7 @@
 - PostgreSQL 17.11 instead of 17.6. A minor release: change the image tag and restart, the data directory is used as is
 - Meilisearch 1.56 instead of 1.32. Its data directory can't be opened by the new version as is. Either start it on an empty volume, and the server rebuilds the songs, users and playlists indexes from Postgres on its next start, or start it once with `--upgrade-db` after taking a snapshot
 - Valkey 9.1 instead of Redis 8.4, with no code or config change (`redis.address` stays the same; keep the compose service name, or point it at the new one). Valkey can't read Redis 8's data files, so start it on an empty volume. Only caches, locks and short-lived state are lost: codes being sent and uploads in progress have to be redone, and the day's DAU count starts over
+- Comments get their id from the database when saved, not before their content check. `content_checks.target_id` and `content_reviews.target_id` are 0 until the content is saved, and stay 0 if it's blocked. Comments queued by older instances are still published, with a new id. Deploying while older instances still run is safe; the next release makes `comments.id` `GENERATED ALWAYS`, so deploy this one fully first
 
 ## 261031
 

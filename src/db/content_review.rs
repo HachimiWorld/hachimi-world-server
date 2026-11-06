@@ -33,7 +33,8 @@ pub struct ContentReview {
     pub id: i64,
     /// The content check subject, such as `song.comment`.
     pub subject: String,
-    /// The id the content will have once saved, such as the comment id.
+    /// The id of the content once saved, such as the comment id; 0 until then, or forever if it's
+    /// blocked. Before 261106 it was set when queued.
     pub target_id: i64,
     /// Who submitted it.
     pub actor_uid: UserId,
@@ -103,16 +104,16 @@ impl ContentReviewDao {
         ).fetch_one(executor).await
     }
 
-    pub async fn list_by_subject_and_target<'e>(executor: impl PgExecutor<'e>, subject: &str, target_id: i64) -> sqlx::Result<Vec<ContentReview>> {
-        query_content_reviews!("WHERE subject = $1 AND target_id = $2 ORDER BY id", subject, target_id)
-            .fetch_all(executor).await
+    pub async fn get_by_id<'e>(executor: impl PgExecutor<'e>, id: i64) -> sqlx::Result<Option<ContentReview>> {
+        query_content_reviews!("WHERE id = $1", id)
+            .fetch_optional(executor).await
     }
 
-    /// Writes everything except the subject, the target, the actor, the payload and the create time.
+    /// Writes everything except the subject, the actor, the payload and the create time.
     pub async fn update<'e>(executor: impl PgExecutor<'e>, value: &ContentReview) -> sqlx::Result<()> {
         sqlx::query!(
-            "UPDATE content_reviews SET attempt_count = $2, available_time = $3, done_time = $4, last_error = $5 WHERE id = $1",
-            value.id, value.attempt_count, value.available_time, value.done_time, value.last_error
+            "UPDATE content_reviews SET target_id = $2, attempt_count = $3, available_time = $4, done_time = $5, last_error = $6 WHERE id = $1",
+            value.id, value.target_id, value.attempt_count, value.available_time, value.done_time, value.last_error
         ).execute(executor).await?;
         Ok(())
     }

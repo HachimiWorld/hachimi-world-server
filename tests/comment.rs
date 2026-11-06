@@ -329,7 +329,7 @@ async fn comments_are_limited_per_hour() {
         let now = Utc::now();
         for _ in 0..28 {
             CommentDao::insert(&env.pool, &Comment {
-                id: CommentDao::next_id(&env.pool).await.unwrap(),
+                id: CommentId(0),
                 target_type: "song".into(),
                 target_id: song_id.0,
                 user_id: user.uid,
@@ -348,7 +348,7 @@ async fn comments_are_limited_per_hour() {
         }
         // And so do ones waiting for a content check
         let mut tx = env.pool.begin().await.unwrap();
-        content_review::enqueue(&mut tx, "song.comment", 0, user.uid, serde_json::json!({}), now).await.unwrap();
+        content_review::enqueue(&mut tx, "song.comment", user.uid, serde_json::json!({}), now).await.unwrap();
         tx.commit().await.unwrap();
         post(&env, song_id, "第三十条", None).await.unwrap();
         wait_lock().await;
@@ -555,21 +555,16 @@ async fn comments_are_checked() {
         // No one sees a comment that is waiting for its check, its author included
         login(&mut env, &other);
         assert!(try_post(&env, song_id, "#down 好听", None).await.unwrap().is_none());
-        let pending = last_review_target(&env, other.uid).await;
         let resp = list(&env, song_id).await.unwrap();
         assert_eq!(root_ids(&resp), [comment.id]);
         assert_eq!(resp.total, 1);
-        assert_eq!(act(&env, "like", pending).await.unwrap_err(), "comment_not_found");
-        wait_lock().await;
-        assert_eq!(post(&env, song_id, "回复", Some(pending)).await.unwrap_err(), "comment_not_found");
     }).await
 }
 
-/// The id the comment `uid` posted last that waits for a content check will have.
-async fn last_review_target(env: &TestEnvironment, uid: UserId) -> CommentId {
-    let id: i64 = sqlx::query_scalar("SELECT target_id FROM content_reviews WHERE actor_uid = $1 ORDER BY id DESC LIMIT 1")
-        .bind(uid).fetch_one(&env.pool).await.unwrap();
-    CommentId(id)
+/// The review of the comment `uid` posted last that waits for a content check.
+async fn last_review(env: &TestEnvironment, uid: UserId) -> i64 {
+    sqlx::query_scalar("SELECT id FROM content_reviews WHERE actor_uid = $1 ORDER BY id DESC LIMIT 1")
+        .bind(uid).fetch_one(&env.pool).await.unwrap()
 }
 
 /// Runs the content reviews due at `now` with `checker`.
@@ -579,8 +574,12 @@ async fn run_reviews(env: &TestEnvironment, client: hachimi_world_server::util::
     content_review::run(&env.pool, &red_lock, Some(&checker), env.file_host.as_ref(), now).await.unwrap()
 }
 
-async fn is_saved(env: &TestEnvironment, id: CommentId) -> bool {
-    CommentDao::get_by_id(&env.pool, id).await.unwrap().is_some()
+/// The comment that waited in `review`, once it's saved.
+async fn saved(env: &TestEnvironment, review: i64) -> Option<CommentId> {
+    let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
+    if review.target_id == 0 { return None }
+    let comment = CommentDao::get_by_id(&env.pool, CommentId(review.target_id)).await.unwrap().unwrap();
+    Some(comment.id)
 }
 
 #[tokio::test]
@@ -592,10 +591,10 @@ async fn waiting_comments_are_checked_again() {
         let other = with_new_random_test_user(&mut env).await;
         login(&mut env, &author);
         assert!(try_post(&env, song_id, "#down 好听", None).await.unwrap().is_none());
-        let good = last_review_target(&env, author.uid).await;
+        let good = last_review(&env, author.uid).await;
         wait_lock().await;
         assert!(try_post(&env, song_id, "#down #sexual", None).await.unwrap().is_none());
-        let bad = last_review_target(&env, author.uid).await;
+        let bad = last_review(&env, author.uid).await;
         login(&mut env, &other);
         let later = post(&env, song_id, "后发的", None).await.unwrap();
 
@@ -605,8 +604,8 @@ async fn waiting_comments_are_checked_again() {
 
         // TypeSafe still down: tried again later
         assert_eq!(run_reviews(&env, get_mock_typesafe_client(), now + Duration::minutes(2)).await, 2);
-        assert!(!is_saved(&env, good).await);
-        let review = ContentReviewDao::list_by_subject_and_target(&env.pool, "song.comment", good.0).await.unwrap().remove(0);
+        assert!(saved(&env, good).await.is_none());
+        let review = ContentReviewDao::get_by_id(&env.pool, good).await.unwrap().unwrap();
         assert_eq!(review.attempt_count, 1);
         assert!(review.done_time.is_none());
         assert!(review.available_time > now + Duration::minutes(6));
@@ -614,8 +613,12 @@ async fn waiting_comments_are_checked_again() {
         // Back up: saved if it passes, dropped if not
         wait_lock().await;
         assert_eq!(run_reviews(&env, get_recovered_typesafe_client(), now + Duration::minutes(10)).await, 2);
-        assert!(is_saved(&env, good).await);
-        assert!(!is_saved(&env, bad).await);
+        let good = saved(&env, good).await.unwrap();
+        assert!(saved(&env, bad).await.is_none());
+        // The check that passed it names it; the ones before it was saved don't
+        let checks = ContentCheckDao::list_by_actor(&env.pool, author.uid, 10).await.unwrap();
+        let named: Vec<&str> = checks.iter().filter(|x| x.target_id == good.0).map(|x| x.content.as_str()).collect();
+        assert_eq!(named, ["#down 好听"]);
         wait_lock().await;
         assert_eq!(run_reviews(&env, get_recovered_typesafe_client(), now + Duration::days(2)).await, 0);
 
@@ -634,13 +637,14 @@ async fn unreadable_payloads_wait() {
     with_test_environment(|env| async move {
         let now = Utc::now();
         let mut tx = env.pool.begin().await.unwrap();
-        content_review::enqueue(&mut tx, "song.comment", 0, UserId(1), serde_json::json!({ "from": "a newer version" }), now).await.unwrap();
+        content_review::enqueue(&mut tx, "song.comment", UserId(1), serde_json::json!({ "from": "a newer version" }), now).await.unwrap();
         tx.commit().await.unwrap();
 
         let red_lock = RedLock::new(env.redis.clone()).unwrap();
         let later = now + Duration::minutes(2);
         assert_eq!(content_review::run(&env.pool, &red_lock, None, env.file_host.as_ref(), later).await.unwrap(), 1);
-        let review = ContentReviewDao::list_by_subject_and_target(&env.pool, "song.comment", 0).await.unwrap().remove(0);
+        let review: i64 = sqlx::query_scalar("SELECT id FROM content_reviews WHERE actor_uid = 1").fetch_one(&env.pool).await.unwrap();
+        let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
         assert!(review.done_time.is_none());
         assert_eq!(review.attempt_count, 0);
         assert!(review.last_error.unwrap().starts_with("Unreadable payload"));
@@ -660,11 +664,11 @@ async fn comments_that_cant_be_checked_for_a_day_are_published() {
         let author = with_new_random_test_user(&mut env).await;
         login(&mut env, &author);
         assert!(try_post(&env, song_id, "#down 好听", None).await.unwrap().is_none());
-        let comment = last_review_target(&env, author.uid).await;
+        let review = last_review(&env, author.uid).await;
 
         let now = Utc::now();
         run_reviews(&env, get_mock_typesafe_client(), now + Duration::hours(23)).await;
-        assert!(!is_saved(&env, comment).await);
+        assert!(saved(&env, review).await.is_none());
         content_review::report_pending(&env.pool, now + Duration::hours(23)).await.unwrap();
         let out = metrics.render();
         assert!(out.contains(r#"content_review_pending{subject="song.comment"} 1"#), "{out}");
@@ -673,8 +677,8 @@ async fn comments_that_cant_be_checked_for_a_day_are_published() {
 
         wait_lock().await;
         run_reviews(&env, get_mock_typesafe_client(), now + Duration::hours(25)).await;
-        assert!(is_saved(&env, comment).await);
-        let review = ContentReviewDao::list_by_subject_and_target(&env.pool, "song.comment", comment.0).await.unwrap().remove(0);
+        assert!(saved(&env, review).await.is_some());
+        let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
         assert!(review.done_time.is_some());
         content_review::report_pending(&env.pool, now + Duration::hours(25)).await.unwrap();
         let out = metrics.render();
@@ -791,5 +795,28 @@ async fn post_comments_are_checked_as_their_own_subject() {
         let checks = ContentCheckDao::list_by_actor(&env.pool, alice.uid, 10).await.unwrap();
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].subject, "post.comment");
+    }).await
+}
+
+#[tokio::test]
+async fn payloads_from_before_261106_are_published() {
+    with_test_environment(|mut env| async move {
+        let contributor = with_test_contributor_user(&mut env).await;
+        let (song_id, _) = new_song(&mut env, &contributor).await;
+        let author = with_new_random_test_user(&mut env).await;
+        let now = Utc::now();
+        // They also have the id taken for the comment then, which isn't used
+        let payload = serde_json::json!({
+            "id": 999_999, "target_type": "song", "target_id": song_id.0, "user_id": author.uid,
+            "root_id": null, "reply_to_id": null, "reply_to_uid": contributor.uid, "content": "旧的", "create_time": now,
+        });
+        let mut tx = env.pool.begin().await.unwrap();
+        content_review::enqueue(&mut tx, "song.comment", author.uid, payload, now).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let red_lock = RedLock::new(env.redis.clone()).unwrap();
+        assert_eq!(content_review::run(&env.pool, &red_lock, None, env.file_host.as_ref(), now + Duration::minutes(2)).await.unwrap(), 1);
+        let comment = saved(&env, last_review(&env, author.uid).await).await.unwrap();
+        assert_ne!(comment.0, 999_999);
     }).await
 }
