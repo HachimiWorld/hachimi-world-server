@@ -55,19 +55,38 @@ pub const SUBJECT_SONG_COMMENT: &str = "song.comment";
 /// A comment or reply on a post, checked like [SUBJECT_SONG_COMMENT].
 /// @since 261024
 pub const SUBJECT_POST_COMMENT: &str = "post.comment";
+/// A comment or reply on a moment, checked like [SUBJECT_SONG_COMMENT].
+/// @since 261106
+pub const SUBJECT_MOMENT_COMMENT: &str = "moment.comment";
+/// The text of a moment, checked when it's posted. One that can't be checked then waits for
+/// [crate::service::content_review] with its moment.
+/// @since 261106
+pub const SUBJECT_MOMENT_TEXT: &str = "moment.text";
+/// An image of a moment, checked when it's uploaded. One that can't be checked then is checked
+/// again with its moment, which waits for [crate::service::content_review]. Checked as an image.
+/// @since 261106
+pub const SUBJECT_MOMENT_IMAGE: &str = "moment.image";
 /// Every subject the server checks. A policy must cover exactly these.
 pub(crate) const SUBJECTS: &[&str] = &[
     SUBJECT_USERNAME, SUBJECT_BIO, SUBJECT_AVATAR,
     SUBJECT_PLAYLIST_NAME, SUBJECT_PLAYLIST_DESCRIPTION, SUBJECT_PLAYLIST_COVER,
     SUBJECT_SONG_COMMENT, SUBJECT_POST_COMMENT,
+    SUBJECT_MOMENT_TEXT, SUBJECT_MOMENT_IMAGE, SUBJECT_MOMENT_COMMENT,
 ];
 /// The subjects whose content is an image; the rest are text.
-const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR, SUBJECT_PLAYLIST_COVER];
+const IMAGE_SUBJECTS: &[&str] = &[SUBJECT_AVATAR, SUBJECT_PLAYLIST_COVER, SUBJECT_MOMENT_IMAGE];
 /// Sent to TypeSafe at startup to try the policy; harmless under any policy.
 const PROBE_TEXT: &str = "哈基米";
 /// How many images of one subject a user may have checked in an hour. Each check costs tokens, and
 /// trying again and again would let someone feel out the thresholds.
 const IMAGE_CHECKS_PER_HOUR: i64 = 10;
+/// [IMAGE_CHECKS_PER_HOUR] for moment images: a moment can have 9.
+const MOMENT_IMAGE_CHECKS_PER_HOUR: i64 = 30;
+
+/// How many images of `subject` a user may have checked in an hour.
+fn image_checks_per_hour(subject: &str) -> i64 {
+    if subject == SUBJECT_MOMENT_IMAGE { MOMENT_IMAGE_CHECKS_PER_HOUR } else { IMAGE_CHECKS_PER_HOUR }
+}
 
 /// Time taken by TypeSafe for one check, labelled by `subject` and `outcome`.
 /// @since 261017
@@ -403,6 +422,7 @@ impl ContentChecker {
     /// storage key of the image: `passed_key` if it passes, `blocked_key` if not. Storing the image
     /// is the caller's job. Always asks TypeSafe; callers try [ContentChecker::reuse_image] first.
     /// @since 261018
+    #[allow(clippy::too_many_arguments)]
     pub async fn check_image(
         &self,
         pool: &PgPool,
@@ -414,13 +434,31 @@ impl ContentChecker {
         passed_key: &str,
         blocked_key: &str,
     ) -> anyhow::Result<Verdict> {
+        let verdict = self.try_check_image(pool, subject, actor_uid, target_id, uploaded, jpeg, passed_key, blocked_key).await?;
+        Ok(verdict.unwrap_or(Verdict::Pass))
+    }
+
+    /// [ContentChecker::check_image], but `None` when TypeSafe fails or its answer doesn't match
+    /// the policy, as [ContentChecker::try_check_text].
+    /// @since 261106
+    #[allow(clippy::too_many_arguments)]
+    pub async fn try_check_image(
+        &self,
+        pool: &PgPool,
+        subject: &str,
+        actor_uid: UserId,
+        target_id: i64,
+        uploaded: &[u8],
+        jpeg: &[u8],
+        passed_key: &str,
+        blocked_key: &str,
+    ) -> anyhow::Result<Option<Verdict>> {
         let policy = self.subject_policy(subject)?;
         let call = self.client.system_one_image(&self.image_model, jpeg, &policy.questions);
         let record = Record { subject, actor_uid, target_id, content_hash: sha256_hex(uploaded) };
-        let verdict = self.check(pool, policy, record, call, |blocked| {
+        self.check(pool, policy, record, call, |blocked| {
             if blocked { blocked_key } else { passed_key }.to_string()
-        }).await?;
-        Ok(verdict.unwrap_or(Verdict::Pass))
+        }).await
     }
 
     /// The verdict of an earlier check of the same image file, recorded the same way as
@@ -449,7 +487,7 @@ impl ContentChecker {
     pub async fn image_limit_reached(&self, pool: &PgPool, subject: &str, actor_uid: UserId) -> anyhow::Result<bool> {
         let since = Utc::now() - Duration::hours(1);
         let count = ContentCheckDao::count_by_actor_and_subject_since(pool, actor_uid, subject, since).await?;
-        Ok(count >= IMAGE_CHECKS_PER_HOUR)
+        Ok(count >= image_checks_per_hour(subject))
     }
 
     fn model_of(&self, subject: &str) -> &str {
@@ -568,12 +606,25 @@ pub struct ImageUpload<'a> {
 /// sent to TypeSafe, after the per-hour limit. A blocked image is stored apart, so wrong blocks can
 /// be looked into. Returns the verdict and the lock on the user's checks of the subject;
 /// hold the lock until the image is saved, so the user's uploads are checked one at a time.
+/// An image that can't be checked passes.
 /// @since 261018
 pub async fn check_image_upload(
     checker: &ContentChecker,
     state: &AppState,
     upload: ImageUpload<'_>,
 ) -> Result<(Verdict, RedLockGuard), WebError<CommonError>> {
+    let (verdict, lock) = try_check_image_upload(checker, state, upload).await?;
+    Ok((verdict.unwrap_or(Verdict::Pass), lock))
+}
+
+/// [check_image_upload], but the verdict is `None` when the image can't be checked now, for images
+/// that must not pass unchecked: the caller keeps it and has it checked again later.
+/// @since 261106
+pub async fn try_check_image_upload(
+    checker: &ContentChecker,
+    state: &AppState,
+    upload: ImageUpload<'_>,
+) -> Result<(Option<Verdict>, RedLockGuard), WebError<CommonError>> {
     let ImageUpload { subject, actor_uid, target_id, uploaded, webp, key, blocked_dir } = upload;
     let lock = state.red_lock.lock_with_timeout(&format!("content_check:{subject}:{actor_uid}"), std::time::Duration::from_secs(10)).await?
         .ok_or_else(|| common!("rate_limited", "Too many uploads, try again later"))?;
@@ -583,7 +634,7 @@ pub async fn check_image_upload(
     // A reused verdict costs nothing and tells nothing new, so it isn't limited
     let reused = checker.reuse_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, key, &blocked_key).await?;
     let verdict = match reused {
-        Some(verdict) => verdict,
+        Some(verdict) => Some(verdict),
         None => {
             if checker.image_limit_reached(&state.sql_pool, subject, actor_uid).await? {
                 err!("rate_limited", "Too many uploads, try again later");
@@ -592,10 +643,10 @@ pub async fn check_image_upload(
                 let webp = webp.to_vec();
                 move || upload::to_content_check_jpeg(&webp)
             }).await.context("Failed to convert the image for the check")??;
-            checker.check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?
+            checker.try_check_image(&state.sql_pool, subject, actor_uid, target_id, uploaded, &jpeg, key, &blocked_key).await?
         }
     };
-    if verdict != Verdict::Pass {
+    if matches!(verdict, Some(Verdict::Blocked(_))) {
         // The check is recorded either way; losing the copy only makes a wrong block harder to see
         if let Err(e) = state.file_host.upload(webp.to_vec().into(), &blocked_key).await {
             warn!(subject, actor_uid = actor_uid.0, "Failed to store a blocked image: {e:#}");

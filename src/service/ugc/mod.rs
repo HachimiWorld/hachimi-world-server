@@ -15,14 +15,17 @@
 use crate::db::user::UserId;
 
 mod comment;
+mod moment;
 mod playlist;
 mod post;
 mod song;
 mod user;
 
+pub(crate) use moment::preview as moment_preview;
 pub(crate) use post::preview as post_preview;
 pub(crate) use song::preview as song_preview;
 pub use comment::CommentPreview;
+pub use moment::MomentPreview;
 pub use playlist::PlaylistPreview;
 pub use post::PostPreview;
 pub use song::SongPreview;
@@ -46,6 +49,8 @@ pub enum UgcKind {
     Playlist(playlist::PlaylistAdapter),
     User(user::UserAdapter),
     Comment(comment::CommentAdapter),
+    /// @since 261106
+    Moment(moment::MomentAdapter),
 }
 
 /// A target in the shape the report flow needs, whatever its kind: used to check who may report
@@ -80,6 +85,8 @@ pub enum UgcPreview {
     /// Not reportable, but comments can be on posts.
     /// @since 261024
     Post(PostPreview),
+    /// @since 261106
+    Moment(MomentPreview),
 }
 
 /// What every preview provides beyond its own fields. Implemented once per kind, next to its
@@ -176,7 +183,7 @@ mod tests {
     #[test]
     fn every_kind_parses_back() {
         let kinds: Vec<UgcKind> = UgcKind::iter().collect();
-        assert_eq!(kinds.len(), 4);
+        assert_eq!(kinds.len(), 5);
         for kind in kinds {
             assert_eq!(UgcKind::parse(kind.as_str()), Some(kind));
         }

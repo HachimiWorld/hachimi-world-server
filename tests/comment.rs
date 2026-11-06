@@ -576,7 +576,7 @@ async fn last_review_target(env: &TestEnvironment, uid: UserId) -> CommentId {
 async fn run_reviews(env: &TestEnvironment, client: hachimi_world_server::util::typesafe::MockTypeSafeClient, now: chrono::DateTime<Utc>) -> usize {
     let checker = new_content_checker(&env.pool, client).await.unwrap();
     let red_lock = RedLock::new(env.redis.clone()).unwrap();
-    content_review::run(&env.pool, &red_lock, Some(&checker), now).await.unwrap()
+    content_review::run(&env.pool, &red_lock, Some(&checker), env.file_host.as_ref(), now).await.unwrap()
 }
 
 async fn is_saved(env: &TestEnvironment, id: CommentId) -> bool {
@@ -639,7 +639,7 @@ async fn unreadable_payloads_wait() {
 
         let red_lock = RedLock::new(env.redis.clone()).unwrap();
         let later = now + Duration::minutes(2);
-        assert_eq!(content_review::run(&env.pool, &red_lock, None, later).await.unwrap(), 1);
+        assert_eq!(content_review::run(&env.pool, &red_lock, None, env.file_host.as_ref(), later).await.unwrap(), 1);
         let review = ContentReviewDao::list_by_subject_and_target(&env.pool, "song.comment", 0).await.unwrap().remove(0);
         assert!(review.done_time.is_none());
         assert_eq!(review.attempt_count, 0);

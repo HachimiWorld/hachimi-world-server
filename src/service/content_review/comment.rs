@@ -1,6 +1,6 @@
 //! Comments waiting for a content check.
 
-use super::ReviewAdapter;
+use super::{ReviewAdapter, ReviewItem};
 use crate::service::comment::{self, CommentTarget, CommentTargetAdapter, PendingComment};
 use serde::Deserialize;
 use serde_json::Value;
@@ -17,12 +17,21 @@ impl ReviewAdapter for CommentReview {
         CommentTarget::iter().map(|x| x.subject()).collect()
     }
 
-    fn text(&self, payload: &Value) -> serde_json::Result<String> {
-        PendingComment::deserialize(payload).map(|x| x.content)
+    fn items(&self, payload: &Value) -> serde_json::Result<Vec<ReviewItem>> {
+        let comment = PendingComment::deserialize(payload)?;
+        let subject = CommentTarget::parse(&comment.target_type)
+            .map(|x| x.subject())
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown target type {}", comment.target_type)))?;
+        Ok(vec![ReviewItem::Text { subject, text: comment.content }])
     }
 
     async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()> {
         comment::publish_pending(tx, &PendingComment::deserialize(payload)?).await?;
+        Ok(())
+    }
+
+    /// Blocked comments are dropped without a word, as when blocked on posting.
+    async fn reject(&self, _tx: &mut Transaction<'_, Postgres>, _payload: &Value) -> anyhow::Result<()> {
         Ok(())
     }
 }

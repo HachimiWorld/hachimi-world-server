@@ -30,6 +30,7 @@ use sqlx::PgPool;
 use std::collections::{HashMap, HashSet};
 use strum::{EnumIter, IntoEnumIterator};
 
+mod moment;
 mod post;
 mod song;
 
@@ -58,6 +59,8 @@ pub enum CommentTarget {
     Song(song::SongComments),
     /// @since 261024
     Post(post::PostComments),
+    /// @since 261106
+    Moment(moment::MomentComments),
 }
 
 /// What every kind of comment target provides, implemented once per kind in its own file.

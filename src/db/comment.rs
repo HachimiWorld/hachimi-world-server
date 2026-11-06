@@ -202,6 +202,19 @@ impl CommentDao {
         ).fetch_one(executor).await
     }
 
+    /// Visible comments and replies on each of `target_ids`, by target id. Targets without any are
+    /// left out.
+    pub async fn count_visible_by_targets<'e>(executor: impl PgExecutor<'e>, target_type: &str, target_ids: &[i64]) -> sqlx::Result<Vec<(i64, i64)>> {
+        if target_ids.is_empty() { return Ok(vec![]) }
+        let rows = sqlx::query!(
+            r#"SELECT target_id, COUNT(*) AS "count!" FROM comments
+            WHERE target_type = $1 AND target_id = ANY($2) AND NOT is_hidden AND delete_time IS NULL
+            GROUP BY target_id"#,
+            target_type, target_ids
+        ).fetch_all(executor).await?;
+        Ok(rows.into_iter().map(|x| (x.target_id, x.count)).collect())
+    }
+
     /// The first `per_root` visible replies under each of `root_ids`, oldest first. Reads only those
     /// from `idx_comments_root`, however many replies a root has.
     pub async fn list_first_replies<'e>(executor: impl PgExecutor<'e>, root_ids: &[CommentId], per_root: i64) -> sqlx::Result<Vec<Comment>> {

@@ -14,6 +14,8 @@ pub mod message;
 pub mod report;
 pub mod committee;
 pub mod comment;
+pub mod moment;
+pub mod feed;
 
 use crate::web::state::AppState;
 use axum::Router;
@@ -35,4 +37,6 @@ pub fn router() -> Router<AppState> {
         .nest("/report", report::router())
         .nest("/committee", committee::router())
         .nest("/comment", comment::router())
+        .nest("/moment", moment::router())
+        .nest("/feed", feed::router())
 }

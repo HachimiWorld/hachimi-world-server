@@ -1,6 +1,9 @@
 //! Content checked again in the background, because TypeSafe couldn't judge it when it was
-//! submitted. Only content that must not pass unchecked comes here, which so far is comments; the
-//! content waits here, seen by no one, its author included.
+//! submitted. Only content that must not pass unchecked comes here, which so far is comments and
+//! moments; the content waits here, seen by no one, its author included.
+//!
+//! One piece of content can need several checks, such as a moment's text and its images: its
+//! adapter lists them as [ReviewItem]s, and it's published only once every one passes.
 //!
 //! The content waits in the review's payload and is saved to its own table once it passes; blocked
 //! content is dropped. Each kind of content that can wait here has an adapter (`comment.rs`) that
@@ -19,10 +22,13 @@
 //! content is published unchecked.
 
 mod comment;
+mod moment;
 
 use crate::db::content_review::{ContentReview, ContentReviewDao};
+use crate::file_hosting::FileHost;
 use crate::db::user::UserId;
 use crate::service::content_check::{ContentChecker, Verdict};
+use crate::service::upload;
 use crate::util::redlock::RedLock;
 use crate::web::state::AppState;
 use chrono::{DateTime, Duration, Utc};
@@ -51,6 +57,17 @@ pub const GIVE_UP_AFTER: Duration = Duration::hours(24);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter)]
 pub enum ReviewKind {
     Comment(comment::CommentReview),
+    /// @since 261106
+    Moment(moment::MomentReview),
+}
+
+/// One check a piece of waiting content needs.
+/// @since 261106
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewItem {
+    Text { subject: &'static str, text: String },
+    /// An image already stored at `key`, read back from the file host to be checked.
+    Image { subject: &'static str, key: String },
 }
 
 /// What every kind of waiting content provides, implemented once per kind in its own file.
@@ -61,12 +78,17 @@ pub trait ReviewAdapter {
     /// The content check subjects this kind's content is checked as, also stored in the queue.
     fn subjects(&self) -> Vec<&'static str>;
 
-    /// The text to check, from the payload the content waits in.
-    fn text(&self, payload: &Value) -> serde_json::Result<String>;
+    /// What to check, from the payload the content waits in. Published once every item passes;
+    /// dropped if one is blocked.
+    fn items(&self, payload: &Value) -> serde_json::Result<Vec<ReviewItem>>;
 
     /// Saves the content in its payload to its own table, in `tx`, the transaction that ends its
     /// review, once it passed.
     async fn publish(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()>;
+
+    /// Called in `tx`, the transaction that ends its review, when an item was blocked and the
+    /// content is dropped, such as to tell its author.
+    async fn reject(&self, tx: &mut Transaction<'_, Postgres>, payload: &Value) -> anyhow::Result<()>;
 }
 
 impl ReviewKind {
@@ -119,7 +141,7 @@ pub fn start_worker(state: AppState, cancel_token: CancellationToken) {
                 _ = tokio::time::sleep(POLL_INTERVAL) => {}
             }
             let checker = state.content_checker.as_deref();
-            if let Err(e) = run(&state.sql_pool, &state.red_lock, checker, Utc::now()).await {
+            if let Err(e) = run(&state.sql_pool, &state.red_lock, checker, state.file_host.as_ref(), Utc::now()).await {
                 error!("Failed to run content reviews: {e:?}");
             }
             if let Err(e) = report_pending(&state.sql_pool, Utc::now()).await {
@@ -130,9 +152,9 @@ pub fn start_worker(state: AppState, cancel_token: CancellationToken) {
 }
 
 /// Checks reviews due at `now` until none are left or the run budget is used. Skips if another
-/// replica is running them. With checks off, waiting content is published. Returns how many reviews
-/// were tried.
-pub async fn run(pool: &PgPool, red_lock: &RedLock, checker: Option<&ContentChecker>, now: DateTime<Utc>) -> anyhow::Result<usize> {
+/// replica is running them. With checks off, waiting content is published. Images to check are read
+/// back from `file_host`. Returns how many reviews were tried.
+pub async fn run(pool: &PgPool, red_lock: &RedLock, checker: Option<&ContentChecker>, file_host: &dyn FileHost, now: DateTime<Utc>) -> anyhow::Result<usize> {
     // Checked first so idle polls don't take the lock
     if !ContentReviewDao::exists_pending_available_at(pool, now).await? {
         return Ok(0);
@@ -150,7 +172,7 @@ pub async fn run(pool: &PgPool, red_lock: &RedLock, checker: Option<&ContentChec
             if started.elapsed() >= RUN_BUDGET {
                 return Ok(tried);
             }
-            review_one(pool, checker, review, now).await?;
+            review_one(pool, checker, file_host, review, now).await?;
             tried += 1;
         }
         if (batch_len as i64) < BATCH_SIZE {
@@ -196,7 +218,7 @@ fn record_settled(subject: &str, outcome: Outcome) {
     counter!("content_review_settled_total", "subject" => subject.to_string(), "outcome" => outcome).increment(1);
 }
 
-async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review: ContentReview, now: DateTime<Utc>) -> anyhow::Result<()> {
+async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, file_host: &dyn FileHost, mut review: ContentReview, now: DateTime<Utc>) -> anyhow::Result<()> {
     let Some(kind) = ReviewKind::of_subject(&review.subject) else {
         // Written by a newer version, or by mistake; leave it for an instance that knows it
         warn!(id = review.id, subject = review.subject, "Unknown content review subject");
@@ -204,7 +226,7 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
         ContentReviewDao::update(pool, &review).await?;
         return Ok(());
     };
-    let text = match kind.text(&review.payload) {
+    let items = match kind.items(&review.payload) {
         Ok(x) => x,
         Err(e) => {
             // Likely written by a version whose payload this one can't read; leave it for one that can
@@ -218,7 +240,7 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
 
     review.attempt_count += 1;
     let verdict = match checker {
-        Some(checker) => checker.try_check_text(pool, &review.subject, review.actor_uid, review.target_id, &text).await?,
+        Some(checker) => check_items(pool, checker, file_host, &review, &items).await?,
         // Checks were turned off, as in an emergency; content is published unchecked meanwhile
         None => Some(Verdict::Pass),
     };
@@ -242,6 +264,8 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
     let mut tx = pool.begin().await?;
     if outcome != Outcome::Block {
         kind.publish(&mut tx, &review.payload).await?;
+    } else {
+        kind.reject(&mut tx, &review.payload).await?;
     }
     review.done_time = Some(now);
     review.last_error = (outcome == Outcome::GaveUp).then(|| "Gave up checking and published".to_string());
@@ -249,6 +273,57 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, mut review:
     tx.commit().await?;
     record_settled(&review.subject, outcome);
     Ok(())
+}
+
+/// Checks every item: blocked if any is, `None` if any can't be checked now, else passed. Stops at
+/// the first blocked one, as the content is dropped anyway.
+async fn check_items(
+    pool: &PgPool,
+    checker: &ContentChecker,
+    file_host: &dyn FileHost,
+    review: &ContentReview,
+    items: &[ReviewItem],
+) -> anyhow::Result<Option<Verdict>> {
+    let mut unchecked = false;
+    for item in items {
+        let verdict = match item {
+            ReviewItem::Text { subject, text } => {
+                checker.try_check_text(pool, subject, review.actor_uid, review.target_id, text).await?
+            }
+            ReviewItem::Image { subject, key } => check_stored_image(pool, checker, file_host, review, subject, key).await?,
+        };
+        match verdict {
+            Some(Verdict::Pass) => {}
+            Some(blocked @ Verdict::Blocked(_)) => return Ok(Some(blocked)),
+            None => unchecked = true,
+        }
+    }
+    Ok(if unchecked { None } else { Some(Verdict::Pass) })
+}
+
+/// Checks an image stored at `key`. `None` if it can't be read back now either, like a failed call.
+async fn check_stored_image(
+    pool: &PgPool,
+    checker: &ContentChecker,
+    file_host: &dyn FileHost,
+    review: &ContentReview,
+    subject: &str,
+    key: &str,
+) -> anyhow::Result<Option<Verdict>> {
+    let stored = match file_host.download(key).await {
+        Ok(x) => x,
+        Err(e) => {
+            warn!(id = review.id, key, "Failed to read back an image to check: {e:#}");
+            return Ok(None);
+        }
+    };
+    let jpeg = tokio::task::spawn_blocking({
+        let stored = stored.clone();
+        move || upload::to_content_check_jpeg(&stored)
+    }).await??;
+    // Already stored where it would be served from, which the record keeps either way; a blocked
+    // one is never referenced
+    checker.try_check_image(pool, subject, review.actor_uid, review.target_id, &stored, &jpeg, key, key).await
 }
 
 #[cfg(test)]
