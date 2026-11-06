@@ -71,10 +71,12 @@ steps:
         fi
       - export RUSTUP_HOME="/cache/rustup/$RUST_VERSION"
       # Instrumented build goes to $CARGO_TARGET_DIR/llvm-cov-target, next to the old plain build.
-      # With --no-report, cargo-llvm-cov keeps the .profraw files of earlier runs, so the report would
-      # merge every run since the cache was created, and fails once a Rust bump changes their format.
-      # Delete them first; the instrumented build itself stays cached.
-      - find "$CARGO_TARGET_DIR/llvm-cov-target" -maxdepth 1 -name '*.profraw' -delete 2>/dev/null || true
+      # With --no-report, cargo-llvm-cov cleans nothing first. Earlier runs would be left in the cache:
+      # their .profraw files, which fail the report once a Rust bump changes their format, and the
+      # test binaries of every commit built since, whose coverage maps of older versions of the same
+      # files the report reads too, counting their lines as missed. Remove both for this workspace;
+      # dependencies stay built.
+      - cargo llvm-cov clean --workspace
       - cargo llvm-cov nextest --no-fail-fast --tests --no-report
       - cargo llvm-cov report --summary-only
       # In the workspace, not the cache, so the upload step can read it.
