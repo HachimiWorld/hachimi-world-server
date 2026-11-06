@@ -64,6 +64,10 @@ impl Moment {
 pub struct MomentDao;
 
 // "Visible" in the queries below means not hidden and not deleted, as in [Moment::is_visible].
+//
+// Pages compare against the cursor with COALESCE, not `$1 IS NULL OR ...`: once Postgres uses a
+// generic plan for the prepared statement, the OR makes the cursor a filter instead of an index
+// condition, and a deep page reads every row before it, as OFFSET would.
 impl MomentDao {
     /// A new id, taken before the moment is checked so the checks can name it. Ids taken for
     /// moments that are blocked are never used.
@@ -126,7 +130,7 @@ impl MomentDao {
         query_moments!(
             "JOIN users u ON u.id = m.user_id
             WHERE NOT m.is_hidden AND m.delete_time IS NULL AND NOT u.is_banned
-                AND ($1::timestamptz IS NULL OR (m.create_time, m.id) < ($1, $2::bigint))
+                AND (m.create_time, m.id) < (COALESCE($1::timestamptz, 'infinity'), COALESCE($2::bigint, 9223372036854775807))
             ORDER BY m.create_time DESC, m.id DESC
             LIMIT $3",
             before_time, before_id as Option<MomentId>, limit
@@ -145,7 +149,7 @@ impl MomentDao {
         let (before_time, before_id) = before.unzip();
         query_moments!(
             "WHERE m.user_id = $1 AND ($2 OR NOT m.is_hidden) AND m.delete_time IS NULL
-                AND ($3::timestamptz IS NULL OR (m.create_time, m.id) < ($3, $4::bigint))
+                AND (m.create_time, m.id) < (COALESCE($3::timestamptz, 'infinity'), COALESCE($4::bigint, 9223372036854775807))
             ORDER BY m.create_time DESC, m.id DESC
             LIMIT $5",
             user_id as UserId, include_hidden, before_time, before_id as Option<MomentId>, limit
