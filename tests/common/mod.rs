@@ -10,7 +10,7 @@ pub mod typesafe;
 pub mod postgres;
 pub mod meilisearch;
 
-use crate::common::images::Redis8;
+use crate::common::images::Valkey9;
 use crate::common::meilisearch::TestMeilisearch;
 use crate::common::postgres::TestPostgres;
 use async_trait::async_trait;
@@ -129,8 +129,8 @@ where
     ms_instance.cleanup(&ms_client).await;
 }
 
-async fn get_test_redis_conn() -> (ContainerAsync<Redis8>, ConnectionManager) {
-    let redis_instance = Redis8::default().start().await.unwrap();
+async fn get_test_redis_conn() -> (ContainerAsync<Valkey9>, ConnectionManager) {
+    let redis_instance = Valkey9::default().start().await.unwrap();
     let host_ip = redis_instance.get_host().await.unwrap();
     let host_port = redis_instance.get_host_port_ipv4(REDIS_PORT).await.unwrap();
     let redis_url = format!("redis://{host_ip}:{host_port}");

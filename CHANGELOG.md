@@ -17,6 +17,13 @@
   - The link is the new optional config `account.email_change_revert_url` followed by the token. Defaults to `https://hachimi.world/account/revert-email/?token=`
   - Changes are kept in the new `email_change_requests` table
 
+### Changes
+
+- Built with Rust 1.99.1 (was 1.96.0)
+- PostgreSQL 17.11 instead of 17.6. A minor release: change the image tag and restart, the data directory is used as is
+- Meilisearch 1.56 instead of 1.32. Its data directory can't be opened by the new version as is. Either start it on an empty volume, and the server rebuilds the songs, users and playlists indexes from Postgres on its next start, or start it once with `--upgrade-db` after taking a snapshot
+- Valkey 9.1 instead of Redis 8.4, with no code or config change (`redis.address` stays the same; keep the compose service name, or point it at the new one). Valkey can't read Redis 8's data files, so start it on an empty volume. Only caches, locks and short-lived state are lost: codes being sent and uploads in progress have to be redone, and the day's DAU count starts over
+
 ## 261031
 
 ### New
