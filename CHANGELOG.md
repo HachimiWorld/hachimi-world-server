@@ -31,6 +31,7 @@
 
 ### Changes
 
+- `comments.id` is `GENERATED ALWAYS`. Deploy only once every instance runs the previous release, which stopped inserting comment ids itself
 - Built with Rust 1.99.1 (was 1.96.0)
 - PostgreSQL 17.11 instead of 17.6. A minor release: change the image tag and restart, the data directory is used as is
 - Meilisearch 1.56 instead of 1.32. Its data directory can't be opened by the new version as is. Either start it on an empty volume, and the server rebuilds the songs, users and playlists indexes from Postgres on its next start, or start it once with `--upgrade-db` after taking a snapshot
