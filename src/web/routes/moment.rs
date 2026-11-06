@@ -172,7 +172,7 @@ pub struct ListByUserReq {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ListResp {
     /// Newest first.
-    pub moments: Vec<MomentItem>,
+    pub items: Vec<MomentItem>,
     /// Pass it back as `cursor` for the next page; `None` when there's no more.
     pub next_cursor: Option<String>,
 }
@@ -188,7 +188,7 @@ async fn list_by_user(claims: OptionalClaims, state: State<AppState>, req: Query
         },
     };
     let page = moment::list_by_user(&state, claims.0.map(|x| x.uid()), req.user_id, cursor, req.limit.unwrap_or(20).clamp(1, 50)).await?;
-    ok!(ListResp { moments: page.moments, next_cursor: page.next_cursor.map(|x| x.encode()) })
+    ok!(ListResp { items: page.moments, next_cursor: page.next_cursor.map(|x| x.encode()) })
 }
 
 #[framed]

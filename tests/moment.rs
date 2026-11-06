@@ -152,7 +152,7 @@ async fn moments_with_images_and_attachments() {
         // Everyone sees them, newest first
         login(&mut env, &bob);
         assert_eq!(square(&env).await, [second.id, first.id]);
-        assert_eq!(by_user(&env, &alice).await.moments.len(), 2);
+        assert_eq!(by_user(&env, &alice).await.items.len(), 2);
 
         // Likes and comments
         act(&env, "like", first.id).await.unwrap();
@@ -179,7 +179,7 @@ async fn moments_with_images_and_attachments() {
         act(&env, "delete", first.id).await.unwrap();
         assert_eq!(detail(&env, first.id).await.unwrap_err(), "moment_not_found");
         assert_eq!(square(&env).await, [second.id]);
-        assert_eq!(by_user(&env, &alice).await.moments.len(), 1);
+        assert_eq!(by_user(&env, &alice).await.items.len(), 1);
     }).await
 }
 
@@ -213,7 +213,7 @@ async fn moments_page_by_cursor() {
         env.api.clear_token();
         let first = by_user_page(&env, user, None, Some(1)).await.unwrap();
         let second = by_user_page(&env, user, first.next_cursor.clone(), Some(1)).await.unwrap();
-        let listed: Vec<MomentId> = first.moments.iter().chain(&second.moments).map(|x| x.id).collect();
+        let listed: Vec<MomentId> = first.items.iter().chain(&second.items).map(|x| x.id).collect();
         assert_eq!(listed, vec![newer, ids[0]]);
         assert!(second.next_cursor.is_none());
         assert_eq!(by_user_page(&env, user, Some("1.x".into()), None).await.unwrap_err(), "invalid_cursor");
@@ -294,7 +294,7 @@ async fn moments_that_cant_be_checked_wait() {
         // Seen by no one while waiting, their authors included
         login(&mut env, &alice);
         assert!(square(&env).await.is_empty());
-        assert!(by_user(&env, &alice).await.moments.is_empty());
+        assert!(by_user(&env, &alice).await.items.is_empty());
 
         // Still down: tried again later
         let now = Utc::now();
@@ -351,7 +351,7 @@ async fn reported_moments_can_be_hidden() {
         assert_eq!(act(&env, "like", moment.id).await.unwrap_err(), "moment_not_found");
         login(&mut env, &author);
         assert!(detail(&env, moment.id).await.unwrap().is_hidden);
-        assert_eq!(by_user(&env, &author).await.moments.len(), 1);
+        assert_eq!(by_user(&env, &author).await.items.len(), 1);
         let body: String = sqlx::query_scalar("SELECT body FROM notifications WHERE recipient_uid = $1 AND notification_type = 'governance.content_hidden'")
             .bind(author.uid).fetch_one(&env.pool).await.unwrap();
         assert!(body.starts_with("你的动态「广告」已被隐藏"), "{body}");
