@@ -14,7 +14,7 @@ use hachimi_world_server::service::ugc::UgcPreview;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::routes::comment::{CreateReq as CommentCreateReq, CreateResp as CommentCreateResp};
 use hachimi_world_server::web::routes::feed::{PageReq, PageResp as FeedPageResp};
-use hachimi_world_server::web::routes::moment::{CreateReq, CreateResp, MomentIdReq, PageByUserReq, PageResp, UploadImageResp};
+use hachimi_world_server::web::routes::moment::{CreateReq, CreateResp, ListByUserReq, ListResp, MomentIdReq, UploadImageResp};
 use hachimi_world_server::web::routes::playlist::{CreatePlaylistReq, CreatePlaylistResp};
 use hachimi_world_server::web::routes::report::{CaseReq, CaseResp, ResolveReq, ResolveResp, SubmitReq, SubmitResp};
 use image::{ImageFormat, Rgb, RgbImage};
@@ -86,9 +86,13 @@ async fn square(env: &TestEnvironment) -> Vec<MomentId> {
     }).collect()
 }
 
-async fn by_user(env: &TestEnvironment, user: &TestUser) -> PageResp {
-    env.api.get_query("/moment/page_by_user", &PageByUserReq { user_id: user.uid, before_time: None, before_id: None, limit: None }).await
-        .parse_resp().await.unwrap()
+async fn by_user(env: &TestEnvironment, user: &TestUser) -> ListResp {
+    by_user_page(env, user, None, None).await.unwrap()
+}
+
+async fn by_user_page(env: &TestEnvironment, user: &TestUser, cursor: Option<String>, limit: Option<i64>) -> Result<ListResp, String> {
+    env.api.get_query("/moment/list_by_user", &ListByUserReq { user_id: user.uid, cursor, limit }).await
+        .parse_resp().await.map_err(|x| x.code)
 }
 
 async fn new_song(env: &mut TestEnvironment) -> SongId {
@@ -180,13 +184,15 @@ async fn moments_with_images_and_attachments() {
 }
 
 #[tokio::test]
-async fn the_square_pages_by_cursor() {
+async fn moments_page_by_cursor() {
     with_test_environment(|mut env| async move {
         let mut ids = vec![];
+        let mut users = vec![];
         for i in 0..3 {
             let user = with_new_random_test_user(&mut env).await;
             login(&mut env, &user);
             ids.push(create(&env, &format!("第 {i} 条")).await.id);
+            users.push(user);
         }
         ids.reverse();
         env.api.clear_token();
@@ -199,6 +205,18 @@ async fn the_square_pages_by_cursor() {
         let resp = env.api.get_query("/feed/square", &PageReq { cursor: Some("bad".into()), limit: None }).await
             .parse_resp::<FeedPageResp>().await;
         assert_eq!(resp.unwrap_err().code, "invalid_cursor");
+
+        // A user's own list
+        let user = &users[2];
+        login(&mut env, user);
+        let newer = create(&env, "又一条").await.id;
+        env.api.clear_token();
+        let first = by_user_page(&env, user, None, Some(1)).await.unwrap();
+        let second = by_user_page(&env, user, first.next_cursor.clone(), Some(1)).await.unwrap();
+        let listed: Vec<MomentId> = first.moments.iter().chain(&second.moments).map(|x| x.id).collect();
+        assert_eq!(listed, vec![newer, ids[0]]);
+        assert!(second.next_cursor.is_none());
+        assert_eq!(by_user_page(&env, user, Some("1.x".into()), None).await.unwrap_err(), "invalid_cursor");
     }).await
 }
 

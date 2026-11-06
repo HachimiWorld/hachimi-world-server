@@ -6,7 +6,7 @@
 
 use crate::db::moment::MomentId;
 use crate::db::user::UserId;
-use crate::service::moment::{self, MomentItem};
+use crate::service::moment::{self, MomentCursor, MomentItem};
 use crate::web::state::AppState;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -55,12 +55,9 @@ impl Cursor {
 
 /// The square: everyone's moments, newest first. Moments of banned users are left out.
 pub async fn square(state: &AppState, viewer_uid: Option<UserId>, cursor: Option<Cursor>, limit: i64) -> anyhow::Result<FeedPage> {
-    let before = cursor.map(|x| (x.time, MomentId(x.id)));
-    let page = moment::page_public(state, viewer_uid, before, limit).await?;
-    let next_cursor = match page.moments.last() {
-        Some(x) if page.has_more => Some(Cursor { time: x.create_time, kind: "moment".to_string(), id: x.id.0 }.encode()),
-        _ => None,
-    };
+    let cursor = cursor.map(|x| MomentCursor { time: x.time, id: MomentId(x.id) });
+    let page = moment::list_public(state, viewer_uid, cursor, limit).await?;
+    let next_cursor = page.next_cursor.map(|x| Cursor { time: x.time, kind: "moment".to_string(), id: x.id.0 }.encode());
     let items = page.moments.into_iter().map(|x| FeedItem { kind: "moment".to_string(), time: x.create_time, moment: Some(x) }).collect();
     Ok(FeedPage { items, next_cursor })
 }

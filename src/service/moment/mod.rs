@@ -482,36 +482,62 @@ pub async fn detail(state: &AppState, viewer_uid: Option<UserId>, moment_id: Mom
 
 pub struct MomentPage {
     pub moments: Vec<MomentItem>,
-    pub has_more: bool,
+    /// Where to continue for the next page; `None` when there's no more.
+    pub next_cursor: Option<MomentCursor>,
 }
 
-/// Everyone's visible moments, newest first, continuing before `before`, the `(create_time, id)` of
-/// the previous page's last one. Moments of banned users are left out.
-pub async fn page_public(
-    state: &AppState,
-    viewer_uid: Option<UserId>,
-    before: Option<(DateTime<Utc>, MomentId)>,
-    limit: i64,
-) -> anyhow::Result<MomentPage> {
-    let mut moments = MomentDao::page_public(&state.sql_pool, before, limit + 1).await?;
-    let has_more = moments.len() as i64 > limit;
-    moments.truncate(limit as usize);
-    Ok(MomentPage { moments: hydrate(state, moments, viewer_uid).await?, has_more })
+/// Where a page of moments ended: the `create_time` and `id` of its last moment. Clients get it as
+/// an opaque string, `<micros>.<id>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MomentCursor {
+    pub time: DateTime<Utc>,
+    pub id: MomentId,
 }
 
-/// A user's moments, newest first. Their hidden ones are shown only to themselves.
-pub async fn page_by_user(
+impl MomentCursor {
+    pub fn encode(&self) -> String {
+        format!("{}.{}", self.time.timestamp_micros(), self.id)
+    }
+
+    pub fn decode(s: &str) -> Option<Self> {
+        let (time, id) = s.split_once('.')?;
+        Some(MomentCursor {
+            time: DateTime::from_timestamp_micros(time.parse().ok()?)?,
+            id: MomentId(id.parse().ok()?),
+        })
+    }
+}
+
+/// Takes the page out of `moments`, read with one more than `limit`.
+async fn to_page(state: &AppState, mut moments: Vec<Moment>, limit: i64, viewer_uid: Option<UserId>) -> anyhow::Result<MomentPage> {
+    let next_cursor = if moments.len() as i64 > limit {
+        moments.truncate(limit as usize);
+        moments.last().map(|x| MomentCursor { time: x.create_time, id: x.id })
+    } else {
+        None
+    };
+    Ok(MomentPage { moments: hydrate(state, moments, viewer_uid).await?, next_cursor })
+}
+
+/// Everyone's visible moments, newest first, continuing after `cursor`. Moments of banned users
+/// are left out.
+pub async fn list_public(state: &AppState, viewer_uid: Option<UserId>, cursor: Option<MomentCursor>, limit: i64) -> anyhow::Result<MomentPage> {
+    let moments = MomentDao::page_public(&state.sql_pool, cursor.map(|x| (x.time, x.id)), limit + 1).await?;
+    to_page(state, moments, limit, viewer_uid).await
+}
+
+/// A user's moments, newest first, continuing after `cursor`. Their hidden ones are shown only to
+/// themselves.
+pub async fn list_by_user(
     state: &AppState,
     viewer_uid: Option<UserId>,
     user_id: UserId,
-    before: Option<(DateTime<Utc>, MomentId)>,
+    cursor: Option<MomentCursor>,
     limit: i64,
 ) -> anyhow::Result<MomentPage> {
     let include_hidden = viewer_uid == Some(user_id);
-    let mut moments = MomentDao::page_by_user(&state.sql_pool, user_id, include_hidden, before, limit + 1).await?;
-    let has_more = moments.len() as i64 > limit;
-    moments.truncate(limit as usize);
-    Ok(MomentPage { moments: hydrate(state, moments, viewer_uid).await?, has_more })
+    let moments = MomentDao::page_by_user(&state.sql_pool, user_id, include_hidden, cursor.map(|x| (x.time, x.id)), limit + 1).await?;
+    to_page(state, moments, limit, viewer_uid).await
 }
 
 /// Likes a visible moment. Liking it again does nothing.

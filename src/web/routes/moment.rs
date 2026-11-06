@@ -2,7 +2,7 @@ use crate::db::moment::MomentId;
 use crate::db::user::UserId;
 use crate::service::content_check::{self, ImageUpload, Verdict};
 use crate::service::errors::ServiceError;
-use crate::service::moment::{self, AttachmentInput, MomentError, MomentItem, StoredImage};
+use crate::service::moment::{self, AttachmentInput, MomentCursor, MomentError, MomentItem, StoredImage};
 use crate::web::jwt::{Claims, OptionalClaims};
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
@@ -13,7 +13,6 @@ use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
 use image::{ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
 use std::io::Cursor;
@@ -29,7 +28,7 @@ pub fn router() -> Router<AppState> {
         .route("/create", post(create))
         .route("/delete", post(delete))
         .route("/detail", get(detail))
-        .route("/page_by_user", get(page_by_user))
+        .route("/list_by_user", get(list_by_user))
         .route("/like", post(like))
         .route("/unlike", post(unlike))
 }
@@ -161,34 +160,35 @@ async fn detail(claims: OptionalClaims, state: State<AppState>, req: Query<Momen
 
 /// @since 261106
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PageByUserReq {
+pub struct ListByUserReq {
     pub user_id: UserId,
-    /// `create_time` of the previous page's last moment. Omit both for the first page.
-    pub before_time: Option<DateTime<Utc>>,
-    /// `id` of the previous page's last moment.
-    pub before_id: Option<MomentId>,
+    /// `next_cursor` of the previous page; omit for the first page.
+    pub cursor: Option<String>,
     /// 1..=50, defaults to 20.
     pub limit: Option<i64>,
 }
 
 /// @since 261106
 #[derive(Debug, Serialize, Deserialize)]
-pub struct PageResp {
+pub struct ListResp {
     /// Newest first.
     pub moments: Vec<MomentItem>,
-    pub has_more: bool,
+    /// Pass it back as `cursor` for the next page; `None` when there's no more.
+    pub next_cursor: Option<String>,
 }
 
 /// A user's moments, newest first, for their page. Their hidden ones are shown only to themselves.
 #[framed]
-async fn page_by_user(claims: OptionalClaims, state: State<AppState>, req: Query<PageByUserReq>) -> WebResult<PageResp> {
-    let before = match (req.before_time, req.before_id) {
-        (Some(time), Some(id)) => Some((time, id)),
-        (None, None) => None,
-        _ => err!("invalid_cursor", "before_time and before_id must be given together"),
+async fn list_by_user(claims: OptionalClaims, state: State<AppState>, req: Query<ListByUserReq>) -> WebResult<ListResp> {
+    let cursor = match req.cursor.as_deref() {
+        None => None,
+        Some(x) => match MomentCursor::decode(x) {
+            Some(x) => Some(x),
+            None => err!("invalid_cursor", "Invalid cursor"),
+        },
     };
-    let page = moment::page_by_user(&state, claims.0.map(|x| x.uid()), req.user_id, before, req.limit.unwrap_or(20).clamp(1, 50)).await?;
-    ok!(PageResp { moments: page.moments, has_more: page.has_more })
+    let page = moment::list_by_user(&state, claims.0.map(|x| x.uid()), req.user_id, cursor, req.limit.unwrap_or(20).clamp(1, 50)).await?;
+    ok!(ListResp { moments: page.moments, next_cursor: page.next_cursor.map(|x| x.encode()) })
 }
 
 #[framed]
