@@ -15,6 +15,9 @@ services:
       POSTGRES_PASSWORD: postgres
   - name: meilisearch
     image: getmeili/meilisearch:v1.56
+    # Meilisearch has no SIGTERM handler, so it exits with 143 when the pipeline stops the service
+    # and Woodpecker marks it failed. That's harmless (LMDB is crash-safe); tini's -e 143 reports 0.
+    entrypoint: ['tini', '-e', '143', '--', '/bin/meilisearch']
     environment:
       MEILI_NO_ANALYTICS: true
       MEILI_MASTER_KEY: "12345678"
