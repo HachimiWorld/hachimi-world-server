@@ -137,12 +137,12 @@ async fn check_profile_content(
         if req.username == user.username {
             return Ok(Verdict::Pass);
         }
-        checker.check_text(pool, content_check::SUBJECT_USERNAME, uid, uid.0, &req.username).await
+        checker.check_text(pool, content_check::SUBJECT_USERNAME, uid, Some(uid.0), &req.username).await
     };
     let bio = async {
         match &req.bio {
             Some(bio) if !bio.is_blank() && req.bio != user.bio => {
-                checker.check_text(pool, content_check::SUBJECT_BIO, uid, uid.0, bio).await
+                checker.check_text(pool, content_check::SUBJECT_BIO, uid, Some(uid.0), bio).await
             }
             _ => Ok(Verdict::Pass),
         }
@@ -198,7 +198,7 @@ async fn set_avatar(
         let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
             subject: content_check::SUBJECT_AVATAR,
             actor_uid: user.id,
-            target_id: user.id.0,
+            target_id: Some(user.id.0),
             uploaded: &bytes,
             webp: &webp,
             key: &filename,

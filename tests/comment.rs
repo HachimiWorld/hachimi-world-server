@@ -534,7 +534,7 @@ async fn comments_are_checked() {
         let checks = ContentCheckDao::list_by_actor(&env.pool, author.uid, 10).await.unwrap();
         assert_eq!(checks.len(), 1);
         assert_eq!(checks[0].subject, "song.comment");
-        assert_eq!(checks[0].target_id, comment.id.0);
+        assert_eq!(checks[0].target_id, Some(comment.id.0));
 
         // A blocked comment isn't saved
         wait_lock().await;
@@ -577,8 +577,7 @@ async fn run_reviews(env: &TestEnvironment, client: hachimi_world_server::util::
 /// The comment that waited in `review`, once it's saved.
 async fn saved(env: &TestEnvironment, review: i64) -> Option<CommentId> {
     let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
-    if review.target_id == 0 { return None }
-    let comment = CommentDao::get_by_id(&env.pool, CommentId(review.target_id)).await.unwrap().unwrap();
+    let comment = CommentDao::get_by_id(&env.pool, CommentId(review.target_id?)).await.unwrap().unwrap();
     Some(comment.id)
 }
 
@@ -617,7 +616,7 @@ async fn waiting_comments_are_checked_again() {
         assert!(saved(&env, bad).await.is_none());
         // The check that passed it names it; the ones before it was saved don't
         let checks = ContentCheckDao::list_by_actor(&env.pool, author.uid, 10).await.unwrap();
-        let named: Vec<&str> = checks.iter().filter(|x| x.target_id == good.0).map(|x| x.content.as_str()).collect();
+        let named: Vec<&str> = checks.iter().filter(|x| x.target_id == Some(good.0)).map(|x| x.content.as_str()).collect();
         assert_eq!(named, ["#down 好听"]);
         wait_lock().await;
         assert_eq!(run_reviews(&env, get_recovered_typesafe_client(), now + Duration::days(2)).await, 0);

@@ -78,7 +78,7 @@ async fn upload_image(claims: Claims, state: State<AppState>, mut multipart: Mul
             let (checked, lock) = content_check::try_check_image_upload(checker, &state, ImageUpload {
                 subject: content_check::SUBJECT_MOMENT_IMAGE,
                 actor_uid: uid,
-                target_id: 0,
+                target_id: None,
                 uploaded: &bytes,
                 webp: &prepared.webp,
                 key: &prepared.key,

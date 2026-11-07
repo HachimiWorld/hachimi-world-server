@@ -122,8 +122,7 @@ async fn last_review(env: &TestEnvironment, user: &TestUser) -> i64 {
 /// The moment that waited in `review`, once it's saved.
 async fn saved(env: &TestEnvironment, review: i64) -> Option<MomentId> {
     let review = ContentReviewDao::get_by_id(&env.pool, review).await.unwrap().unwrap();
-    if review.target_id == 0 { return None }
-    Some(MomentDao::get_by_id(&env.pool, MomentId(review.target_id)).await.unwrap().unwrap().id)
+    Some(MomentDao::get_by_id(&env.pool, MomentId(review.target_id?)).await.unwrap().unwrap().id)
 }
 
 #[tokio::test]
@@ -280,7 +279,7 @@ async fn images_and_text_are_checked() {
         let named: Vec<String> = sqlx::query_scalar("SELECT subject FROM content_checks WHERE target_id = $1 ORDER BY id")
             .bind(moment.id.0).fetch_all(&env.pool).await.unwrap();
         assert_eq!(named, ["moment.image", "moment.text"]);
-        let unnamed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE actor_uid = $1 AND target_id = 0")
+        let unnamed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE actor_uid = $1 AND NULLIF(target_id, 0) IS NULL")
             .bind(alice.uid).fetch_one(&env.pool).await.unwrap();
         assert_eq!(unnamed, 2);
     }).await

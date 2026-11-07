@@ -110,7 +110,7 @@ pub async fn enqueue(
     ContentReviewDao::insert(&mut **tx, &ContentReview {
         id: 0,
         subject: subject.to_string(),
-        target_id: 0,
+        target_id: None,
         actor_uid,
         payload,
         attempt_count: 0,
@@ -263,8 +263,9 @@ async fn review_one(pool: &PgPool, checker: Option<&ContentChecker>, file_host: 
     // Saved and ended together, so a crash can't save it twice
     let mut tx = pool.begin().await?;
     if outcome != Outcome::Block {
-        review.target_id = kind.publish(&mut tx, &review.payload).await?;
-        ContentCheckDao::set_target_id(&mut *tx, &record_ids, review.target_id).await?;
+        let id = kind.publish(&mut tx, &review.payload).await?;
+        review.target_id = Some(id);
+        ContentCheckDao::set_target_id(&mut *tx, &record_ids, id).await?;
     } else {
         kind.reject(&mut tx, &review.payload).await?;
     }
@@ -291,7 +292,7 @@ async fn check_items(
     for item in items {
         let checked = match item {
             ReviewItem::Text { subject, text } => {
-                Some(checker.try_check_text(pool, subject, review.actor_uid, 0, text).await?)
+                Some(checker.try_check_text(pool, subject, review.actor_uid, None, text).await?)
             }
             ReviewItem::Image { subject, key } => check_stored_image(pool, checker, file_host, review, subject, key).await?,
         };
@@ -327,7 +328,7 @@ async fn check_stored_image(
     }).await??;
     // Already stored where it would be served from, which the record keeps either way; a blocked
     // one is never referenced
-    Ok(Some(checker.try_check_image(pool, subject, review.actor_uid, 0, &stored, &jpeg, key, key).await?))
+    Ok(Some(checker.try_check_image(pool, subject, review.actor_uid, None, &stored, &jpeg, key, key).await?))
 }
 
 #[cfg(test)]

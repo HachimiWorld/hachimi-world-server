@@ -11,7 +11,7 @@ macro_rules! query_content_reviews {
             SELECT
                 id,
                 subject,
-                target_id,
+                NULLIF(target_id, 0) AS target_id,
                 actor_uid as "actor_uid: _",
                 payload,
                 attempt_count,
@@ -33,9 +33,9 @@ pub struct ContentReview {
     pub id: i64,
     /// The content check subject, such as `song.comment`.
     pub subject: String,
-    /// The id of the content once saved, such as the comment id; 0 until then, or forever if it's
-    /// blocked. Before 261106 it was set when queued.
-    pub target_id: i64,
+    /// The id of the content once saved, such as the comment id; `None` until then, and for good
+    /// if it's blocked. Before 261106 it was set when queued.
+    pub target_id: Option<i64>,
     /// Who submitted it.
     pub actor_uid: UserId,
     /// The content, in the shape its kind defines, saved to its own table once it passes.
@@ -65,7 +65,8 @@ impl ContentReviewDao {
         sqlx::query_scalar!(
             "INSERT INTO content_reviews (subject, target_id, actor_uid, payload, attempt_count, available_time, done_time, last_error, create_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id",
-            value.subject, value.target_id, value.actor_uid as UserId, value.payload, value.attempt_count, value.available_time,
+            // 0 for null until the next release; see the migration that made it nullable
+            value.subject, value.target_id.unwrap_or(0), value.actor_uid as UserId, value.payload, value.attempt_count, value.available_time,
             value.done_time, value.last_error, value.create_time
         ).fetch_one(executor).await
     }
@@ -113,7 +114,7 @@ impl ContentReviewDao {
     pub async fn update<'e>(executor: impl PgExecutor<'e>, value: &ContentReview) -> sqlx::Result<()> {
         sqlx::query!(
             "UPDATE content_reviews SET target_id = $2, attempt_count = $3, available_time = $4, done_time = $5, last_error = $6 WHERE id = $1",
-            value.id, value.target_id, value.attempt_count, value.available_time, value.done_time, value.last_error
+            value.id, value.target_id.unwrap_or(0), value.attempt_count, value.available_time, value.done_time, value.last_error
         ).execute(executor).await?;
         Ok(())
     }

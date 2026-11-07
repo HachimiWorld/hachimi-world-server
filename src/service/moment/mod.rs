@@ -410,7 +410,7 @@ async fn check_now(pool: &PgPool, checker: &ContentChecker, pending: &PendingMom
     for item in pending.review_items()? {
         let verdict = match item {
             ReviewItem::Text { subject, text } => {
-                let checked = checker.try_check_text(pool, subject, pending.user_id, 0, &text).await?;
+                let checked = checker.try_check_text(pool, subject, pending.user_id, None, &text).await?;
                 record_ids.push(checked.record_id);
                 checked.verdict
             }

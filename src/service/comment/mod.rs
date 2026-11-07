@@ -384,7 +384,7 @@ pub async fn create(
         create_time: now,
     };
     let checked = match checker {
-        Some(checker) => Some(checker.try_check_text(pool, target.subject(), uid, 0, content).await?),
+        Some(checker) => Some(checker.try_check_text(pool, target.subject(), uid, None, content).await?),
         None => None,
     };
     let verdict = checked.as_ref().map_or(Some(Verdict::Pass), |x| x.verdict.clone());

@@ -389,7 +389,7 @@ impl ContentChecker {
         pool: &PgPool,
         subject: &str,
         actor_uid: UserId,
-        target_id: i64,
+        target_id: Option<i64>,
         text: &str,
     ) -> anyhow::Result<Verdict> {
         Ok(self.try_check_text(pool, subject, actor_uid, target_id, text).await?.verdict.unwrap_or(Verdict::Pass))
@@ -397,15 +397,15 @@ impl ContentChecker {
 
     /// [ContentChecker::check_text], but the verdict is `None` when TypeSafe fails or its answer
     /// doesn't match the policy, for content that waits to be checked again instead of passing. The
-    /// failure is recorded either way. Content checked before it's saved has no id yet: pass 0 as
-    /// `target_id`, and set it on the record once saved, with [ContentCheckDao::set_target_id].
+    /// failure is recorded either way. Content checked before it's saved has no id yet: pass `None`
+    /// as `target_id`, and set it on the record once saved, with [ContentCheckDao::set_target_id].
     /// @since 261021
     pub async fn try_check_text(
         &self,
         pool: &PgPool,
         subject: &str,
         actor_uid: UserId,
-        target_id: i64,
+        target_id: Option<i64>,
         text: &str,
     ) -> anyhow::Result<Checked> {
         let policy = self.subject_policy(subject)?;
@@ -429,7 +429,7 @@ impl ContentChecker {
         pool: &PgPool,
         subject: &str,
         actor_uid: UserId,
-        target_id: i64,
+        target_id: Option<i64>,
         uploaded: &[u8],
         jpeg: &[u8],
         passed_key: &str,
@@ -448,7 +448,7 @@ impl ContentChecker {
         pool: &PgPool,
         subject: &str,
         actor_uid: UserId,
-        target_id: i64,
+        target_id: Option<i64>,
         uploaded: &[u8],
         jpeg: &[u8],
         passed_key: &str,
@@ -471,7 +471,7 @@ impl ContentChecker {
         pool: &PgPool,
         subject: &str,
         actor_uid: UserId,
-        target_id: i64,
+        target_id: Option<i64>,
         uploaded: &[u8],
         passed_key: &str,
         blocked_key: &str,
@@ -605,7 +605,7 @@ pub struct Checked {
 pub struct ImageUpload<'a> {
     pub subject: &'a str,
     pub actor_uid: UserId,
-    pub target_id: i64,
+    pub target_id: Option<i64>,
     /// The file as the user sent it.
     pub uploaded: &'a [u8],
     /// The image as it will be stored, at `key`.
@@ -673,7 +673,7 @@ pub async fn try_check_image_upload(
 struct Record<'a> {
     subject: &'a str,
     actor_uid: UserId,
-    target_id: i64,
+    target_id: Option<i64>,
     content_hash: String,
 }
 
