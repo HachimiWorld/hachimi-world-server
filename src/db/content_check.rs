@@ -25,6 +25,7 @@ macro_rules! query_content_checks {
             SELECT
                 id,
                 subject,
+                -- Instances of an older release may still write 0 for null while a deploy rolls out
                 NULLIF(target_id, 0) AS target_id,
                 actor_uid as "actor_uid: _",
                 content,
@@ -115,8 +116,7 @@ impl ContentCheckDao {
         sqlx::query_scalar!(
             "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, reused_from, create_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
-            // 0 for null until the next release; see the migration that made it nullable
-            value.subject, value.target_id.unwrap_or(0), value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
+            value.subject, value.target_id, value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
             value.model, value.answers, value.error, &value.blocked_by, value.latency_ms, value.reused_from, value.create_time
         ).fetch_one(executor).await
     }
