@@ -63,11 +63,17 @@ impl Moment {
 
 pub struct MomentDao;
 
+/// Where a page continues before: the previous page's last moment, or for the first page, a point
+/// after every moment.
+///
+/// Always a value, never `$1 IS NULL OR (create_time, id) < ($1, $2)` in SQL: once Postgres uses a
+/// generic plan for the prepared statement, the OR makes the cursor a filter instead of an index
+/// condition, and a deep page reads every row before it, as OFFSET would.
+fn before_or_end(before: Option<(DateTime<Utc>, MomentId)>) -> (DateTime<Utc>, MomentId) {
+    before.unwrap_or((DateTime::<Utc>::MAX_UTC, MomentId(i64::MAX)))
+}
+
 // "Visible" in the queries below means not hidden and not deleted, as in [Moment::is_visible].
-//
-// Pages compare against the cursor with COALESCE, not `$1 IS NULL OR ...`: once Postgres uses a
-// generic plan for the prepared statement, the OR makes the cursor a filter instead of an index
-// condition, and a deep page reads every row before it, as OFFSET would.
 impl MomentDao {
     /// The `id` of `value` is ignored; returns the new id.
     pub async fn insert<'e>(executor: impl PgExecutor<'e>, value: &Moment) -> sqlx::Result<MomentId> {
@@ -118,14 +124,14 @@ impl MomentDao {
         before: Option<(DateTime<Utc>, MomentId)>,
         limit: i64,
     ) -> sqlx::Result<Vec<Moment>> {
-        let (before_time, before_id) = before.unzip();
+        let (before_time, before_id) = before_or_end(before);
         query_moments!(
             "JOIN users u ON u.id = m.user_id
             WHERE NOT m.is_hidden AND m.delete_time IS NULL AND NOT u.is_banned
-                AND (m.create_time, m.id) < (COALESCE($1::timestamptz, 'infinity'), COALESCE($2::bigint, 9223372036854775807))
+                AND (m.create_time, m.id) < ($1, $2)
             ORDER BY m.create_time DESC, m.id DESC
             LIMIT $3",
-            before_time, before_id as Option<MomentId>, limit
+            before_time, before_id as MomentId, limit
         ).fetch_all(executor).await
     }
 
@@ -138,13 +144,13 @@ impl MomentDao {
         before: Option<(DateTime<Utc>, MomentId)>,
         limit: i64,
     ) -> sqlx::Result<Vec<Moment>> {
-        let (before_time, before_id) = before.unzip();
+        let (before_time, before_id) = before_or_end(before);
         query_moments!(
             "WHERE m.user_id = $1 AND ($2 OR NOT m.is_hidden) AND m.delete_time IS NULL
-                AND (m.create_time, m.id) < (COALESCE($3::timestamptz, 'infinity'), COALESCE($4::bigint, 9223372036854775807))
+                AND (m.create_time, m.id) < ($3, $4)
             ORDER BY m.create_time DESC, m.id DESC
             LIMIT $5",
-            user_id as UserId, include_hidden, before_time, before_id as Option<MomentId>, limit
+            user_id as UserId, include_hidden, before_time, before_id as MomentId, limit
         ).fetch_all(executor).await
     }
 

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n            SELECT\n                m.id as \"id: _\",\n                m.user_id as \"user_id: _\",\n                m.content,\n                m.images,\n                m.attachments,\n                m.is_hidden,\n                m.like_count,\n                m.delete_time,\n                m.create_time,\n                m.update_time\n            FROM moments m\n            JOIN users u ON u.id = m.user_id\n            WHERE NOT m.is_hidden AND m.delete_time IS NULL AND NOT u.is_banned\n                AND (m.create_time, m.id) < (COALESCE($1::timestamptz, 'infinity'), COALESCE($2::bigint, 9223372036854775807))\n            ORDER BY m.create_time DESC, m.id DESC\n            LIMIT $3",
+  "query": "\n            SELECT\n                m.id as \"id: _\",\n                m.user_id as \"user_id: _\",\n                m.content,\n                m.images,\n                m.attachments,\n                m.is_hidden,\n                m.like_count,\n                m.delete_time,\n                m.create_time,\n                m.update_time\n            FROM moments m\n            JOIN users u ON u.id = m.user_id\n            WHERE NOT m.is_hidden AND m.delete_time IS NULL AND NOT u.is_banned\n                AND (m.create_time, m.id) < ($1, $2)\n            ORDER BY m.create_time DESC, m.id DESC\n            LIMIT $3",
   "describe": {
     "columns": [
       {
@@ -134,5 +134,5 @@
       false
     ]
   },
-  "hash": "01e66bb6676052aa58268b1c61d6e2a9e0e25795b129e3d789c7feed71bf4fe7"
+  "hash": "911c0801731ab304d5d6bf3f22dbee42d41d2317f8267466cbefc3c11ac841d8"
 }
