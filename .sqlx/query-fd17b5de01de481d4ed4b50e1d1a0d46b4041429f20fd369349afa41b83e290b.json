@@ -1,0 +1,29 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT moment_id AS \"moment_id: MomentId\" FROM moment_likes WHERE user_id = $1 AND moment_id = ANY($2)",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "moment_id: MomentId",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "moment_likes",
+            "name": "moment_id"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8Array"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "fd17b5de01de481d4ed4b50e1d1a0d46b4041429f20fd369349afa41b83e290b"
+}

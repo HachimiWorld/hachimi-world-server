@@ -40,6 +40,7 @@ pub struct TestEnvironment {
     pub api: ApiClient,
     pub pool: PgPool,
     pub redis: ConnectionManager,
+    pub file_host: Arc<dyn FileHost>,
 }
 
 
@@ -120,7 +121,7 @@ where
 
     // A trick to wait for the server to start. Especially for waiting the invocation of `initialize_jwt_key`
     tokio::time::sleep(Duration::from_millis(100)).await;
-    let test_env = TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone() };
+    let test_env = TestEnvironment { api, pool: app_state.sql_pool.clone(), redis: app_state.redis_conn.clone(), file_host: app_state.file_host.clone() };
     f(test_env).await;
 
     // Hold the instances until the end of the test to make sure the connections are still valid
@@ -140,7 +141,9 @@ async fn get_test_redis_conn() -> (ContainerAsync<Valkey9>, ConnectionManager) {
 }
 
 async fn get_test_file_host() -> impl FileHost {
-    // Return an mock file host since we don't want to actually upload files during tests. The file host is only used for generating file URLs, so it won't affect the tests.
+    // Return an mock file host since we don't want to actually upload files during tests. Uploaded
+    // files are kept in memory, so they can be read back.
+    let files: Arc<std::sync::Mutex<std::collections::HashMap<String, bytes::Bytes>>> = Default::default();
     let mut mock = MockFileHost::default();
     mock.expect_rename().withf(|old_key, new_key| {
         info!("Mock rename file from {} to {}", old_key, new_key);
@@ -149,7 +152,10 @@ async fn get_test_file_host() -> impl FileHost {
     mock.expect_upload().withf(|bytes, key| {
         info!("Mock upload file {} ({} bytes)", key, bytes.len());
         true
-    }).returning(|_bytes, key| {
+    }).returning({
+        let files = files.clone();
+        move |bytes, key| {
+        files.lock().unwrap().insert(key.to_string(), bytes);
         let key = key.to_string();
         Box::pin(async move {
             Ok(UploadResult {
@@ -157,6 +163,11 @@ async fn get_test_file_host() -> impl FileHost {
                 public_url: format!("https://mock-file-host/{}", key),
             })
         })
+    }});
+    mock.expect_download().returning(move |key| {
+        let file = files.lock().unwrap().get(key).cloned();
+        let key = key.to_string();
+        Box::pin(async move { file.ok_or_else(|| anyhow::anyhow!("No file at {key}")) })
     });
     mock
 }

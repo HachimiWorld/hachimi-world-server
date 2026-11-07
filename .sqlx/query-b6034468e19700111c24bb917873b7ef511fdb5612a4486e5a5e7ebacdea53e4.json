@@ -1,0 +1,19 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE content_reviews SET target_id = $2, attempt_count = $3, available_time = $4, done_time = $5, last_error = $6 WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Int4",
+        "Timestamptz",
+        "Timestamptz",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6034468e19700111c24bb917873b7ef511fdb5612a4486e5a5e7ebacdea53e4"
+}

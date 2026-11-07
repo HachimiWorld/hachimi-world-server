@@ -16,6 +16,18 @@
   - `/auth/email/revert_change` (POST, no login): `token` (from the link), `new_password`. Errors: `invalid_password`, `invalid_token` (unknown, used or expired), `old_email_taken`
   - The link is the new optional config `account.email_change_revert_url` followed by the token. Defaults to `https://hachimi.world/account/revert-email/?token=`
   - Changes are kept in the new `email_change_requests` table
+- Moments: short posts any logged-in user who isn't banned can write, under `/moment`, and the square, under `/feed`
+  - `/moment/upload_image` (POST, multipart, the file as the only field): PNG, JPEG, WebP, AVIF or GIF (first frame only), up to 8 MB. Stored as WebP at most 2048 on the long side, with a thumbnail at most 480. Response: `image_id` (post it within an hour), `url`, `thumb_url`, `width`, `height`. Checked as `moment.image` on upload: errors with `image_rejected` if blocked; one that can't be checked is kept and checked again with the moment. Up to 30 image checks an hour per user, then `rate_limited`. Other errors: `image_too_large`, `invalid_image`, `user_banned`
+  - `/moment/create` (POST): `content` (up to 500 characters, may be empty), `image_ids` (up to 9), `attachments` (`[{ type, data }]`; for now up to 1, `song` or `playlist` with `data` `{ "id": <id> }`; the playlist must be public). At least one of the three. Response: `moment`, or null if it waits for content checks; if it's blocked then, its author gets a `moment.rejected` notification. Two a minute and 50 a day per user. Errors: `moment_empty`, `content_too_long`, `too_many_images`, `too_many_attachments`, `image_not_found`, `unknown_attachment`, `invalid_attachment`, `moment_rejected`, `rate_limited`, `user_banned`
+  - `/moment/delete` (POST): `moment_id`, the user's own. `/moment/like`, `/moment/unlike` (POST): `moment_id`
+  - `/moment/detail` (GET): `moment_id`. `/moment/list_by_user` (GET): `user_id`, `cursor` (`next_cursor` of the previous page), `limit` (1..=50). Response: `items`, `next_cursor` (null when there's no more). Errors with `invalid_cursor`. Hidden moments are shown only to their authors
+  - A moment: `id`, `author` (`uid`, `username`, `avatar_url`), `content`, `images` (`url`, `thumb_url`, `width`, `height`), `attachments` (`type`, `data`: a song's public detail, a playlist's metadata, or null when it can't be seen any more), `like_count`, `liked`, `comment_count`, `is_hidden`, `create_time`
+  - `/feed/square` (GET): everyone's moments, newest first, leaving out banned users'. Query: `cursor` (`next_cursor` of the previous page), `limit` (1..=50). Response: `items` (`kind`, `time`, and the entry under the field `kind` names; only `moment` for now, skip kinds you don't know), `next_cursor`
+  - Comments on moments: `target_type` `moment` in `/comment/*`, checked as `moment.comment`
+  - Reports on moments: `target_type` `moment`, with the content actions `hide` and `restore`. `UgcPreview` has the new type `moment` (`id`, `content`, `image_thumb_urls`)
+  - Notification intents: `moment.view` (`moment_id`), `moment.comment.view` (`moment_id`, `comment_id`)
+  - New content check subjects `moment.text`, `moment.image` and `moment.comment`. Without their own policies they use `default.text` and `default.image`
+  - Kept in the new `moments` and `moment_likes` tables
 
 ### Changes
 
@@ -23,6 +35,7 @@
 - PostgreSQL 17.11 instead of 17.6. A minor release: change the image tag and restart, the data directory is used as is
 - Meilisearch 1.56 instead of 1.32. Its data directory can't be opened by the new version as is. Either start it on an empty volume, and the server rebuilds the songs, users and playlists indexes from Postgres on its next start, or start it once with `--upgrade-db` after taking a snapshot
 - Valkey 9.1 instead of Redis 8.4, with no code or config change (`redis.address` stays the same; keep the compose service name, or point it at the new one). Valkey can't read Redis 8's data files, so start it on an empty volume. Only caches, locks and short-lived state are lost: codes being sent and uploads in progress have to be redone, and the day's DAU count starts over
+- Comments get their id from the database when saved, not before their content check. `content_checks.target_id` and `content_reviews.target_id` are nullable: empty until the content is saved, and for good if it's blocked. This release still writes 0 for empty, as older instances can't read null; the next one writes null and turns the 0s into null. Comments queued by older instances are still published, with a new id. Deploying while older instances still run is safe; the next release makes `comments.id` `GENERATED ALWAYS`, so deploy this one fully first
 
 ## 261031
 

@@ -25,7 +25,7 @@ macro_rules! query_content_checks {
             SELECT
                 id,
                 subject,
-                target_id,
+                NULLIF(target_id, 0) AS target_id,
                 actor_uid as "actor_uid: _",
                 content,
                 content_hash,
@@ -62,8 +62,9 @@ pub struct ContentCheck {
     pub id: i64,
     /// What was checked, such as `user.username` or `user.bio`.
     pub subject: String,
-    /// The object the content belongs to.
-    pub target_id: i64,
+    /// The object the content belongs to. `None` for content checked before it's saved, until
+    /// it's saved, and for good if it never is.
+    pub target_id: Option<i64>,
     pub actor_uid: UserId,
     /// The text as submitted, or the storage key of an image; which one depends on `subject`.
     pub content: String,
@@ -114,9 +115,19 @@ impl ContentCheckDao {
         sqlx::query_scalar!(
             "INSERT INTO content_checks (subject, target_id, actor_uid, content, content_hash, policy_version, model, answers, error, blocked_by, latency_ms, reused_from, create_time)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id",
-            value.subject, value.target_id, value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
+            // 0 for null until the next release; see the migration that made it nullable
+            value.subject, value.target_id.unwrap_or(0), value.actor_uid as UserId, value.content, value.content_hash, value.policy_version,
             value.model, value.answers, value.error, &value.blocked_by, value.latency_ms, value.reused_from, value.create_time
         ).fetch_one(executor).await
+    }
+
+    /// Names what `ids` checked, once it's saved: content checked before it's saved is recorded
+    /// without a `target_id`.
+    pub async fn set_target_id<'e>(executor: impl PgExecutor<'e>, ids: &[i64], target_id: i64) -> sqlx::Result<()> {
+        if ids.is_empty() { return Ok(()) }
+        sqlx::query!("UPDATE content_checks SET target_id = $2 WHERE id = ANY($1)", ids, target_id)
+            .execute(executor).await?;
+        Ok(())
     }
 
     /// Newest first.
