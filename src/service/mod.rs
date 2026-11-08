@@ -24,3 +24,5 @@ pub mod committee;
 pub mod content_check;
 pub mod comment;
 pub mod content_review;
+pub mod moment;
+pub mod feed;

@@ -73,7 +73,7 @@ async fn ordinary_changes_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["user.bio", "user.username"]);
         for check in &checks {
-            assert_eq!(check.target_id, user.uid.0);
+            assert_eq!(check.target_id, Some(user.uid.0));
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
             assert!(check.answers.is_some());
@@ -318,7 +318,7 @@ async fn an_ordinary_avatar_passes_and_is_recorded() {
         assert_eq!(checks.len(), 1);
         let check = &checks[0];
         assert_eq!(check.subject, "user.avatar");
-        assert_eq!(check.target_id, user.uid.0);
+        assert_eq!(check.target_id, Some(user.uid.0));
         assert_eq!(check.content, key_of(&avatar_url));
         // The hash is of the file as uploaded, not of the copy that was checked
         assert_eq!(check.content_hash, hex::encode(Sha256::digest(&uploaded)));
@@ -500,7 +500,7 @@ async fn ordinary_playlists_pass_and_are_recorded() {
         subjects.sort();
         assert_eq!(subjects, ["playlist.description", "playlist.name"]);
         for check in &checks {
-            assert_eq!(check.target_id, id.0);
+            assert_eq!(check.target_id, Some(id.0));
             assert!(check.blocked_by.is_empty(), "{check:?}");
             assert_eq!(check.model.as_deref(), Some(TEST_MODEL));
         }
@@ -579,7 +579,7 @@ async fn playlist_covers_are_checked() {
 
         let covers: Vec<_> = checks(&env.pool, user.uid).await.into_iter().filter(|c| c.subject == "playlist.cover").collect();
         assert_eq!(covers.len(), 2);
-        assert_eq!(covers[0].target_id, id.0);
+        assert_eq!(covers[0].target_id, Some(id.0));
         assert_eq!(covers[0].content, key_of(&cover_url));
         assert_eq!(covers[0].content_hash, hex::encode(Sha256::digest(&uploaded)));
         assert_eq!(covers[0].model.as_deref(), Some(TEST_IMAGE_MODEL));

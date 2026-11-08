@@ -380,12 +380,12 @@ async fn check_playlist_text(
         if current.is_some_and(|x| x.name == name) {
             return Ok(Verdict::Pass);
         }
-        checker.check_text(pool, content_check::SUBJECT_PLAYLIST_NAME, uid, playlist_id.0, name).await
+        checker.check_text(pool, content_check::SUBJECT_PLAYLIST_NAME, uid, Some(playlist_id.0), name).await
     };
     let description_check = async {
         match description {
             Some(desc) if !desc.is_blank() && current.is_none_or(|x| x.description.as_deref() != Some(desc)) => {
-                checker.check_text(pool, content_check::SUBJECT_PLAYLIST_DESCRIPTION, uid, playlist_id.0, desc).await
+                checker.check_text(pool, content_check::SUBJECT_PLAYLIST_DESCRIPTION, uid, Some(playlist_id.0), desc).await
             }
             _ => Ok(Verdict::Pass),
         }
@@ -587,7 +587,7 @@ async fn set_cover(
         let (verdict, lock) = content_check::check_image_upload(checker, &state, ImageUpload {
             subject: content_check::SUBJECT_PLAYLIST_COVER,
             actor_uid: claims.uid(),
-            target_id: playlist.id.0,
+            target_id: Some(playlist.id.0),
             uploaded: &bytes,
             webp: &webp,
             key: &filename,

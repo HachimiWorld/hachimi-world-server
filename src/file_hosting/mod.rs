@@ -12,6 +12,9 @@ use tracing::info;
 pub trait FileHost: Send + Sync {
     async fn upload(&self, bytes: Bytes, key: &str) -> anyhow::Result<UploadResult>;
     async fn rename(&self, old_key: &str, new_key: &str) -> anyhow::Result<()>;
+    /// Reads back a file uploaded at `key`.
+    /// @since 261106
+    async fn download(&self, key: &str) -> anyhow::Result<Bytes>;
 }
 
 pub struct S3FileHost {
@@ -64,6 +67,21 @@ impl FileHost for S3FileHost {
             .await
             .with_context(|| format!("Failed to rename {}", old_key))?;
         Ok(())
+    }
+
+    async fn download(&self, key: &str) -> anyhow::Result<Bytes> {
+        let output = self
+            .client
+            .get_object()
+            .bucket(self.bucket_name.clone())
+            .key(key)
+            .send()
+            .await
+            .with_context(|| format!("Failed to download {}", key))?;
+        let bytes = output.body.collect().await
+            .with_context(|| format!("Failed to read {}", key))?
+            .into_bytes();
+        Ok(bytes)
     }
 }
 
