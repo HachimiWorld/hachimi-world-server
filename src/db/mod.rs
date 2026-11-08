@@ -55,6 +55,7 @@ pub mod committee_member;
 pub mod content_check;
 pub mod comment;
 pub mod content_review;
+pub mod moment;
 
 pub trait CrudDao<'e, E>
 where E: PgExecutor<'e> {

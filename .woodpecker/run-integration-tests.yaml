@@ -6,15 +6,18 @@ when:
     - push
     - manual
 # One Postgres and one Meilisearch for the whole run. Each test clones its own database and uses
-# its own index prefix (see tests/common/postgres.rs and meilisearch.rs). Redis still starts per
+# its own index prefix (see tests/common/postgres.rs and meilisearch.rs). Valkey still starts per
 # test via testcontainers.
 services:
   - name: postgres
-    image: postgres:17.6-alpine
+    image: postgres:17.11-alpine
     environment:
       POSTGRES_PASSWORD: postgres
   - name: meilisearch
-    image: getmeili/meilisearch:v1.32
+    image: getmeili/meilisearch:v1.56
+    # Meilisearch has no SIGTERM handler, so it exits with 143 when the pipeline stops the service
+    # and Woodpecker marks it failed. That's harmless (LMDB is crash-safe); tini's -e 143 reports 0.
+    entrypoint: ['tini', '-e', '143', '--', '/bin/meilisearch']
     environment:
       MEILI_NO_ANALYTICS: true
       MEILI_MASTER_KEY: "12345678"
@@ -22,7 +25,7 @@ steps:
   # Named volume is the cache; do not tar/zstd (write amplification).
   # Share CARGO_HOME with other workflows; keep CARGO_TARGET_DIR isolated.
   - name: run-tests
-    image: rust:1.96.0
+    image: rust:1.99.1
     environment:
       SQLX_OFFLINE: true
       RUST_BACKTRACE: 1
@@ -71,13 +74,19 @@ steps:
         fi
       - export RUSTUP_HOME="/cache/rustup/$RUST_VERSION"
       # Instrumented build goes to $CARGO_TARGET_DIR/llvm-cov-target, next to the old plain build.
+      # With --no-report, cargo-llvm-cov cleans nothing first. Earlier runs would be left in the cache:
+      # their .profraw files, which fail the report once a Rust bump changes their format, and the
+      # test binaries of every commit built since, whose coverage maps of older versions of the same
+      # files the report reads too, counting their lines as missed. Remove both for this workspace;
+      # dependencies stay built.
+      - cargo llvm-cov clean --workspace
       - cargo llvm-cov nextest --no-fail-fast --tests --no-report
       - cargo llvm-cov report --summary-only
       # In the workspace, not the cache, so the upload step can read it.
       - cargo llvm-cov report --lcov --output-path lcov.info
   # A separate step so only the upload sees the token. It runs only when the tests passed.
   - name: upload-coverage
-    image: rust:1.96.0
+    image: rust:1.99.1
     environment:
       CODECOV_TOKEN:
         from_secret: CODECOV_TOKEN

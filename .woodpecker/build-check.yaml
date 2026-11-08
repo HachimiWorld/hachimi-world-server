@@ -9,7 +9,7 @@ steps:
   # Named volume is the cache; do not tar/zstd (write amplification).
   # Share CARGO_HOME with other workflows; keep CARGO_TARGET_DIR isolated.
   - name: build
-    image: rust:1.96.0
+    image: rust:1.99.1
     environment:
       SQLX_OFFLINE: true
       CARGO_HOME: /cache/cargo

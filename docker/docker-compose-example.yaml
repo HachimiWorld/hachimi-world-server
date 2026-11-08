@@ -1,6 +1,6 @@
 services:
   meilisearch:
-    image: getmeili/meilisearch:v1.32
+    image: getmeili/meilisearch:v1.56
     ports:
       - '7700:7700'
     volumes:
@@ -14,7 +14,7 @@ services:
       retries: 3
     restart: unless-stopped
   postgresql:
-    image: postgres:17.6-alpine
+    image: postgres:17.11-alpine
     volumes:
       - postgresql-data:/var/lib/postgresql/data
     ports:
@@ -29,19 +29,20 @@ services:
       timeout: 5s
       retries: 3
     restart: unless-stopped
+  # Valkey, under the service name redis so `redis.address: redis:6379` keeps working
   redis:
-    image: redis:8.4-alpine
+    image: valkey/valkey:9.1-alpine
     ports:
       - '6379:6379'
     volumes:
-      - redis-data:/data
+      - valkey-data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'PING']
+      test: ['CMD', 'valkey-cli', 'PING']
       interval: 3s
       timeout: 5s
       retries: 3
     restart: unless-stopped
 volumes:
   postgresql-data:
-  redis-data:
+  valkey-data:
   meilisearch-data:
