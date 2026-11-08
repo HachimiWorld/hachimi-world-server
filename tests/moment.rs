@@ -288,7 +288,7 @@ async fn images_and_text_are_checked() {
         let named: Vec<String> = sqlx::query_scalar("SELECT subject FROM content_checks WHERE target_id = $1 ORDER BY id")
             .bind(moment.id.0).fetch_all(&env.pool).await.unwrap();
         assert_eq!(named, ["moment.image", "moment.text"]);
-        let unnamed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE actor_uid = $1 AND NULLIF(target_id, 0) IS NULL")
+        let unnamed: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM content_checks WHERE actor_uid = $1 AND target_id IS NULL")
             .bind(alice.uid).fetch_one(&env.pool).await.unwrap();
         assert_eq!(unnamed, 2);
     }).await
