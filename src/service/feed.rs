@@ -1,6 +1,6 @@
 //! Streams that mix kinds of content, such as the square. Each entry is a [FeedItem] naming its
 //! kind, so a stream can take in a new kind, such as new songs, without clients changing: they skip
-//! kinds they don't know.
+//! kinds they don't know. A new kind is a new [FeedEntry] variant.
 //!
 //! Pages continue from an opaque cursor, so how a stream orders its kinds can change too.
 
@@ -11,18 +11,23 @@ use crate::web::state::AppState;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// One entry of a stream.
+/// One entry of a stream: `{ "time", "kind", "data" }`, where `kind` says what `data` is.
 /// @since 261106
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FeedItem {
-    /// What the entry is, naming the field that holds it: `moment` for now. Clients skip kinds
-    /// they don't know.
-    pub kind: String,
     /// When it happened, which orders the stream.
     pub time: DateTime<Utc>,
-    /// Set when `kind` is `moment`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub moment: Option<MomentItem>,
+    #[serde(flatten)]
+    pub entry: FeedEntry,
+}
+
+/// What an entry is, as `kind`, and the entry itself, as `data`. Clients skip kinds they don't
+/// know.
+/// @since 261106
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "data", rename_all = "snake_case")]
+pub enum FeedEntry {
+    Moment(MomentItem),
 }
 
 pub struct FeedPage {
@@ -58,7 +63,7 @@ pub async fn square(state: &AppState, viewer_uid: Option<UserId>, cursor: Option
     let cursor = cursor.map(|x| MomentCursor { time: x.time, id: MomentId(x.id) });
     let page = moment::list_public(state, viewer_uid, cursor, limit).await?;
     let next_cursor = page.next_cursor.map(|x| Cursor { time: x.time, kind: "moment".to_string(), id: x.id.0 }.encode());
-    let items = page.moments.into_iter().map(|x| FeedItem { kind: "moment".to_string(), time: x.create_time, moment: Some(x) }).collect();
+    let items = page.moments.into_iter().map(|x| FeedItem { time: x.create_time, entry: FeedEntry::Moment(x) }).collect();
     Ok(FeedPage { items, next_cursor })
 }
 

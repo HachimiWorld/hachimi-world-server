@@ -22,7 +22,7 @@
   - `/moment/delete` (POST): `moment_id`, the user's own. `/moment/like`, `/moment/unlike` (POST): `moment_id`
   - `/moment/detail` (GET): `moment_id`. `/moment/list_by_user` (GET): `user_id`, `cursor` (`next_cursor` of the previous page), `limit` (1..=50). Response: `items`, `next_cursor` (null when there's no more). Errors with `invalid_cursor`. Hidden moments are shown only to their authors
   - A moment: `id`, `author` (`uid`, `username`, `avatar_url`), `content`, `images` (`url`, `thumb_url`, `width`, `height`), `attachments` (`type`, `data`: a song's public detail, a playlist's metadata, or null when it can't be seen any more), `like_count`, `liked`, `comment_count`, `is_hidden`, `create_time`
-  - `/feed/square` (GET): everyone's moments, newest first, leaving out banned users'. Query: `cursor` (`next_cursor` of the previous page), `limit` (1..=50). Response: `items` (`kind`, `time`, and the entry under the field `kind` names; only `moment` for now, skip kinds you don't know), `next_cursor`
+  - `/feed/square` (GET): everyone's moments, newest first, leaving out banned users'. Query: `cursor` (`next_cursor` of the previous page), `limit` (1..=50). Response: `items` (`{ time, kind, data }`, where `kind` says what `data` is; only `moment` for now, skip kinds you don't know), `next_cursor`
   - Comments on moments: `target_type` `moment` in `/comment/*`, checked as `moment.comment`
   - Reports on moments: `target_type` `moment`, with the content actions `hide` and `restore`. `UgcPreview` has the new type `moment` (`id`, `content`, `image_thumb_urls`)
   - Notification intents: `moment.view` (`moment_id`), `moment.comment.view` (`moment_id`, `comment_id`)

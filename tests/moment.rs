@@ -14,6 +14,7 @@ use hachimi_world_server::service::moment::{AttachmentInput, MomentItem};
 use hachimi_world_server::service::ugc::UgcPreview;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::routes::comment::{CreateReq as CommentCreateReq, CreateResp as CommentCreateResp};
+use hachimi_world_server::service::feed::FeedEntry;
 use hachimi_world_server::web::routes::feed::{PageReq, PageResp as FeedPageResp};
 use hachimi_world_server::web::routes::moment::{CreateReq, CreateResp, ListByUserReq, ListResp, MomentIdReq, UploadImageResp};
 use hachimi_world_server::web::routes::playlist::{CreatePlaylistReq, CreatePlaylistResp};
@@ -81,9 +82,8 @@ async fn square_page(env: &TestEnvironment, cursor: Option<String>, limit: Optio
 
 /// Moment ids on the first page of the square, in order.
 async fn square(env: &TestEnvironment) -> Vec<MomentId> {
-    square_page(env, None, None).await.items.into_iter().map(|x| {
-        assert_eq!(x.kind, "moment");
-        x.moment.unwrap().id
+    square_page(env, None, None).await.items.into_iter().map(|x| match x.entry {
+        FeedEntry::Moment(x) => x.id,
     }).collect()
 }
 
@@ -205,9 +205,18 @@ async fn moments_page_by_cursor() {
         let first = square_page(&env, None, Some(2)).await;
         let cursor = first.next_cursor.clone().unwrap();
         let second = square_page(&env, Some(cursor), Some(2)).await;
-        let listed: Vec<MomentId> = first.items.into_iter().chain(second.items).map(|x| x.moment.unwrap().id).collect();
+        let listed: Vec<MomentId> = first.items.into_iter().chain(second.items).map(|x| match x.entry {
+            FeedEntry::Moment(x) => x.id,
+        }).collect();
         assert_eq!(listed, ids);
         assert!(second.next_cursor.is_none());
+        // Each entry is `{ time, kind, data }`
+        let raw: serde_json::Value = env.api.get_query("/feed/square", &PageReq { cursor: None, limit: Some(1) }).await
+            .parse_resp().await.unwrap();
+        let entry = &raw["items"][0];
+        assert_eq!(entry["kind"], "moment");
+        assert_eq!(entry["data"]["id"], ids[0].0);
+        assert!(entry["time"].is_string());
         let resp = env.api.get_query("/feed/square", &PageReq { cursor: Some("bad".into()), limit: None }).await
             .parse_resp::<FeedPageResp>().await;
         assert_eq!(resp.unwrap_err().code, "invalid_cursor");
