@@ -10,7 +10,7 @@ use hachimi_world_server::db::moment::{MomentDao, MomentId};
 use hachimi_world_server::db::playlist::PlaylistId;
 use hachimi_world_server::db::song::SongId;
 use hachimi_world_server::service::content_review;
-use hachimi_world_server::service::moment::{AttachmentInput, MomentItem};
+use hachimi_world_server::service::moment::{AttachmentInput, AttachmentView, KnownAttachment, MomentItem};
 use hachimi_world_server::service::ugc::UgcPreview;
 use hachimi_world_server::util::redlock::RedLock;
 use hachimi_world_server::web::routes::comment::{CreateReq as CommentCreateReq, CreateResp as CommentCreateResp};
@@ -145,15 +145,14 @@ async fn moments_with_images_and_attachments() {
         assert_eq!(first.author.uid, alice.uid);
         assert_eq!(first.images.iter().map(|x| &x.url).collect::<Vec<_>>(), [&wide.url, &small.url]);
         assert_eq!(first.attachments.len(), 1);
-        assert_eq!(first.attachments[0].kind, "song");
-        assert_eq!(first.attachments[0].data.as_ref().unwrap()["id"], song_id.0);
+        assert!(matches!(&first.attachments[0], AttachmentView::Known(KnownAttachment::Song(Some(x))) if x.id == song_id));
         // Posted images can't be posted again
         wait_lock().await;
         assert_eq!(try_create(&env, "再发一次", vec![wide.image_id], vec![]).await.unwrap_err(), "image_not_found");
 
         let playlist_id = new_playlist(&env, true).await;
         let second = try_create(&env, "", vec![], vec![attach("playlist", playlist_id.0)]).await.unwrap().unwrap();
-        assert_eq!(second.attachments[0].data.as_ref().unwrap()["name"], "分享的歌单");
+        assert!(matches!(&second.attachments[0], AttachmentView::Known(KnownAttachment::Playlist(Some(x))) if x.name == "分享的歌单"));
 
         // Everyone sees them, newest first
         login(&mut env, &bob);
@@ -176,7 +175,7 @@ async fn moments_with_images_and_attachments() {
         // A playlist made private since shows as unavailable
         login(&mut env, &alice);
         sqlx::query("UPDATE playlists SET is_public = false WHERE id = $1").bind(playlist_id.0).execute(&env.pool).await.unwrap();
-        assert!(detail(&env, second.id).await.unwrap().attachments[0].data.is_none());
+        assert!(matches!(detail(&env, second.id).await.unwrap().attachments[0], AttachmentView::Known(KnownAttachment::Playlist(None))));
 
         // Only its author can delete it, and then it's gone for everyone
         login(&mut env, &bob);

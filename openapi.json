@@ -2885,19 +2885,19 @@
         ]
       },
       "AttachmentView": {
-        "description": "An attachment as shown.\n @since 261106",
-        "type": "object",
-        "properties": {
-          "type": {
-            "description": "Such as `song` or `playlist`. Clients show types they don't know as \"update to see this\".",
-            "type": "string"
+        "description": "An attachment as shown: `{ \"type\", \"data\" }`, where `data` is in the shape its type defines, or\n null when what it points at can't be seen any more, shown as \"unavailable\". Clients show types\n they don't know as \"update to see this\".\n\n Typed per type, not as a JSON value, so the OpenAPI document describes each type's `data` and\n the compatibility check covers it.\n @since 261106",
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/KnownAttachment"
           },
-          "data": {
-            "description": "In the shape the type defines: a `song` is the song's public detail, a `playlist` its\n metadata. `None` when what it points at can't be seen any more, shown as \"unavailable\"."
+          {
+            "description": "A stored type this server doesn't know, such as one a newer version wrote before a rollback.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OtherAttachment"
+              }
+            ]
           }
-        },
-        "required": [
-          "type"
         ]
       },
       "CommonError": {
@@ -3373,6 +3373,59 @@
           "songs"
         ]
       },
+      "KnownAttachment": {
+        "description": "An attachment of a type this server knows, with its `data`.\n @since 261109",
+        "oneOf": [
+          {
+            "description": "The song's public detail, as in song lists.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "song"
+              },
+              "data": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PublicSongDetail"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "data"
+            ]
+          },
+          {
+            "description": "The playlist's metadata, as in playlist lists.",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "playlist"
+              },
+              "data": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/PlaylistMetadata"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "data"
+            ]
+          }
+        ]
+      },
       "LikeReq": {
         "type": "object",
         "properties": {
@@ -3664,6 +3717,23 @@
           "unavailable"
         ]
       },
+      "OtherAttachment": {
+        "description": "An attachment of a type this server doesn't know, shown with no `data`.\n @since 261109",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "data": {
+            "description": "Always null.",
+            "type": "null"
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ]
+      },
       "PageByUserReq": {
         "type": "object",
         "properties": {
@@ -3761,6 +3831,64 @@
         },
         "required": [
           "items"
+        ]
+      },
+      "PlaylistMetadata": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "songs_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "update_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "user_avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "user_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "user_id",
+          "user_name",
+          "name",
+          "songs_count",
+          "create_time",
+          "update_time"
         ]
       },
       "ProductionItem": {

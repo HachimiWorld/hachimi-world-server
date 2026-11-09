@@ -62,6 +62,8 @@ cargo run --bin gen_openapi
 
 CI fails when it is out of date, and when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
 
+Some changes the check flags are safe because clients already handle them. The common one is a new variant of a tagged enum, such as a new moment attachment type: oasdiff reports `response-property-one-of-added`, but clients show kinds they don't know as unknown. After making sure the client really does, copy the reported line into `.oasdiff-err-ignore` (as `METHOD /path message`) in the same PR.
+
 ## Bug Fix / Performance Improvement
 
 You can directly create PR for bug fixes commits. It's better to create an issue before that.

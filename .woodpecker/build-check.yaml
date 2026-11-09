@@ -39,7 +39,7 @@ steps:
       - |
         if git cat-file -e FETCH_HEAD:openapi.json 2>/dev/null; then
           git show FETCH_HEAD:openapi.json > /tmp/openapi-master.json
-          oasdiff breaking /tmp/openapi-master.json openapi.json --fail-on ERR
+          oasdiff breaking /tmp/openapi-master.json openapi.json --fail-on ERR --err-ignore .oasdiff-err-ignore
         else
           echo "master has no openapi.json yet, nothing to compare"
         fi
