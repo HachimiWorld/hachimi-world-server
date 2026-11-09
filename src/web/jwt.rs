@@ -109,6 +109,12 @@ pub struct Claims {
 #[derive(Debug, Clone)]
 pub struct OptionalClaims(pub Option<Claims>);
 
+// The bearer token isn't in the OpenAPI document yet: it doesn't change the shape of requests or
+// responses, which is what the compatibility check compares.
+impl aide::OperationInput for OptionalClaims {}
+impl aide::OperationInput for Claims {}
+impl aide::OperationInput for PublishVersionClaims {}
+
 impl FromRequestParts<AppState> for OptionalClaims {
     type Rejection = std::convert::Infallible;
 

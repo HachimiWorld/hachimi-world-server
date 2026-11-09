@@ -10,7 +10,7 @@ use sqlx::PgExecutor;
 macro_rules! define_id {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize, sqlx::Type)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize, sqlx::Type, schemars::JsonSchema)]
         #[serde(transparent)]
         #[sqlx(transparent)]
         pub struct $name(pub i64);

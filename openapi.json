@@ -1,0 +1,3758 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Hachimi World API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/user/greet": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "string"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/profile": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uid",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PublicUserProfile"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/update_profile": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/set_avatar": {
+      "post": {
+        "requestBody": {
+          "description": "multipart form data",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/search": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "type": "integer",
+              "format": "uint32",
+              "default": 20,
+              "minimum": 0
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SearchResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/list": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ConnectionResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/unlink": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionUnlinkReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/set_visibility": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionSetVisibilityReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/sync": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectionSyncReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/generate_challenge": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateChallengeReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/GenerateChallengeResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/connection/verify_challenge": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyChallengeReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/following": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FollowingListResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/followers": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "default": 20
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FollowersListResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/follow": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FollowResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/user/unfollow": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/FollowResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/upload_audio_file": {
+      "post": {
+        "requestBody": {
+          "description": "multipart form data",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/UploadAudioFileResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/upload_cover_image": {
+      "post": {
+        "requestBody": {
+          "description": "multipart form data",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/UploadImageResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/delete": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/publish": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublishReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PublishResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/detail": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "description": "Actually the JMID",
+            "required": true,
+            "schema": {
+              "description": "Actually the JMID",
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PublicSongDetail"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/detail_by_id": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PublicSongDetail"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/page_by_user": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PageByUserResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/search": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "filter",
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "uint",
+              "minimum": 0
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "sort_by",
+            "description": "Since 260114",
+            "schema": {
+              "description": "Since 260114",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/SearchResp2"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/recent_v2": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "after",
+            "schema": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int32"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RecentResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/hot/weekly": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/HotResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/recommend": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RecommendResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/recommend_anonymous": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/RecommendResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/tag/create": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TagCreateReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TagCreateResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/tag/search": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TagSearchResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/tag/recommend": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TagRecommendResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/tag/recommend_anonymous": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/TagRecommendResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/likes/like": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LikeReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/likes/unlike": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlikeReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/likes/status": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "song_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/LikeStatusResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/song/likes/page_my_likes": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page_index",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MyLikesResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CommonError": {
+        "description": "A common error data type used in a business error, contains a string `code` type and `msg`.\n\n It's always used as the default error data type in responses, e.g:\n\n ```json\n {\n     \"ok\": false,\n     \"data\": {\n         \"code\": \"permission_denied\",\n         \"msg\": \"You don't have permission to access this resource\"\n     }\n }\n ```",
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Error code type, should be machine-friendly and human-readable.\n e.g: `\"permission_denied\"`, `\"not_found\"`",
+            "type": "string"
+          },
+          "msg": {
+            "description": "Explain the reason, could be displayed to user.\n e.g: `\"You don't have permission to access this resource\"`",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "msg"
+        ]
+      },
+      "ConnectedAccountItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name"
+        ]
+      },
+      "ConnectionItem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "public": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "name",
+          "public"
+        ]
+      },
+      "ConnectionResp": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectionItem"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "ConnectionSetVisibilityReq": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "type",
+          "visible"
+        ]
+      },
+      "ConnectionSyncReq": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "ConnectionUnlinkReq": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "CreationInfo": {
+        "type": "object",
+        "properties": {
+          "creation_type": {
+            "description": "0: original, 1: derivative work, 2: tertiary work",
+            "type": "integer",
+            "format": "int32"
+          },
+          "derivative_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationTypeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "origin_info": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationTypeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "creation_type"
+        ]
+      },
+      "CreationTypeInfo": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "origin_type": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "song_display_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "origin_type"
+        ]
+      },
+      "DetailByIdReq": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "DetailReq": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Actually the JMID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "ExternalLink": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "url"
+        ]
+      },
+      "FollowReq": {
+        "type": "object",
+        "properties": {
+          "target_uid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "target_uid"
+        ]
+      },
+      "FollowResp": {
+        "type": "object",
+        "properties": {
+          "follower_count": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "follower_count"
+        ]
+      },
+      "FollowerItem": {
+        "type": "object",
+        "properties": {
+          "followed_at": {
+            "type": "string"
+          },
+          "is_mutual": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PublicUserProfile"
+          }
+        },
+        "required": [
+          "user",
+          "is_mutual",
+          "followed_at"
+        ]
+      },
+      "FollowersListResp": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FollowerItem"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "FollowingItem": {
+        "type": "object",
+        "properties": {
+          "followed_at": {
+            "type": "string"
+          },
+          "is_mutual": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/PublicUserProfile"
+          }
+        },
+        "required": [
+          "user",
+          "is_mutual",
+          "followed_at"
+        ]
+      },
+      "FollowingListReq": {
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "default": 20
+          }
+        }
+      },
+      "FollowingListResp": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FollowingItem"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "GenerateChallengeReq": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "provider_account_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "provider_account_id"
+        ]
+      },
+      "GenerateChallengeResp": {
+        "type": "object",
+        "properties": {
+          "challenge": {
+            "type": "string"
+          },
+          "challenge_id": {
+            "type": "string"
+          },
+          "provider_account_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id",
+          "challenge",
+          "provider_account_name"
+        ]
+      },
+      "GetProfileReq": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "uid"
+        ]
+      },
+      "HotResp": {
+        "type": "object",
+        "properties": {
+          "songs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicSongDetail"
+            }
+          }
+        },
+        "required": [
+          "songs"
+        ]
+      },
+      "LikeReq": {
+        "type": "object",
+        "properties": {
+          "playback_position_secs": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "song_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "song_id"
+        ]
+      },
+      "LikeStatusReq": {
+        "type": "object",
+        "properties": {
+          "song_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "song_id"
+        ]
+      },
+      "LikeStatusResp": {
+        "type": "object",
+        "properties": {
+          "liked": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "liked"
+        ]
+      },
+      "MyLikeItem": {
+        "type": "object",
+        "properties": {
+          "liked_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "song_data": {
+            "$ref": "#/components/schemas/PublicSongDetail"
+          }
+        },
+        "required": [
+          "song_data",
+          "liked_time"
+        ]
+      },
+      "MyLikesReq": {
+        "type": "object",
+        "properties": {
+          "page_index": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "page_index",
+          "page_size"
+        ]
+      },
+      "MyLikesResp": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Likes of songs that can be played.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MyLikeItem"
+            }
+          },
+          "page_index": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "page_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "unavailable": {
+            "description": "Likes on this page of songs that were deleted or hidden, to show as unavailable.\n @since 261008",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableLikeItem"
+            }
+          }
+        },
+        "required": [
+          "data",
+          "page_size",
+          "page_index",
+          "total",
+          "unavailable"
+        ]
+      },
+      "PageByUserReq": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "size": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "PageByUserResp": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "songs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicSongDetail"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "songs",
+          "total",
+          "page",
+          "size"
+        ]
+      },
+      "ProductionItem": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "uid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "PublicSongDetail": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "audio_url": {
+            "type": "string"
+          },
+          "cover_url": {
+            "type": "string"
+          },
+          "create_time": {
+            "description": "@since 251102",
+            "type": "string",
+            "format": "date-time"
+          },
+          "creation_type": {
+            "description": "0: original, 1: derivative work, 2: tertiary work",
+            "type": "integer",
+            "format": "int32"
+          },
+          "display_id": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "explicit": {
+            "description": "@since 251105",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "external_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            }
+          },
+          "gain": {
+            "description": "@since 251105",
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "float"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "is_hidden": {
+            "description": "Hidden by the platform. Only its uploader gets it from the detail endpoints; lists leave\n it out.\n @since 261008",
+            "type": "boolean",
+            "default": false
+          },
+          "like_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "lyrics": {
+            "type": "string"
+          },
+          "origin_infos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CreationTypeInfo"
+            }
+          },
+          "play_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "production_crew": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SongProductionCrew"
+            }
+          },
+          "release_time": {
+            "description": "@since 251102",
+            "type": "string",
+            "format": "date-time"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagItem"
+            }
+          },
+          "uploader_name": {
+            "type": "string"
+          },
+          "uploader_uid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "display_id",
+          "title",
+          "subtitle",
+          "description",
+          "tags",
+          "duration_seconds",
+          "lyrics",
+          "audio_url",
+          "cover_url",
+          "production_crew",
+          "creation_type",
+          "origin_infos",
+          "uploader_uid",
+          "uploader_name",
+          "play_count",
+          "like_count",
+          "external_links",
+          "create_time",
+          "release_time"
+        ]
+      },
+      "PublicUserProfile": {
+        "description": "Shared user profile model — returned by all APIs that include user info.\n `is_following` / `is_followed_by` are `None` unless enriched via `get_user_profile`.",
+        "type": "object",
+        "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "connected_accounts": {
+            "description": "@since 260402",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConnectedAccountItem"
+            }
+          },
+          "follower_count": {
+            "description": "@since 260619",
+            "type": "integer",
+            "format": "int64"
+          },
+          "following_count": {
+            "description": "@since 260619",
+            "type": "integer",
+            "format": "int64"
+          },
+          "gender": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "is_banned": {
+            "type": "boolean"
+          },
+          "is_followed_by": {
+            "description": "@since 260619 — None when viewing own profile or unauthenticated, or when caller uses `get_common_user_profile`",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_following": {
+            "description": "@since 260619 — None when viewing own profile or unauthenticated, or when caller uses `get_common_user_profile`",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "uid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "username",
+          "is_banned",
+          "connected_accounts",
+          "follower_count",
+          "following_count"
+        ]
+      },
+      "PublishReq": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "comment": {
+            "description": "@since 251114",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cover_temp_id": {
+            "type": "string"
+          },
+          "creation_info": {
+            "$ref": "#/components/schemas/CreationInfo"
+          },
+          "explicit": {
+            "description": "@since 251105, should be required in new client.",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "external_links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ExternalLink"
+            }
+          },
+          "jmid": {
+            "description": "@since 251114, should be required in new client.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lyrics": {
+            "type": "string"
+          },
+          "production_crew": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProductionItem"
+            }
+          },
+          "song_temp_id": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "tag_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        },
+        "required": [
+          "song_temp_id",
+          "cover_temp_id",
+          "title",
+          "subtitle",
+          "description",
+          "lyrics",
+          "tag_ids",
+          "creation_info",
+          "production_crew",
+          "external_links"
+        ]
+      },
+      "PublishResp": {
+        "type": "object",
+        "properties": {
+          "review_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "song_display_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "song_display_id"
+        ]
+      },
+      "RecentReq": {
+        "description": "Since 251102",
+        "type": "object",
+        "properties": {
+          "after": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RecentResp": {
+        "type": "object",
+        "properties": {
+          "songs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicSongDetail"
+            }
+          }
+        },
+        "required": [
+          "songs"
+        ]
+      },
+      "RecommendResp": {
+        "type": "object",
+        "properties": {
+          "songs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicSongDetail"
+            }
+          }
+        },
+        "required": [
+          "songs"
+        ]
+      },
+      "SearchReq": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "q": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "uint32",
+            "default": 20,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "q",
+          "page"
+        ]
+      },
+      "SearchReq2": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0
+          },
+          "offset": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0
+          },
+          "q": {
+            "type": "string"
+          },
+          "sort_by": {
+            "description": "Since 260114",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "q"
+        ]
+      },
+      "SearchResp": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicUserProfile"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "processing_time_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "query": {
+            "type": "string"
+          },
+          "total_hits": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "hits",
+          "query",
+          "processing_time_ms",
+          "limit",
+          "offset"
+        ]
+      },
+      "SearchResp2": {
+        "type": "object",
+        "properties": {
+          "hits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchSongItem"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "processing_time_ms": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "query": {
+            "type": "string"
+          },
+          "total_hits": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "hits",
+          "query",
+          "processing_time_ms",
+          "limit",
+          "offset"
+        ]
+      },
+      "SearchSongItem": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "audio_url": {
+            "description": "Deprecated since 260114.\n Use detail endpoint to get audio URL",
+            "type": "string"
+          },
+          "cover_art_url": {
+            "type": "string"
+          },
+          "display_id": {
+            "type": "string"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "explicit": {
+            "description": "since 251105",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "like_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "original_artists": {
+            "description": "since 260114",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "original_titles": {
+            "description": "since 260114",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "play_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "uploader_name": {
+            "type": "string"
+          },
+          "uploader_uid": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "display_id",
+          "title",
+          "subtitle",
+          "description",
+          "artist",
+          "duration_seconds",
+          "play_count",
+          "like_count",
+          "cover_art_url",
+          "audio_url",
+          "uploader_uid",
+          "uploader_name",
+          "original_artists",
+          "original_titles"
+        ]
+      },
+      "SongProductionCrew": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "person_name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "song_id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "uid": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "song_id",
+          "role"
+        ]
+      },
+      "TagCreateReq": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TagCreateResp": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "TagItem": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "TagRecommendItem": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "score": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "score"
+        ]
+      },
+      "TagRecommendResp": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagRecommendItem"
+            }
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "TagSearchReq": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "TagSearchResp": {
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TagItem"
+            }
+          }
+        },
+        "required": [
+          "result"
+        ]
+      },
+      "UnavailableLikeItem": {
+        "description": "@since 261008",
+        "type": "object",
+        "properties": {
+          "liked_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "song_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "song_id",
+          "liked_time"
+        ]
+      },
+      "UnlikeReq": {
+        "type": "object",
+        "properties": {
+          "song_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "song_id"
+        ]
+      },
+      "UpdateProfileReq": {
+        "type": "object",
+        "properties": {
+          "bio": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "gender": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int32"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "UploadAudioFileResp": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "artist": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bitrate": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_secs": {
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "temp_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "temp_id",
+          "duration_secs"
+        ]
+      },
+      "UploadImageResp": {
+        "type": "object",
+        "properties": {
+          "temp_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "temp_id"
+        ]
+      },
+      "VerifyChallengeReq": {
+        "type": "object",
+        "properties": {
+          "challenge_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_id"
+        ]
+      }
+    }
+  }
+}

@@ -28,25 +28,50 @@ pub mod moment;
 pub mod feed;
 
 use crate::web::state::AppState;
+use aide::axum::ApiRouter;
+use aide::openapi::{Info, OpenApi};
 use axum::Router;
 
 pub fn router() -> Router<AppState> {
-    Router::new()
-        .nest("/auth", auth::router())
+    api_router().into()
+}
+
+/// The API as an OpenAPI document, for checking changes stay compatible with released clients.
+/// Only modules on [ApiRouter] routes are in it; the others are still plain axum routes.
+pub fn openapi() -> OpenApi {
+    let mut api = OpenApi {
+        info: Info {
+            title: "Hachimi World API".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    // A handler whose types can't be described would leave a hole in the document
+    aide::generate::on_error(|error| panic!("OpenAPI generation failed: {error}"));
+    let _ = ApiRouter::<AppState>::new()
+        .nest("/api", api_router())
+        .finish_api(&mut api);
+    api
+}
+
+fn api_router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .nest("/auth", auth::router().into())
         .nest("/user", user::router())
         .nest("/song", song::router())
-        .nest("/play_history", play_history::router())
-        .nest("/playlist", playlist::router())
-        .nest("/version", version::router())
-        .nest("/publish", publish::router())
-        .nest("/post", post::router())
-        .nest("/contributor", contributor::router())
-        .nest("/sitemap", sitemap::router())
-        .nest("/notification", notification::router())
-        .nest("/message", message::router())
-        .nest("/report", report::router())
-        .nest("/committee", committee::router())
-        .nest("/comment", comment::router())
-        .nest("/moment", moment::router())
-        .nest("/feed", feed::router())
+        .nest("/play_history", play_history::router().into())
+        .nest("/playlist", playlist::router().into())
+        .nest("/version", version::router().into())
+        .nest("/publish", publish::router().into())
+        .nest("/post", post::router().into())
+        .nest("/contributor", contributor::router().into())
+        .nest("/sitemap", sitemap::router().into())
+        .nest("/notification", notification::router().into())
+        .nest("/message", message::router().into())
+        .nest("/report", report::router().into())
+        .nest("/committee", committee::router().into())
+        .nest("/comment", comment::router().into())
+        .nest("/moment", moment::router().into())
+        .nest("/feed", feed::router().into())
 }

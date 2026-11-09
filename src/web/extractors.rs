@@ -6,6 +6,9 @@ use crate::web::result::WebError;
 #[derive(Debug, Clone)]
 pub struct XRealIP(pub String);
 
+/// Read from headers the proxy sets, not something clients send.
+impl aide::OperationInput for XRealIP {}
+
 impl<S> FromRequestParts<S> for XRealIP
 where
     S: Send + Sync,

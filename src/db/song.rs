@@ -223,7 +223,7 @@ macro_rules! query_song_external_links {
     };
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Song {
     pub id: SongId,
     pub display_id: String,
@@ -260,7 +260,7 @@ pub struct Song {
     pub gain: Option<f32>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongOriginInfo {
     pub id: i64,
     pub song_id: SongId,
@@ -271,7 +271,7 @@ pub struct SongOriginInfo {
     pub origin_url: Option<String>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongProductionCrew {
     pub id: i64,
     pub song_id: SongId,
@@ -297,7 +297,7 @@ pub struct SongPlay {
     pub create_time: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongExternalLink {
     pub id: i64,
     pub song_id: SongId,

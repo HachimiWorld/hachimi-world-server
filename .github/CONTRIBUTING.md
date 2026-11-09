@@ -52,6 +52,16 @@ Build and run the server:
 cargo run --bin hachimi-world-server
 ```
 
+## API Compatibility
+
+Released clients keep running long after a deploy, so an API change must not break them. `openapi.json` describes the API and is generated from the routes. After changing a request or response, regenerate it and commit it:
+
+```sh
+cargo run --bin gen_openapi
+```
+
+CI fails when it is out of date, and when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
+
 ## Bug Fix / Performance Improvement
 
 You can directly create PR for bug fixes commits. It's better to create an issue before that.

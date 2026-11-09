@@ -69,7 +69,7 @@ pub(crate) fn router() -> Router<AppState> {
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublishReq {
     pub song_temp_id: String,
     pub cover_temp_id: String,
@@ -89,7 +89,7 @@ pub struct PublishReq {
     pub comment: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreationInfo {
     /// 0: original, 1: derivative work, 2: tertiary work
     pub creation_type: i32,
@@ -98,7 +98,7 @@ pub struct CreationInfo {
     pub derivative_info: Option<CreationTypeInfo>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ProductionItem {
     pub role: String,
     pub uid: Option<UserId>,
@@ -106,7 +106,7 @@ pub struct ProductionItem {
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublishResp {
     pub review_id: i64,
     pub song_display_id: String,
@@ -443,12 +443,12 @@ async fn check_jmid_prefix_for_publication(
     Ok(create_new_jmid)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModifyResp {
     pub review_id: i64
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ModifyReq {
     pub song_id: SongId,
     pub song_temp_id: Option<String>,
@@ -590,7 +590,7 @@ pub async fn delete() -> WebResult<()> {
     err!("no_impl", "Not implemented yet");
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UploadAudioFileResp {
     pub temp_id: String,
     pub duration_secs: u64,
@@ -599,7 +599,7 @@ pub struct UploadAudioFileResp {
     pub artist: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongTempData {
     pub file_url: String,
     pub duration_secs: u64,
@@ -674,7 +674,7 @@ pub async fn upload_audio_file(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UploadImageResp {
     pub temp_id: String,
 }
@@ -726,13 +726,13 @@ fn build_image_temp_key(temp_id: &str) -> String {
     key
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageReq {
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResp {
     pub data: Vec<SongPublishReviewBrief>,
     pub page_index: i64,
@@ -740,7 +740,7 @@ pub struct PageResp {
     pub total: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongPublishReviewBrief {
     pub review_id: i64,
     pub display_id: String,
@@ -777,7 +777,7 @@ impl TryFrom<SongPublishingReview> for SongPublishReviewBrief {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct InternalSongPublishReviewData {
     pub song_info: Song,
     pub song_origin_infos: Vec<SongOriginInfo>,
@@ -786,7 +786,7 @@ pub struct InternalSongPublishReviewData {
     pub song_external_links: Vec<SongExternalLink>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChangeJmidReq {
     pub song_id: SongId,
     pub old_jmid: String,

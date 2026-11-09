@@ -100,7 +100,12 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
+use aide::generate::GenContext;
+use aide::openapi::{MediaType, Operation, Response};
+use aide::OperationOutput;
+use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use std::any::Any;
+use std::borrow::Cow;
 
 /// Build a `WebError::Business<CommonError>` error, just like `anyhow!()`
 #[macro_export]
@@ -225,6 +230,39 @@ pub struct WebResponse<T> {
     pub data: T,
 }
 
+/// Every documented handler answers 200 with either its data or a business error, so the schema of
+/// `WebResponse<T>` in the OpenAPI document is the one or the other, told apart by `ok`. Only the
+/// success side is ever built with a `T` other than the error type, so this describes the
+/// responses, not the struct.
+impl<T: JsonSchema> JsonSchema for WebResponse<T> {
+    fn schema_name() -> Cow<'static, str> {
+        format!("WebResponse_{}", T::schema_name()).into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        let data = generator.subschema_for::<T>();
+        let error = generator.subschema_for::<CommonError>();
+        json_schema!({
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": { "ok": { "const": true }, "data": data },
+                    "required": ["ok", "data"]
+                },
+                {
+                    "type": "object",
+                    "properties": { "ok": { "const": false }, "data": error },
+                    "required": ["ok", "data"]
+                }
+            ]
+        })
+    }
+}
+
 /// A help type to distinguish business errors and internal errors.
 /// It's useful to enable the `?` operator and the response logic.
 #[derive(Debug)]
@@ -258,7 +296,7 @@ where
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CommonError {
     /// Error code type, should be machine-friendly and human-readable.
     /// e.g: `"permission_denied"`, `"not_found"`
@@ -325,5 +363,19 @@ impl<E: Serialize + 'static> IntoResponse for WebError<E> {
                 (StatusCode::INTERNAL_SERVER_ERROR, error_message).into_response()
             }
         }
+    }
+}
+
+/// Business errors are part of the 200 response, see [WebResponse]; what's left is the plain-text
+/// 500 for internal errors.
+impl<E: Serialize> OperationOutput for WebError<E> {
+    type Inner = E;
+
+    fn inferred_responses(_ctx: &mut GenContext, _operation: &mut Operation) -> Vec<(Option<u16>, Response)> {
+        vec![(Some(500), Response {
+            description: "Internal error".into(),
+            content: [("text/plain; charset=utf-8".into(), MediaType::default())].into_iter().collect(),
+            ..Default::default()
+        })]
     }
 }

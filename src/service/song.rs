@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, warn};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublicSongDetail {
     pub id: SongId,
     pub display_id: String,
@@ -52,7 +52,7 @@ pub struct PublicSongDetail {
     pub is_hidden: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreationTypeInfo {
     // If `song_id` is Some, the rest fields could be None
     pub song_display_id: Option<String>,
@@ -62,7 +62,7 @@ pub struct CreationTypeInfo {
     pub origin_type: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ExternalLink {
     pub platform: String,
     pub url: String,
