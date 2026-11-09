@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 /// One entry of a stream: `{ "time", "kind", "data" }`, where `kind` says what `data` is.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FeedItem {
     /// When it happened, which orders the stream.
     pub time: DateTime<Utc>,
@@ -24,7 +24,7 @@ pub struct FeedItem {
 /// What an entry is, as `kind`, and the entry itself, as `data`. Clients skip kinds they don't
 /// know.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "kind", content = "data", rename_all = "snake_case")]
 pub enum FeedEntry {
     Moment(MomentItem),

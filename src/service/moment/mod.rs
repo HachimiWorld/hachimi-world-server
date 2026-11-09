@@ -109,7 +109,7 @@ pub struct StoredAttachment {
 }
 
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentUser {
     pub uid: UserId,
     pub username: String,
@@ -117,7 +117,7 @@ pub struct MomentUser {
 }
 
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentImage {
     pub url: String,
     /// At most 480 pixels on the long side, for lists.
@@ -128,7 +128,7 @@ pub struct MomentImage {
 
 /// An attachment as shown.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AttachmentView {
     /// Such as `song` or `playlist`. Clients show types they don't know as "update to see this".
     #[serde(rename = "type")]
@@ -140,7 +140,7 @@ pub struct AttachmentView {
 
 /// A moment as shown to one viewer.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentItem {
     pub id: MomentId,
     pub author: MomentUser,
@@ -295,7 +295,7 @@ pub async fn ensure_can_post(pool: &PgPool, uid: UserId) -> ServiceResult<(), Mo
 
 /// An attachment as sent by the client.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AttachmentInput {
     #[serde(rename = "type")]
     pub kind: String,

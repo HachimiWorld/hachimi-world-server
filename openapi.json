@@ -2307,10 +2307,599 @@
           }
         }
       }
+    },
+    "/api/moment/upload_image": {
+      "post": {
+        "requestBody": {
+          "description": "multipart form data",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "array"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/UploadImageResp2"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/create": {
+      "post": {
+        "requestBody": {
+          "description": "@since 261106",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CreateResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/delete": {
+      "post": {
+        "requestBody": {
+          "description": "@since 261106",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MomentIdReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/detail": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "moment_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/MomentItem"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/list_by_user": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "`next_cursor` of the previous page; omit for the first page.",
+            "schema": {
+              "description": "`next_cursor` of the previous page; omit for the first page.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "1..=50, defaults to 20.",
+            "schema": {
+              "description": "1..=50, defaults to 20.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/ListResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/like": {
+      "post": {
+        "requestBody": {
+          "description": "@since 261106",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MomentIdReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/moment/unlike": {
+      "post": {
+        "requestBody": {
+          "description": "@since 261106",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MomentIdReq"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "type": "null"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
+    },
+    "/api/feed/square": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "description": "`next_cursor` of the previous page; omit for the first page.",
+            "schema": {
+              "description": "`next_cursor` of the previous page; omit for the first page.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "style": "form"
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "1..=50, defaults to 20.",
+            "schema": {
+              "description": "1..=50, defaults to 20.",
+              "type": [
+                "integer",
+                "null"
+              ],
+              "format": "int64"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/PageResp"
+                        },
+                        "ok": {
+                          "const": true
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "data": {
+                          "$ref": "#/components/schemas/CommonError"
+                        },
+                        "ok": {
+                          "const": false
+                        }
+                      },
+                      "required": [
+                        "ok",
+                        "data"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error",
+            "content": {
+              "text/plain; charset=utf-8": {}
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AttachmentInput": {
+        "description": "An attachment as sent by the client.\n @since 261106",
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "data": true
+        },
+        "required": [
+          "type",
+          "data"
+        ]
+      },
+      "AttachmentView": {
+        "description": "An attachment as shown.\n @since 261106",
+        "type": "object",
+        "properties": {
+          "type": {
+            "description": "Such as `song` or `playlist`. Clients show types they don't know as \"update to see this\".",
+            "type": "string"
+          },
+          "data": {
+            "description": "In the shape the type defines: a `song` is the song's public detail, a `playlist` its\n metadata. `None` when what it points at can't be seen any more, shown as \"unavailable\"."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
       "CommonError": {
         "description": "A common error data type used in a business error, contains a string `code` type and `msg`.\n\n It's always used as the default error data type in responses, e.g:\n\n ```json\n {\n     \"ok\": false,\n     \"data\": {\n         \"code\": \"permission_denied\",\n         \"msg\": \"You don't have permission to access this resource\"\n     }\n }\n ```",
         "type": "object",
@@ -2422,6 +3011,50 @@
           "type"
         ]
       },
+      "CreateReq": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "description": "`{ type, data }` each. For now up to 1, a `song` (`{ \"id\": <song id> }`) or a `playlist`\n (`{ \"id\": <playlist id> }`, public).",
+            "type": "array",
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AttachmentInput"
+            }
+          },
+          "content": {
+            "description": "Up to 500 characters, trimmed. May be empty when there are images or attachments.",
+            "type": "string",
+            "default": ""
+          },
+          "image_ids": {
+            "description": "From `/moment/upload_image`, in order. Up to 9.",
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CreateResp": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "moment": {
+            "description": "The new moment; `None` if it couldn't be checked now and waits to be checked again. It's\n seen by no one, its author included, until it passes; if it's blocked then, its author gets\n a notification.",
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MomentItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
       "CreationInfo": {
         "type": "object",
         "properties": {
@@ -2528,6 +3161,38 @@
         "required": [
           "platform",
           "url"
+        ]
+      },
+      "FeedItem": {
+        "description": "One entry of a stream: `{ \"time\", \"kind\", \"data\" }`, where `kind` says what `data` is.\n @since 261106",
+        "type": "object",
+        "properties": {
+          "time": {
+            "description": "When it happened, which orders the stream.",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "data": {
+                "$ref": "#/components/schemas/MomentItem"
+              },
+              "kind": {
+                "type": "string",
+                "const": "moment"
+              }
+            },
+            "required": [
+              "kind",
+              "data"
+            ]
+          }
+        ],
+        "required": [
+          "time"
         ]
       },
       "FollowReq": {
@@ -2750,6 +3415,184 @@
           "liked"
         ]
       },
+      "ListByUserReq": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "`next_cursor` of the previous page; omit for the first page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "description": "1..=50, defaults to 20.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          },
+          "user_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "ListResp": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Newest first.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MomentItem"
+            }
+          },
+          "next_cursor": {
+            "description": "Pass it back as `cursor` for the next page; `None` when there's no more.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "MomentIdReq": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "moment_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "moment_id"
+        ]
+      },
+      "MomentImage": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "thumb_url": {
+            "description": "At most 480 pixels on the long side, for lists.",
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "url",
+          "thumb_url",
+          "width",
+          "height"
+        ]
+      },
+      "MomentItem": {
+        "description": "A moment as shown to one viewer.\n @since 261106",
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentView"
+            }
+          },
+          "author": {
+            "$ref": "#/components/schemas/MomentUser"
+          },
+          "comment_count": {
+            "description": "Visible comments and replies.",
+            "type": "integer",
+            "format": "int64"
+          },
+          "content": {
+            "description": "May be empty.",
+            "type": "string"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "images": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MomentImage"
+            }
+          },
+          "is_hidden": {
+            "description": "Hidden by a report decision; only its author sees it then.",
+            "type": "boolean"
+          },
+          "like_count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "liked": {
+            "description": "Whether the viewer liked it.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "author",
+          "content",
+          "images",
+          "attachments",
+          "like_count",
+          "liked",
+          "comment_count",
+          "is_hidden",
+          "create_time"
+        ]
+      },
+      "MomentUser": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "uid": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "username": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "uid",
+          "username"
+        ]
+      },
       "MyLikeItem": {
         "type": "object",
         "properties": {
@@ -2874,6 +3717,50 @@
           "total",
           "page",
           "size"
+        ]
+      },
+      "PageReq": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "description": "`next_cursor` of the previous page; omit for the first page.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "description": "1..=50, defaults to 20.",
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "PageResp": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Newest first. Skip kinds you don't know.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedItem"
+            }
+          },
+          "next_cursor": {
+            "description": "`None` when there's no more.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "items"
         ]
       },
       "ProductionItem": {
@@ -3740,6 +4627,39 @@
         },
         "required": [
           "temp_id"
+        ]
+      },
+      "UploadImageResp2": {
+        "description": "@since 261106",
+        "type": "object",
+        "properties": {
+          "height": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "image_id": {
+            "description": "Pass it to `/moment/create` within an hour.",
+            "type": "string"
+          },
+          "thumb_url": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "width": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "image_id",
+          "url",
+          "thumb_url",
+          "width",
+          "height"
         ]
       },
       "VerifyChallengeReq": {

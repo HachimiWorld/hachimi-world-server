@@ -72,6 +72,6 @@ fn api_router() -> ApiRouter<AppState> {
         .nest("/report", report::router().into())
         .nest("/committee", committee::router().into())
         .nest("/comment", comment::router().into())
-        .nest("/moment", moment::router().into())
-        .nest("/feed", feed::router().into())
+        .nest("/moment", moment::router())
+        .nest("/feed", feed::router())
 }
