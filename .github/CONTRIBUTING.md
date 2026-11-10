@@ -60,9 +60,15 @@ Released clients keep running long after a deploy, so an API change must not bre
 cargo run --bin gen_openapi
 ```
 
-A unit test (`openapi_json_is_current`) and CI fail when it is out of date, and when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
+A unit test (`openapi_json_is_current`) and CI fail when it is out of date. CI also fails when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
 
 A new variant of a polymorphic response type, such as a new moment attachment type or feed kind, only warns (`response-property-one-of-added`, set in `.oasdiff-severity-levels`): every such type the client decodes falls back to an unknown variant for kinds it doesn't know. A new polymorphic type in a response needs that fallback in the client too, which this check can't see.
+
+To remove an endpoint or a response field, deprecate it first and remove it in a later release:
+
+1. Clients stop using it from some version, say 261107.
+2. Mark it deprecated and get that onto master. For an endpoint, route it with `get_with(handler, deprecated)` (`web::routes::deprecated`); for a field, add `#[schemars(extend("deprecated" = true))]` (not Rust's `#[deprecated]`, which warns wherever the server builds the struct). Say in its doc when it can go: `@deprecated 261110: clients stopped calling it in 261107. Remove once min_version >= 261107.`
+3. Once `min_version` reaches that version, remove it. Master's copy has it deprecated, so oasdiff reports the removal as info only. Removing something that wasn't deprecated on master fails, even if the same PR deprecates it.
 
 For any other change the check flags that released clients do handle, copy the reported line into `.oasdiff-err-ignore` (as `METHOD /path message`) in the same PR. The line can go once the change is on master.
 

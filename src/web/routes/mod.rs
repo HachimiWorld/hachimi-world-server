@@ -30,10 +30,22 @@ pub mod feed;
 use crate::web::state::AppState;
 use aide::axum::ApiRouter;
 use aide::openapi::{Info, OpenApi};
+use aide::transform::TransformOperation;
 use axum::Router;
 
 pub fn router() -> Router<AppState> {
     api_router().into()
+}
+
+/// Marks an operation deprecated in the OpenAPI document, so it can be removed later without the
+/// compatibility check failing: `.api_route("/recent", get_with(recent, deprecated))`. Say in the
+/// handler's doc when it can go, such as
+/// `@deprecated 261110: clients stopped calling it in 261107. Remove once min_version >= 261107.`
+pub fn deprecated(op: TransformOperation) -> TransformOperation {
+    op.with(|mut op| {
+        op.inner_mut().deprecated = true;
+        op
+    })
 }
 
 /// The API as an OpenAPI document, for checking changes stay compatible with released clients.
@@ -77,6 +89,23 @@ fn api_router() -> ApiRouter<AppState> {
 }
 #[cfg(test)]
 mod tests {
+    use super::deprecated;
+    use crate::web::state::AppState;
+    use aide::axum::routing::get_with;
+    use aide::axum::ApiRouter;
+    use aide::openapi::OpenApi;
+
+    #[test]
+    fn deprecated_marks_the_operation() {
+        async fn old() {}
+        let mut api = OpenApi::default();
+        let _ = ApiRouter::<AppState>::new()
+            .api_route("/old", get_with(old, deprecated))
+            .finish_api(&mut api);
+        let op = api.paths.unwrap().paths["/old"].as_item().unwrap().get.clone().unwrap();
+        assert!(op.deprecated);
+    }
+
     /// The committed openapi.json is what CI compares against master, so it must match the routes.
     #[test]
     fn openapi_json_is_current() {
