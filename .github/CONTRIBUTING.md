@@ -60,7 +60,7 @@ Released clients keep running long after a deploy, so an API change must not bre
 cargo run --bin gen_openapi
 ```
 
-CI fails when it is out of date, and when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
+A unit test (`openapi_json_is_current`) and CI fail when it is out of date, and when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Only modules routed with `aide::axum::ApiRouter` are in the document so far.
 
 A new variant of a polymorphic response type, such as a new moment attachment type or feed kind, only warns (`response-property-one-of-added`, set in `.oasdiff-severity-levels`): every such type the client decodes falls back to an unknown variant for kinds it doesn't know. A new polymorphic type in a response needs that fallback in the client too, which this check can't see.
 

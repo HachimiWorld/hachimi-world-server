@@ -75,3 +75,14 @@ fn api_router() -> ApiRouter<AppState> {
         .nest("/moment", moment::router())
         .nest("/feed", feed::router())
 }
+#[cfg(test)]
+mod tests {
+    /// The committed openapi.json is what CI compares against master, so it must match the routes.
+    #[test]
+    fn openapi_json_is_current() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/openapi.json");
+        let committed = std::fs::read_to_string(path).unwrap_or_default();
+        let generated = serde_json::to_string_pretty(&super::openapi()).unwrap() + "\n";
+        assert!(committed == generated, "openapi.json is out of date, run `cargo run --bin gen_openapi` and commit it");
+    }
+}
