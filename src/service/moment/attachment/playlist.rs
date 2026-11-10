@@ -10,6 +10,7 @@ use crate::service::playlist;
 use crate::web::state::AppState;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct PlaylistAttachment;
@@ -48,7 +49,10 @@ impl AttachmentAdapter for PlaylistAttachment {
         let mut wanted: Vec<PlaylistId> = ids.iter().flatten().copied().collect();
         wanted.sort();
         wanted.dedup();
-        let playlists = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &wanted, true).await?;
+        let playlists: HashMap<PlaylistId, _> = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &wanted, true).await?
+            .into_iter()
+            .map(|x| (x.id, x))
+            .collect();
         ids.into_iter()
             .map(|id| id.and_then(|id| playlists.get(&id)).map(serde_json::to_value).transpose().map_err(Into::into))
             .collect()
