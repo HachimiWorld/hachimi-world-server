@@ -281,8 +281,9 @@ async fn test_favorite_playlists() {
         ).await.parse_resp::<PageFavoritesResp>().await.unwrap();
         assert_eq!(favorites.total, 2);
         assert_eq!(favorites.data.len(), 2);
-        assert!(favorites.data.iter().any(|item| item.metadata.id == playlist_a && item.order_index == 0));
-        assert!(favorites.data.iter().any(|item| item.metadata.id == playlist_b && item.order_index == 1));
+        // Newest first
+        assert_eq!(favorites.data.iter().map(|item| item.metadata.id).collect::<Vec<_>>(), vec![playlist_b, playlist_a]);
+        assert_eq!(favorites.data.iter().map(|item| item.order_index).collect::<Vec<_>>(), vec![1, 0]);
 
         // Check the favorite status of A should be true
         let favorite = env.api.get_query(
@@ -326,6 +327,95 @@ async fn test_favorite_playlists() {
         assert_eq!(remaining.total, 1);
         assert_eq!(remaining.data.len(), 1);
         assert_eq!(remaining.data[0].metadata.id, playlist_b);
+    }).await;
+}
+
+// Enough playlists that a shuffled list can't come back in the right order by chance.
+const ORDER_TEST_COUNT: usize = 5;
+
+#[tokio::test]
+async fn test_favorite_playlists_keep_their_order() {
+    with_test_environment(|mut env| async move {
+        let _owner = with_new_random_test_user(&mut env).await;
+        let mut ids = Vec::new();
+        for i in 0..ORDER_TEST_COUNT {
+            ids.push(create_playlist(&env, &format!("Ordered favorite {i}"), None, true).await);
+        }
+
+        let _user = with_new_random_test_user(&mut env).await;
+        for id in &ids {
+            env.api.post("/playlist/favorite/add", &AddFavoriteReq { playlist_id: *id }).await
+                .parse_resp::<()>().await.unwrap();
+        }
+
+        let expected: Vec<_> = ids.iter().rev().copied().collect();
+        for _ in 0..3 {
+            let page = env.api.get_query("/playlist/favorite/page", &PageFavoritesReq { page_index: 0, page_size: 50 }).await
+                .parse_resp::<PageFavoritesResp>().await.unwrap();
+            assert_eq!(page.data.iter().map(|x| x.metadata.id).collect::<Vec<_>>(), expected);
+        }
+
+        // Pages split that same order
+        let first = env.api.get_query("/playlist/favorite/page", &PageFavoritesReq { page_index: 0, page_size: 2 }).await
+            .parse_resp::<PageFavoritesResp>().await.unwrap();
+        let second = env.api.get_query("/playlist/favorite/page", &PageFavoritesReq { page_index: 1, page_size: 2 }).await
+            .parse_resp::<PageFavoritesResp>().await.unwrap();
+        let paged: Vec<_> = first.data.iter().chain(second.data.iter()).map(|x| x.metadata.id).collect();
+        assert_eq!(paged, expected[..4]);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_list_public_by_user_is_newest_first() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        let mut ids = Vec::new();
+        for i in 0..ORDER_TEST_COUNT {
+            ids.push(create_playlist(&env, &format!("Ordered playlist {i}"), None, true).await);
+        }
+        let expected: Vec<_> = ids.iter().rev().copied().collect();
+
+        for _ in 0..3 {
+            let resp = env.api.get_query("/playlist/list_public_by_user", &ListPublicByUserReq { user_id: owner.uid }).await
+                .parse_resp::<ListPublicByUserResp>().await.unwrap();
+            assert_eq!(resp.playlists.iter().map(|x| x.id).collect::<Vec<_>>(), expected);
+        }
+
+        let mine = env.api.get("/playlist/list").await.parse_resp::<ListResp>().await.unwrap();
+        assert_eq!(mine.playlists.iter().map(|x| x.id).collect::<Vec<_>>(), expected);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_search_keeps_the_sort_order() {
+    with_test_environment(|mut env| async move {
+        let _owner = with_new_random_test_user(&mut env).await;
+        let query = format!("playlist-order-{}", uuid::Uuid::new_v4().simple());
+        let mut ids = Vec::new();
+        for i in 0..ORDER_TEST_COUNT {
+            ids.push(create_playlist(&env, &format!("Sorted playlist {i}"), Some(&query), true).await);
+        }
+        let expected: Vec<_> = ids.iter().rev().copied().collect();
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            let resp = env.api.get_query(
+                "/playlist/search",
+                &SearchReq {
+                    q: query.clone(),
+                    limit: Some(10),
+                    offset: Some(0),
+                    sort_by: Some("create_time_desc".to_string()),
+                    user_id: None,
+                },
+            ).await.parse_resp::<SearchResp>().await.unwrap();
+            if resp.hits.len() == ORDER_TEST_COUNT {
+                assert_eq!(resp.hits.iter().map(|x| x.id).collect::<Vec<_>>(), expected);
+                break;
+            }
+            assert!(Instant::now() < deadline, "not all playlists were searchable for {query:?}");
+            sleep(Duration::from_millis(100)).await;
+        }
     }).await;
 }
 

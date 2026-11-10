@@ -120,12 +120,14 @@ pub struct PlaylistMetadata {
     pub update_time: DateTime<Utc>,
 }
 
+/// Metadata of the given playlists, in the order of `playlist_ids`. Playlists that are missing,
+/// hidden, or private when `filter_private` is set are left out.
 pub async fn list_playlist_metadata(
     redis: ConnectionManager,
     sql_pool: &PgPool,
     playlist_ids: &[PlaylistId],
     filter_private: bool
-) -> anyhow::Result<HashMap<PlaylistId, PlaylistMetadata>> {
+) -> anyhow::Result<Vec<PlaylistMetadata>> {
     let mut rows = PlaylistDao::list_by_ids(sql_pool, &playlist_ids).await?;
     // Only list public playlists
     if filter_private {
@@ -138,8 +140,8 @@ pub async fn list_playlist_metadata(
     let playlists: HashMap<PlaylistId, Playlist> = rows.into_iter().map(|p| (p.id, p)).collect();
     let users = user::get_common_user_profile(redis, sql_pool, &user_ids).await?;
 
-    let result: HashMap<PlaylistId, _> = playlist_ids
-        .into_iter()
+    let result = playlist_ids
+        .iter()
         .filter_map(|id| playlists.get(&id))
         .map(|p| PlaylistMetadata {
             id: p.id,
@@ -153,7 +155,6 @@ pub async fn list_playlist_metadata(
             songs_count: counts.get(&p.id).cloned().unwrap_or(0),
             user_avatar_url: users.get(&p.user_id).and_then(|u| u.avatar_url.clone()),
         })
-        .map(|x| (x.id, x))
         .collect();
     Ok(result)
 }
