@@ -1,2 +1,3 @@
 response-property-one-of-added warn
 response-body-one-of-added warn
+api-version-not-bumped none

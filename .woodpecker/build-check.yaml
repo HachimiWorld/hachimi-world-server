@@ -43,6 +43,19 @@ steps:
         else
           echo "master has no openapi.json yet, nothing to compare"
         fi
+  # What this branch's open PR changes in the API, as a PR comment. Runs after a failed check too,
+  # and never fails the pipeline itself.
+  - name: api-changelog-comment
+    image: tufin/oasdiff:v1.37.0
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_pr_comment_token
+    commands:
+      - apk add --no-cache curl jq > /dev/null
+      - sh .woodpecker/scripts/api-changelog-comment.sh
+    failure: ignore
+    when:
+      - status: [success, failure]
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success
