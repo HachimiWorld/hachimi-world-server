@@ -31,6 +31,7 @@
 
 ### Changes
 
+- Playlists come back in a fixed order. Before, it changed from request to request in `/playlist/favorite/page` (now newest favorite first), `/playlist/list_public_by_user` (now newest playlist first, as `/playlist/list` already was) and `/playlist/search` (now as `sort_by` asks, or by relevance)
 - `comments.id` is `GENERATED ALWAYS`. Deploy only once every instance runs the previous release, which stopped inserting comment ids itself
 - `content_checks.target_id` and `content_reviews.target_id` are written as null, not 0, for content not saved yet, and the 0s left are turned into null. Deploy only once every instance runs the previous release, which reads null
 - Built with Rust 1.99.1 (was 1.96.0)

@@ -170,8 +170,6 @@ async fn list(
         };
         result.push(item);
     }
-    // Order by create time desc
-    result.sort_by(|a, b| b.create_time.cmp(&a.create_time));
     ok!(ListResp {
         playlists: result
     })
@@ -203,9 +201,7 @@ async fn list_public_by_user(
     let playlist_ids = public_playlists.iter().map(|x| x.id).collect_vec();
     let playlists = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?;
 
-    let result = ListPublicByUserResp {
-        playlists: playlists.into_iter().map(|(_, v)| v).collect_vec()
-    };
+    let result = ListPublicByUserResp { playlists };
 
     ok!(result)
 }
@@ -672,10 +668,8 @@ async fn search(
     let result = search::playlist::search_playlists(state.meilisearch.as_ref(), &search_query).await?;
     let hit_ids: Vec<PlaylistId> = result.hits.into_iter().map(|x| x.id).collect();
 
-    let hits = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &hit_ids, false).await?
-        .into_iter()
-        .map(|(_, v)| v)
-        .collect_vec();
+    // In the order Meilisearch ranked them
+    let hits = playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &hit_ids, false).await?;
 
     ok!(SearchResp {
         hits,
@@ -719,18 +713,21 @@ async fn page_favorites(
     if count == 0 {
         ok!(PageFavoritesResp {data: vec![], page_index, page_size, total: 0})
     }
-    let items: HashMap<PlaylistId, _> = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?
-        .into_iter()
-        .map(|x| (x.playlist_id, x))
-        .collect();
-    let playlist_ids: Vec<PlaylistId> = items.keys().copied().collect();
-    let playlists =
-        playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?;
-    let result = playlists.into_iter().map(|(_, v)| FavoritePlaylistItem {
-        add_time: items.get(&v.id).unwrap().add_time,
-        order_index: items.get(&v.id).unwrap().order_index,
-        metadata: v,
-    }).collect_vec();
+    // Newest first, as the DAO returns them
+    let items = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?;
+    let playlist_ids: Vec<PlaylistId> = items.iter().map(|x| x.playlist_id).collect();
+    let mut playlists: HashMap<PlaylistId, _> =
+        playlist::list_playlist_metadata(state.redis_conn.clone(), &state.sql_pool, &playlist_ids, false).await?
+            .into_iter()
+            .map(|x| (x.id, x))
+            .collect();
+    let result = items.into_iter()
+        .filter_map(|item| playlists.remove(&item.playlist_id).map(|metadata| FavoritePlaylistItem {
+            add_time: item.add_time,
+            order_index: item.order_index,
+            metadata,
+        }))
+        .collect_vec();
     ok!(PageFavoritesResp{data: result, page_index, page_size, total: count})
 }
 

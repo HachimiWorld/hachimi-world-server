@@ -284,7 +284,7 @@ where
     }
 
     async fn list_by_user(executor: E, user_id: UserId) -> sqlx::Result<Vec<Playlist>> {
-        query_playlists!("WHERE user_id = $1", user_id as UserId)
+        query_playlists!("WHERE user_id = $1 ORDER BY create_time DESC, id DESC", user_id as UserId)
             .fetch_all(executor)
             .await
     }
@@ -316,7 +316,7 @@ where
     async fn page_favorites(executor: E, user_id: UserId, page_index: i64, page_size: i64) -> sqlx::Result<Vec<FavoritePlaylist>> {
         let offset = page_index * page_size;
         query_favorite_playlists!(
-            "WHERE user_id = $1 ORDER BY add_time DESC LIMIT $2 OFFSET $3",
+            "WHERE user_id = $1 ORDER BY add_time DESC, playlist_id DESC LIMIT $2 OFFSET $3",
             user_id as UserId, page_size, offset
         ).fetch_all(executor).await
     }
