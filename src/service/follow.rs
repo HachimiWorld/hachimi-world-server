@@ -217,14 +217,14 @@ pub async fn get_followers(
     Ok((items, next_cursor))
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct FollowingItem {
     pub user: PublicUserProfile,
     pub is_mutual: bool,
     pub followed_at: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct FollowerItem {
     pub user: PublicUserProfile,
     pub is_mutual: bool,

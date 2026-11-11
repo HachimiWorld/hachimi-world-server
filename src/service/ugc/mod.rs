@@ -75,7 +75,7 @@ pub struct UgcTarget {
 /// forwarding to it, as [UgcKind] does for adapters.
 /// @since 261021
 #[enum_dispatch(Preview)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum UgcPreview {
     Song(SongPreview),

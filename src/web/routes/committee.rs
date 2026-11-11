@@ -7,23 +7,25 @@ use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::routes::report::{load_users, UserBrief};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use axum::extract::State;
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// @since 261008
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/me", get(me))
-        .route("/members", get(members))
-        .route("/appoint", post(appoint))
-        .route("/revoke", post(revoke))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/me", get_with(me, since("261008")))
+        .api_route("/members", get_with(members, since("261008")))
+        .api_route("/appoint", post_with(appoint, since("261008")))
+        .api_route("/revoke", post_with(revoke, since("261008")))
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MeResp {
     /// Can read the report queue: committee members and contributors.
     pub can_view: bool,
@@ -37,14 +39,14 @@ async fn me(claims: Claims, state: State<AppState>) -> WebResult<MeResp> {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MembersResp {
     /// Oldest appointment first.
     pub members: Vec<MemberItem>,
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MemberItem {
     pub user: UserBrief,
     pub appointed_by: Option<UserBrief>,
@@ -69,7 +71,7 @@ async fn members(claims: Claims, state: State<AppState>) -> WebResult<MembersRes
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MemberReq {
     pub uid: UserId,
 }

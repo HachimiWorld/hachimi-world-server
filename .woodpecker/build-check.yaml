@@ -19,6 +19,43 @@ steps:
     commands:
       - mkdir -p "$CARGO_HOME/bin" "$CARGO_TARGET_DIR"
       - cargo build --bin hachimi-world-server
+  # openapi.json is generated from the routes; a change to the API must commit the new one.
+  - name: openapi-current
+    image: rust:1.99.1
+    environment:
+      SQLX_OFFLINE: true
+      CARGO_HOME: /cache/cargo
+      CARGO_TARGET_DIR: /cache/target/build-check
+    volumes:
+      - woodpecker-hachimi-world-cache:/cache
+    commands:
+      - cargo run --bin gen_openapi
+      - git diff --exit-code openapi.json || (echo "openapi.json is out of date, run 'cargo run --bin gen_openapi' and commit it" && exit 1)
+  # Released clients talk to what's on master, so a change from master's API must not break them.
+  - name: api-compat
+    image: tufin/oasdiff:v1.37.0
+    commands:
+      - git fetch --depth=1 origin master
+      - |
+        if git cat-file -e FETCH_HEAD:openapi.json 2>/dev/null; then
+          git show FETCH_HEAD:openapi.json > /tmp/openapi-master.json
+          oasdiff breaking /tmp/openapi-master.json openapi.json --fail-on ERR --severity-levels .oasdiff-severity-levels --err-ignore .oasdiff-err-ignore
+        else
+          echo "master has no openapi.json yet, nothing to compare"
+        fi
+  # What this branch's open PR changes in the API, as a PR comment. Runs after a failed check too,
+  # and never fails the pipeline itself.
+  - name: api-changelog-comment
+    image: tufin/oasdiff:v1.37.0
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_pr_comment_token
+    commands:
+      - apk add --no-cache curl jq > /dev/null
+      - sh .woodpecker/scripts/api-changelog-comment.sh
+    failure: ignore
+    when:
+      - status: [success, failure]
   # Two steps instead of one message that reads build.status: under Woodpecker the plugin saw
   # success even after a failed step. Woodpecker's own `when.status` picks the right one.
   - name: notify-success

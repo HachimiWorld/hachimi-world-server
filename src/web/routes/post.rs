@@ -9,41 +9,36 @@ use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
 use async_backtrace::framed;
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Json, Multipart, Query, State};
-use axum::routing::{get, post};
-use axum::Router;
 use chrono::Utc;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-pub(crate) fn router() -> Router<AppState> {
-    Router::new()
-        // @since 260125
-        .route("/page", get(page))
-        // @since 260125
-        .route("/detail", get(detail))
-        // @since 260125
-        .route("/create", post(create))
-        // @since 260125
-        .route("/edit", post(edit))
-        // @since 260125
-        .route("/delete", post(delete))
-        // @since 260125
-        .route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+pub(crate) fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/page", get_with(page, since("260125")))
+        .api_route("/detail", get_with(detail, since("260125")))
+        .api_route("/create", post_with(create, since("260125")))
+        .api_route("/edit", post_with(edit, since("260125")))
+        .api_route("/delete", post_with(delete, since("260125")))
+        .api_route("/upload_image", post_with(upload_image, since("260125")).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageReq {
     pub page_index: i32,
     pub page_size: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResp {
     pub posts: Vec<PostItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PostItem {
     pub id: i64,
     pub author: PublicUserProfile,
@@ -97,7 +92,7 @@ pub async fn page(
     ok!(PageResp { posts: items })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PostIdReq {
     pub post_id: i64,
 }
@@ -139,7 +134,7 @@ pub async fn detail(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateReq {
     pub title: String,
     pub content: String,
@@ -147,7 +142,7 @@ pub struct CreateReq {
     pub cover_file_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateResp {
     pub id: i64,
 }
@@ -199,7 +194,7 @@ pub async fn create(
     ok!(CreateResp { id })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EditReq {
     pub post_id: i64,
     pub title: Option<String>,
@@ -268,7 +263,7 @@ pub async fn delete(
     ok!(() )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UploadImageResp {
     pub file_id: String,
 }

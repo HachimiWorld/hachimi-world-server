@@ -6,23 +6,25 @@ use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
 use async_backtrace::framed;
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Comments on songs. See [crate::service::comment].
 /// @since 261021
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/list", get(list))
-        .route("/hot", get(hot))
-        .route("/replies", get(replies))
-        .route("/create", post(create))
-        .route("/delete", post(delete))
-        .route("/like", post(like))
-        .route("/unlike", post(unlike))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/list", get_with(list, since("261021")))
+        .api_route("/hot", get_with(hot, since("261021")))
+        .api_route("/replies", get_with(replies, since("261021")))
+        .api_route("/create", post_with(create, since("261021")))
+        .api_route("/delete", post_with(delete, since("261021")))
+        .api_route("/like", post_with(like, since("261021")))
+        .api_route("/unlike", post_with(unlike, since("261021")))
 }
 
 fn parse_target(target_type: &str) -> Result<CommentTarget, WebError<CommonError>> {
@@ -30,7 +32,7 @@ fn parse_target(target_type: &str) -> Result<CommentTarget, WebError<CommonError
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListReq {
     /// `song`
     pub target_type: String,
@@ -47,7 +49,7 @@ pub struct ListReq {
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListResp {
     /// Visible comments and replies on the target, for showing next to it.
     pub total: i64,
@@ -82,7 +84,7 @@ async fn list(claims: OptionalClaims, state: State<AppState>, req: Query<ListReq
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HotReq {
     /// `song`
     pub target_type: String,
@@ -91,7 +93,7 @@ pub struct HotReq {
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HotResp {
     /// Most liked first. Also in `/comment/list`, in their place by time.
     pub threads: Vec<CommentThread>,
@@ -107,7 +109,7 @@ async fn hot(claims: OptionalClaims, state: State<AppState>, req: Query<HotReq>)
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepliesReq {
     pub root_id: CommentId,
     /// From 0.
@@ -117,7 +119,7 @@ pub struct RepliesReq {
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RepliesResp {
     pub total: i64,
     /// Oldest first.
@@ -138,7 +140,7 @@ async fn replies(claims: OptionalClaims, state: State<AppState>, req: Query<Repl
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateReq {
     /// `song`
     pub target_type: String,
@@ -151,7 +153,7 @@ pub struct CreateReq {
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateResp {
     /// The new comment; `None` if it couldn't be checked now and waits to be checked again. It's
     /// seen by no one, its author included, until it passes.
@@ -177,7 +179,7 @@ async fn create(claims: Claims, state: State<AppState>, req: Json<CreateReq>) ->
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CommentIdReq {
     pub comment_id: CommentId,
 }

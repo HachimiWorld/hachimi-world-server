@@ -11,6 +11,7 @@ mod song;
 
 use crate::db::user::UserId;
 use crate::service::content_review::ReviewItem;
+use crate::service::moment::AttachmentView;
 use crate::web::state::AppState;
 use enum_dispatch::enum_dispatch;
 use serde_json::Value;
@@ -42,9 +43,9 @@ pub trait AttachmentAdapter {
     /// options. Nothing for what was checked where it comes from, such as a song.
     fn review_items(&self, data: &Value) -> anyhow::Result<Vec<ReviewItem>>;
 
-    /// Shows stored attachments of this type, all at once: for each, what the client gets as its
-    /// `data`, or `None` if what it points at can't be seen any more.
-    async fn show_many(&self, state: &AppState, data: &[&Value]) -> anyhow::Result<Vec<Option<Value>>>;
+    /// Shows stored attachments of this type, all at once: for each, its own [AttachmentView]
+    /// variant, with no data if what it points at can't be seen any more.
+    async fn show_many(&self, state: &AppState, data: &[&Value]) -> anyhow::Result<Vec<AttachmentView>>;
 }
 
 impl AttachmentKind {

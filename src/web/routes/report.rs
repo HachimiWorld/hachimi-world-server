@@ -8,26 +8,28 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
 /// @since 261008
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/submit", post(submit))
-        .route("/queue", get(queue))
-        .route("/case", get(case))
-        .route("/resolve", post(resolve))
-        .route("/hidden_reason", get(hidden_reason))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/submit", post_with(submit, since("261008")))
+        .api_route("/queue", get_with(queue, since("261008")))
+        .api_route("/case", get_with(case, since("261008")))
+        .api_route("/resolve", post_with(resolve, since("261008")))
+        .api_route("/hidden_reason", get_with(hidden_reason, since("261008")))
 }
 
 /// @since 261008
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UserBrief {
     pub uid: UserId,
     pub username: String,
@@ -35,7 +37,7 @@ pub struct UserBrief {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitReq {
     /// `song`, `playlist` or `user`
     pub target_type: String,
@@ -47,7 +49,7 @@ pub struct SubmitReq {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitResp {
     pub report_id: i64,
     /// The target was reviewed before and further reports on it are ignored. The report is
@@ -66,7 +68,7 @@ async fn submit(claims: Claims, state: State<AppState>, req: Json<SubmitReq>) ->
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QueueReq {
     /// `pending` (default) or `resolved`
     pub status: Option<String>,
@@ -79,14 +81,14 @@ pub struct QueueReq {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct QueueResp {
     pub items: Vec<CaseItem>,
     pub has_more: bool,
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CaseItem {
     pub case_id: i64,
     pub target_type: String,
@@ -102,7 +104,7 @@ pub struct CaseItem {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TargetInfo {
     /// How the target looks, by its kind, with `type` naming the kind.
     /// @since 261021
@@ -111,7 +113,7 @@ pub struct TargetInfo {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReasonCount {
     pub reason: String,
     pub count: i64,
@@ -138,14 +140,14 @@ async fn queue(claims: Claims, state: State<AppState>, req: Query<QueueReq>) -> 
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CaseReq {
     pub target_type: String,
     pub target_id: i64,
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CaseResp {
     pub case: CaseItem,
     /// Oldest first, up to 200.
@@ -160,7 +162,7 @@ pub struct CaseResp {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ContentActionOption {
     /// Declared by the target's kind: `hide` and `restore` for songs and playlists, `reset_avatar`,
     /// `reset_bio` and `reset_username` for users.
@@ -172,7 +174,7 @@ pub struct ContentActionOption {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReportItem {
     pub report_id: i64,
     pub reporter: Option<UserBrief>,
@@ -182,7 +184,7 @@ pub struct ReportItem {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ActionItem {
     pub action_id: i64,
     pub operator: Option<UserBrief>,
@@ -250,7 +252,7 @@ async fn case(claims: Claims, state: State<AppState>, req: Query<CaseReq>) -> We
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResolveReq {
     pub target_type: String,
     pub target_id: i64,
@@ -273,7 +275,7 @@ pub struct ResolveReq {
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResolveResp {
     pub action_id: i64,
     /// `pending` if reports arrived after `up_to_report_id`.
@@ -304,14 +306,14 @@ async fn resolve(claims: Claims, state: State<AppState>, req: Json<ResolveReq>) 
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HiddenReasonReq {
     pub target_type: String,
     pub target_id: i64,
 }
 
 /// @since 261008
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HiddenReasonResp {
     /// Whether the user's song or playlist is hidden.
     pub hidden: bool,

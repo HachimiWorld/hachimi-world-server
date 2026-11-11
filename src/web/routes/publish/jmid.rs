@@ -10,12 +10,12 @@ use axum::extract::{Query, State};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidCheckPReq {
     pub jmid_prefix: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidCheckPResp {
     pub result: bool,
 }
@@ -30,12 +30,12 @@ pub async fn jmid_check_prefix(
     ok!(JmidCheckPResp {result: r.is_none()})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidCheckReq {
     pub jmid: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidCheckResp {
     pub result: bool,
 }
@@ -50,7 +50,7 @@ pub async fn jmid_check(
     ok!(JmidCheckResp {result: r})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidMineResp {
     pub jmid_prefix: Option<String>,
 }
@@ -64,7 +64,7 @@ pub async fn jmid_mine(
     ok!(JmidMineResp {jmid_prefix})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct JmidGetNextResp {
     pub jmid: String,
 }

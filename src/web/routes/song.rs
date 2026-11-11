@@ -14,9 +14,10 @@ use crate::web::state::AppState;
 use crate::{err, ok, search};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Query, State};
-use axum::routing::{get, post};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since_experimental;
+use aide::axum::ApiRouter;
 use axum::Json;
-use axum::Router;
 use chrono::{DateTime, TimeDelta, Utc};
 use itertools::Itertools;
 use redis::aio::ConnectionManager;
@@ -26,37 +27,36 @@ use std::ops::Sub;
 use std::time::Duration;
 use tracing::log::warn;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
         // Core operations
-        .route("/upload_audio_file", post(publish::upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)))
-        .route("/upload_cover_image", post(publish::upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        .route("/delete", post(publish::delete))
-        .route("/publish", post(publish::publish))
-        .route("/detail", get(detail))
-        .route("/detail_by_id", get(detail_by_id))
-        .route("/page_by_user", get(page_by_user))
+        .api_route("/upload_audio_file", post(publish::upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)))
+        .api_route("/upload_cover_image", post(publish::upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .api_route("/delete", post(publish::delete))
+        .api_route("/publish", post(publish::publish))
+        .api_route("/detail", get(detail))
+        .api_route("/detail_by_id", get(detail_by_id))
+        .api_route("/page_by_user", get(page_by_user))
         // Discovery
-        .route("/search", get(search))
-        .route("/recent_v2", get(recent_v2))
-        .route("/hot/weekly", get(hot_weekly))
-        .route("/recommend", get(recommend))
-        .route("/recommend_anonymous", get(recommend_anonymous))
+        .api_route("/search", get(search))
+        .api_route("/recent_v2", get(recent_v2))
+        .api_route("/hot/weekly", get(hot_weekly))
+        .api_route("/recommend", get(recommend))
+        .api_route("/recommend_anonymous", get(recommend_anonymous))
         // Tags
-        .route("/tag/create", post(tag_create))
-        .route("/tag/search", get(tag_search))
-        .route("/tag/recommend", get(tag_recommend))
-        .route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
-        // @since 250328 @experimental
-        .nest("/likes", Router::new()
-            .route("/like", post(like))
-            .route("/unlike", post(unlike))
-            .route("/status", get(likes_status))
-            .route("/page_my_likes", get(page_my_likes)),
+        .api_route("/tag/create", post(tag_create))
+        .api_route("/tag/search", get(tag_search))
+        .api_route("/tag/recommend", get(tag_recommend))
+        .api_route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
+        .nest("/likes", ApiRouter::new()
+            .api_route("/like", post_with(like, since_experimental("250328")))
+            .api_route("/unlike", post_with(unlike, since_experimental("250328")))
+            .api_route("/status", get_with(likes_status, since_experimental("250328")))
+            .api_route("/page_my_likes", get_with(page_my_likes, since_experimental("250328"))),
         )
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailReq {
     /// Actually the JMID
     pub id: String,
@@ -86,7 +86,7 @@ fn visible_to(song: &DetailResp, claims: &OptionalClaims) -> bool {
     !song.is_hidden || claims.0.as_ref().is_some_and(|c| c.uid() == song.uploader_uid)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailByIdReq {
     pub id: SongId,
 }
@@ -109,14 +109,14 @@ async fn detail_by_id(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageByUserReq {
     pub user_id: UserId,
     pub page: Option<i64>,
     pub size: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageByUserResp {
     pub songs: Vec<DetailResp>,
     pub total: i64,
@@ -192,7 +192,7 @@ async fn set_page_by_user_cache(mut redis: ConnectionManager, user_id: UserId, p
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReq {
     pub q: String,
     pub limit: Option<usize>,
@@ -202,7 +202,7 @@ pub struct SearchReq {
     pub sort_by: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchResp {
     pub hits: Vec<SearchSongItem>,
     pub query: String,
@@ -212,7 +212,7 @@ pub struct SearchResp {
     pub offset: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchSongItem {
     pub id: SongId,
     pub display_id: String,
@@ -226,6 +226,7 @@ pub struct SearchSongItem {
     pub cover_art_url: String,
     /// Deprecated since 260114.
     /// Use detail endpoint to get audio URL
+    #[schemars(extend("deprecated" = true))]
     pub audio_url: String,
     pub uploader_uid: UserId,
     pub uploader_name: String,
@@ -306,14 +307,14 @@ async fn search(
 }
 
 /// Since 251102
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RecentReq {
     pub cursor: Option<DateTime<Utc>>,
     pub limit: Option<i32>,
     pub after: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RecentResp {
     pub songs: Vec<DetailResp>,
 }
@@ -347,7 +348,7 @@ async fn recent_v2(
     ok!(RecentResp {songs})
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HotResp {
     pub songs: Vec<DetailResp>,
 }
@@ -360,7 +361,7 @@ async fn hot_weekly(
     ok!(HotResp {songs})
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RecommendResp {
     pub songs: Vec<DetailResp>,
 }
@@ -383,7 +384,7 @@ async fn recommend_anonymous(
     ok!(resp)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LikeReq {
     pub song_id: SongId,
     pub playback_position_secs: Option<i32>,
@@ -403,7 +404,7 @@ async fn like(
     ok!(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UnlikeReq {
     pub song_id: SongId,
 }
@@ -422,12 +423,12 @@ async fn unlike(
     ok!(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LikeStatusReq {
     pub song_id: SongId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LikeStatusResp {
     pub liked: bool,
 }
@@ -446,13 +447,13 @@ async fn likes_status(
     ok!(LikeStatusResp { liked })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MyLikesReq {
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MyLikesResp {
     /// Likes of songs that can be played.
     pub data: Vec<MyLikeItem>,
@@ -465,13 +466,13 @@ pub struct MyLikesResp {
 }
 
 /// @since 261008
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UnavailableLikeItem {
     pub song_id: SongId,
     pub liked_time: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MyLikeItem {
     pub song_data: PublicSongDetail,
     pub liked_time: DateTime<Utc>,
@@ -522,17 +523,17 @@ async fn page_my_likes(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagSearchReq {
     pub query: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagSearchResp {
     pub result: Vec<TagItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagItem {
     pub id: i64,
     pub name: String,
@@ -560,13 +561,13 @@ async fn tag_search(
     ok!(TagSearchResp {result})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagCreateReq {
     pub name: String,
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagCreateResp {
     pub id: i64,
 }
@@ -598,7 +599,7 @@ async fn tag_create(_claims: Claims, state: State<AppState>, req: Json<TagCreate
     ok!(TagCreateResp { id })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagRecommendItem {
     pub id: i64,
     pub name: String,
@@ -606,12 +607,12 @@ pub struct TagRecommendItem {
     pub score: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagRecommendResp {
     pub result: Vec<TagRecommendItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TagRecommendRedisCache {
     pub result: Vec<TagRecommendItem>,
     pub create_time: DateTime<Utc>,

@@ -60,6 +60,9 @@ tokio-cron-scheduler = "0.15.1"
 enum_dispatch = "0.3.13"
 unicode-width = "0.2.2"
 strum = { version = "0.28.0", features = ["derive"] }
+# OpenAPI generated from the routes, for API compatibility checks
+aide = { version = "0.15.1", features = ["axum", "axum-json", "axum-query", "axum-multipart"] }
+schemars = { version = "0.9", features = ["chrono04", "uuid1"] }
 icu_properties = "2.3.0"
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]

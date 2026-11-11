@@ -1,10 +1,16 @@
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
+use axum_extra::headers::UserAgent;
+use axum_extra::typed_header::TypedHeaderRejection;
+use axum_extra::TypedHeader;
 use std::net::SocketAddr;
 use crate::web::result::WebError;
 
 #[derive(Debug, Clone)]
 pub struct XRealIP(pub String);
+
+/// Read from headers the proxy sets, not something clients send.
+impl aide::OperationInput for XRealIP {}
 
 impl<S> FromRequestParts<S> for XRealIP
 where
@@ -28,6 +34,26 @@ where
         Ok(XRealIP(peer_ip))
     }
 }
+
+/// The `User-Agent` header, which logins record with the device. Wraps axum-extra's typed header
+/// so the OpenAPI document can take it: aide implements its traits for an older axum-extra.
+#[derive(Debug, Clone)]
+pub struct ClientUserAgent(pub UserAgent);
+
+impl<S> FromRequestParts<S> for ClientUserAgent
+where
+    S: Send + Sync,
+{
+    type Rejection = TypedHeaderRejection;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let TypedHeader(ua) = TypedHeader::<UserAgent>::from_request_parts(parts, state).await?;
+        Ok(ClientUserAgent(ua))
+    }
+}
+
+/// Every client sends one, so it isn't listed as a parameter.
+impl aide::OperationInput for ClientUserAgent {}
 
 #[cfg(test)]
 mod tests {

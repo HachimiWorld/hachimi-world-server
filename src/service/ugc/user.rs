@@ -28,7 +28,7 @@ pub struct UserAdapter;
 
 /// How a user looks.
 /// @since 261021
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UserPreview {
     pub username: String,
     pub avatar_url: Option<String>,
