@@ -29,7 +29,7 @@ pub mod feed;
 
 use crate::web::state::AppState;
 use aide::axum::ApiRouter;
-use aide::openapi::{Info, OpenApi};
+use aide::openapi::{Info, OpenApi, Server};
 use aide::transform::TransformOperation;
 use axum::Router;
 
@@ -57,35 +57,40 @@ pub fn openapi() -> OpenApi {
             version: env!("CARGO_PKG_VERSION").to_string(),
             ..Default::default()
         },
+        // Paths are written without the prefix the server mounts them under
+        servers: vec![Server { url: "/api".to_string(), ..Default::default() }],
         ..Default::default()
     };
     // A handler whose types can't be described would leave a hole in the document
     aide::generate::on_error(|error| panic!("OpenAPI generation failed: {error}"));
-    let _ = ApiRouter::<AppState>::new()
-        .nest("/api", api_router())
-        .finish_api(&mut api);
+    let _ = api_router().finish_api(&mut api);
     api
+}
+
+/// Tags a module's operations with its path, which documentation viewers group them by.
+fn module(name: &str, router: ApiRouter<AppState>) -> ApiRouter<AppState> {
+    router.with_path_items(|item| item.tag(name))
 }
 
 fn api_router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .nest("/auth", auth::router())
-        .nest("/user", user::router())
-        .nest("/song", song::router())
-        .nest("/play_history", play_history::router())
-        .nest("/playlist", playlist::router())
-        .nest("/version", version::router())
-        .nest("/publish", publish::router())
-        .nest("/post", post::router())
-        .nest("/contributor", contributor::router())
-        .nest("/sitemap", sitemap::router())
-        .nest("/notification", notification::router())
-        .nest("/message", message::router())
-        .nest("/report", report::router())
-        .nest("/committee", committee::router())
-        .nest("/comment", comment::router())
-        .nest("/moment", moment::router())
-        .nest("/feed", feed::router())
+        .nest("/auth", module("auth", auth::router()))
+        .nest("/user", module("user", user::router()))
+        .nest("/song", module("song", song::router()))
+        .nest("/play_history", module("play_history", play_history::router()))
+        .nest("/playlist", module("playlist", playlist::router()))
+        .nest("/version", module("version", version::router()))
+        .nest("/publish", module("publish", publish::router()))
+        .nest("/post", module("post", post::router()))
+        .nest("/contributor", module("contributor", contributor::router()))
+        .nest("/sitemap", module("sitemap", sitemap::router()))
+        .nest("/notification", module("notification", notification::router()))
+        .nest("/message", module("message", message::router()))
+        .nest("/report", module("report", report::router()))
+        .nest("/committee", module("committee", committee::router()))
+        .nest("/comment", module("comment", comment::router()))
+        .nest("/moment", module("moment", moment::router()))
+        .nest("/feed", module("feed", feed::router()))
 }
 #[cfg(test)]
 mod tests {

@@ -4,9 +4,17 @@
     "title": "Hachimi World API",
     "version": "0.1.0"
   },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
   "paths": {
-    "/api/auth/register/email": {
+    "/auth/register/email": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -68,8 +76,11 @@
         }
       }
     },
-    "/api/auth/login/email": {
+    "/auth/login/email": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -131,8 +142,11 @@
         }
       }
     },
-    "/api/auth/send_email_code": {
+    "/auth/send_email_code": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -194,8 +208,11 @@
         }
       }
     },
-    "/api/auth/device/list": {
+    "/auth/device/list": {
       "get": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -247,8 +264,11 @@
         }
       }
     },
-    "/api/auth/device/logout": {
+    "/auth/device/logout": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -310,8 +330,11 @@
         }
       }
     },
-    "/api/auth/refresh_token": {
+    "/auth/refresh_token": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -373,8 +396,11 @@
         }
       }
     },
-    "/api/auth/protected": {
+    "/auth/protected": {
       "get": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -426,8 +452,11 @@
         }
       }
     },
-    "/api/auth/reset_password": {
+    "/auth/reset_password": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -489,8 +518,11 @@
         }
       }
     },
-    "/api/auth/captcha": {
+    "/auth/captcha": {
       "get": {
+        "tags": [
+          "auth"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -504,8 +536,11 @@
         ]
       }
     },
-    "/api/auth/captcha/generate": {
+    "/auth/captcha/generate": {
       "get": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -557,8 +592,11 @@
         }
       }
     },
-    "/api/auth/captcha/submit": {
+    "/auth/captcha/submit": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -620,8 +658,11 @@
         }
       }
     },
-    "/api/auth/email/info": {
+    "/auth/email/info": {
       "get": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -673,8 +714,11 @@
         }
       }
     },
-    "/api/auth/email/send_old_code": {
+    "/auth/email/send_old_code": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -726,8 +770,11 @@
         }
       }
     },
-    "/api/auth/email/send_new_code": {
+    "/auth/email/send_new_code": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -790,8 +837,11 @@
         }
       }
     },
-    "/api/auth/email/change": {
+    "/auth/email/change": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -854,8 +904,11 @@
         }
       }
     },
-    "/api/auth/email/request_change": {
+    "/auth/email/request_change": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -918,8 +971,11 @@
         }
       }
     },
-    "/api/auth/email/cancel_change": {
+    "/auth/email/cancel_change": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -971,8 +1027,11 @@
         }
       }
     },
-    "/api/auth/email/revert_change": {
+    "/auth/email/revert_change": {
       "post": {
+        "tags": [
+          "auth"
+        ],
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -1035,8 +1094,11 @@
         }
       }
     },
-    "/api/user/greet": {
+    "/user/greet": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1088,8 +1150,11 @@
         }
       }
     },
-    "/api/user/profile": {
+    "/user/profile": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -1153,8 +1218,11 @@
         }
       }
     },
-    "/api/user/update_profile": {
+    "/user/update_profile": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1216,8 +1284,11 @@
         }
       }
     },
-    "/api/user/set_avatar": {
+    "/user/set_avatar": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -1280,8 +1351,11 @@
         }
       }
     },
-    "/api/user/search": {
+    "/user/search": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -1366,8 +1440,11 @@
         }
       }
     },
-    "/api/user/connection/list": {
+    "/user/connection/list": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1419,8 +1496,11 @@
         }
       }
     },
-    "/api/user/connection/unlink": {
+    "/user/connection/unlink": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1482,8 +1562,11 @@
         }
       }
     },
-    "/api/user/connection/set_visibility": {
+    "/user/connection/set_visibility": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1545,8 +1628,11 @@
         }
       }
     },
-    "/api/user/connection/sync": {
+    "/user/connection/sync": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1608,8 +1694,11 @@
         }
       }
     },
-    "/api/user/connection/generate_challenge": {
+    "/user/connection/generate_challenge": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1671,8 +1760,11 @@
         }
       }
     },
-    "/api/user/connection/verify_challenge": {
+    "/user/connection/verify_challenge": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1734,8 +1826,11 @@
         }
       }
     },
-    "/api/user/following": {
+    "/user/following": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -1810,8 +1905,11 @@
         }
       }
     },
-    "/api/user/followers": {
+    "/user/followers": {
       "get": {
+        "tags": [
+          "user"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -1886,8 +1984,11 @@
         }
       }
     },
-    "/api/user/follow": {
+    "/user/follow": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1949,8 +2050,11 @@
         }
       }
     },
-    "/api/user/unfollow": {
+    "/user/unfollow": {
       "post": {
+        "tags": [
+          "user"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2012,8 +2116,11 @@
         }
       }
     },
-    "/api/song/upload_audio_file": {
+    "/song/upload_audio_file": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -2076,8 +2183,11 @@
         }
       }
     },
-    "/api/song/upload_cover_image": {
+    "/song/upload_cover_image": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -2140,8 +2250,11 @@
         }
       }
     },
-    "/api/song/delete": {
+    "/song/delete": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -2193,8 +2306,11 @@
         }
       }
     },
-    "/api/song/publish": {
+    "/song/publish": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2256,8 +2372,11 @@
         }
       }
     },
-    "/api/song/detail": {
+    "/song/detail": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2322,8 +2441,11 @@
         }
       }
     },
-    "/api/song/detail_by_id": {
+    "/song/detail_by_id": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2387,8 +2509,11 @@
         }
       }
     },
-    "/api/song/page_by_user": {
+    "/song/page_by_user": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2476,8 +2601,11 @@
         }
       }
     },
-    "/api/song/search": {
+    "/song/search": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2590,8 +2718,11 @@
         }
       }
     },
-    "/api/song/recent_v2": {
+    "/song/recent_v2": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2680,8 +2811,11 @@
         }
       }
     },
-    "/api/song/hot/weekly": {
+    "/song/hot/weekly": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -2733,8 +2867,11 @@
         }
       }
     },
-    "/api/song/recommend": {
+    "/song/recommend": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -2786,8 +2923,11 @@
         }
       }
     },
-    "/api/song/recommend_anonymous": {
+    "/song/recommend_anonymous": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -2839,8 +2979,11 @@
         }
       }
     },
-    "/api/song/tag/create": {
+    "/song/tag/create": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2902,8 +3045,11 @@
         }
       }
     },
-    "/api/song/tag/search": {
+    "/song/tag/search": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -2966,8 +3112,11 @@
         }
       }
     },
-    "/api/song/tag/recommend": {
+    "/song/tag/recommend": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -3019,8 +3168,11 @@
         }
       }
     },
-    "/api/song/tag/recommend_anonymous": {
+    "/song/tag/recommend_anonymous": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -3072,8 +3224,11 @@
         }
       }
     },
-    "/api/song/likes/like": {
+    "/song/likes/like": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3135,8 +3290,11 @@
         }
       }
     },
-    "/api/song/likes/unlike": {
+    "/song/likes/unlike": {
       "post": {
+        "tags": [
+          "song"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3198,8 +3356,11 @@
         }
       }
     },
-    "/api/song/likes/status": {
+    "/song/likes/status": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3263,8 +3424,11 @@
         }
       }
     },
-    "/api/song/likes/page_my_likes": {
+    "/song/likes/page_my_likes": {
       "get": {
+        "tags": [
+          "song"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3338,8 +3502,11 @@
         }
       }
     },
-    "/api/play_history/cursor": {
+    "/play_history/cursor": {
       "get": {
+        "tags": [
+          "play_history"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3416,8 +3583,11 @@
         }
       }
     },
-    "/api/play_history/touch": {
+    "/play_history/touch": {
       "post": {
+        "tags": [
+          "play_history"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3479,8 +3649,11 @@
         }
       }
     },
-    "/api/play_history/touch_anonymous": {
+    "/play_history/touch_anonymous": {
       "post": {
+        "tags": [
+          "play_history"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3542,8 +3715,11 @@
         }
       }
     },
-    "/api/play_history/delete": {
+    "/play_history/delete": {
       "post": {
+        "tags": [
+          "play_history"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -3605,8 +3781,11 @@
         }
       }
     },
-    "/api/playlist/set_cover": {
+    "/playlist/set_cover": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -3669,8 +3848,11 @@
         }
       }
     },
-    "/api/playlist/detail": {
+    "/playlist/detail": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3734,8 +3916,11 @@
         }
       }
     },
-    "/api/playlist/detail_private": {
+    "/playlist/detail_private": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3799,8 +3984,11 @@
         }
       }
     },
-    "/api/playlist/list": {
+    "/playlist/list": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -3852,8 +4040,11 @@
         }
       }
     },
-    "/api/playlist/list_public_by_user": {
+    "/playlist/list_public_by_user": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3917,8 +4108,11 @@
         }
       }
     },
-    "/api/playlist/list_containing": {
+    "/playlist/list_containing": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -3982,8 +4176,11 @@
         }
       }
     },
-    "/api/playlist/create": {
+    "/playlist/create": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4045,8 +4242,11 @@
         }
       }
     },
-    "/api/playlist/update": {
+    "/playlist/update": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4108,8 +4308,11 @@
         }
       }
     },
-    "/api/playlist/delete": {
+    "/playlist/delete": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4171,8 +4374,11 @@
         }
       }
     },
-    "/api/playlist/add_song": {
+    "/playlist/add_song": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4234,8 +4440,11 @@
         }
       }
     },
-    "/api/playlist/remove_song": {
+    "/playlist/remove_song": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4297,8 +4506,11 @@
         }
       }
     },
-    "/api/playlist/change_order": {
+    "/playlist/change_order": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4360,8 +4572,11 @@
         }
       }
     },
-    "/api/playlist/search": {
+    "/playlist/search": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -4473,8 +4688,11 @@
         }
       }
     },
-    "/api/playlist/favorite/page": {
+    "/playlist/favorite/page": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -4548,8 +4766,11 @@
         }
       }
     },
-    "/api/playlist/favorite/add": {
+    "/playlist/favorite/add": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4611,8 +4832,11 @@
         }
       }
     },
-    "/api/playlist/favorite/remove": {
+    "/playlist/favorite/remove": {
       "post": {
+        "tags": [
+          "playlist"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4674,8 +4898,11 @@
         }
       }
     },
-    "/api/playlist/favorite/check": {
+    "/playlist/favorite/check": {
       "get": {
+        "tags": [
+          "playlist"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -4739,8 +4966,11 @@
         }
       }
     },
-    "/api/version/server": {
+    "/version/server": {
       "get": {
+        "tags": [
+          "version"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -4792,8 +5022,11 @@
         }
       }
     },
-    "/api/version/latest": {
+    "/version/latest": {
       "get": {
+        "tags": [
+          "version"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -4863,8 +5096,11 @@
         }
       }
     },
-    "/api/version/latest_batch": {
+    "/version/latest_batch": {
       "post": {
+        "tags": [
+          "version"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4929,8 +5165,11 @@
         }
       }
     },
-    "/api/version/page": {
+    "/version/page": {
       "get": {
+        "tags": [
+          "version"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -5015,8 +5254,11 @@
         }
       }
     },
-    "/api/version/publish": {
+    "/version/publish": {
       "post": {
+        "tags": [
+          "version"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5078,8 +5320,11 @@
         }
       }
     },
-    "/api/version/delete": {
+    "/version/delete": {
       "post": {
+        "tags": [
+          "version"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5141,8 +5386,11 @@
         }
       }
     },
-    "/api/publish/upload_audio_file": {
+    "/publish/upload_audio_file": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -5205,8 +5453,11 @@
         }
       }
     },
-    "/api/publish/upload_cover_image": {
+    "/publish/upload_cover_image": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -5269,8 +5520,11 @@
         }
       }
     },
-    "/api/publish/publish": {
+    "/publish/publish": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5332,8 +5586,11 @@
         }
       }
     },
-    "/api/publish/modify": {
+    "/publish/modify": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5395,8 +5652,11 @@
         }
       }
     },
-    "/api/publish/delete": {
+    "/publish/delete": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -5448,8 +5708,11 @@
         }
       }
     },
-    "/api/publish/change_jmid": {
+    "/publish/change_jmid": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5511,8 +5774,11 @@
         }
       }
     },
-    "/api/publish/review/page": {
+    "/publish/review/page": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -5586,8 +5852,11 @@
         }
       }
     },
-    "/api/publish/review/page_contributor": {
+    "/publish/review/page_contributor": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -5661,8 +5930,11 @@
         }
       }
     },
-    "/api/publish/review/detail": {
+    "/publish/review/detail": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -5726,8 +5998,11 @@
         }
       }
     },
-    "/api/publish/review/approve": {
+    "/publish/review/approve": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5789,8 +6064,11 @@
         }
       }
     },
-    "/api/publish/review/reject": {
+    "/publish/review/reject": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5852,8 +6130,11 @@
         }
       }
     },
-    "/api/publish/review/modify": {
+    "/publish/review/modify": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5915,8 +6196,11 @@
         }
       }
     },
-    "/api/publish/review/comment/create": {
+    "/publish/review/comment/create": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -5978,8 +6262,11 @@
         }
       }
     },
-    "/api/publish/review/comment/list": {
+    "/publish/review/comment/list": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6063,8 +6350,11 @@
         }
       }
     },
-    "/api/publish/review/comment/delete": {
+    "/publish/review/comment/delete": {
       "post": {
+        "tags": [
+          "publish"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6126,8 +6416,11 @@
         }
       }
     },
-    "/api/publish/review/history/list": {
+    "/publish/review/history/list": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6211,8 +6504,11 @@
         }
       }
     },
-    "/api/publish/jmid/check_prefix": {
+    "/publish/jmid/check_prefix": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6275,8 +6571,11 @@
         }
       }
     },
-    "/api/publish/jmid/check": {
+    "/publish/jmid/check": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6339,8 +6638,11 @@
         }
       }
     },
-    "/api/publish/jmid/mine": {
+    "/publish/jmid/mine": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -6392,8 +6694,11 @@
         }
       }
     },
-    "/api/publish/jmid/get_next": {
+    "/publish/jmid/get_next": {
       "get": {
+        "tags": [
+          "publish"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -6445,8 +6750,11 @@
         }
       }
     },
-    "/api/post/page": {
+    "/post/page": {
       "get": {
+        "tags": [
+          "post"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6520,8 +6828,11 @@
         }
       }
     },
-    "/api/post/detail": {
+    "/post/detail": {
       "get": {
+        "tags": [
+          "post"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -6585,8 +6896,11 @@
         }
       }
     },
-    "/api/post/create": {
+    "/post/create": {
       "post": {
+        "tags": [
+          "post"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6648,8 +6962,11 @@
         }
       }
     },
-    "/api/post/edit": {
+    "/post/edit": {
       "post": {
+        "tags": [
+          "post"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6711,8 +7028,11 @@
         }
       }
     },
-    "/api/post/delete": {
+    "/post/delete": {
       "post": {
+        "tags": [
+          "post"
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6774,8 +7094,11 @@
         }
       }
     },
-    "/api/post/upload_image": {
+    "/post/upload_image": {
       "post": {
+        "tags": [
+          "post"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -6838,8 +7161,11 @@
         }
       }
     },
-    "/api/contributor/check": {
+    "/contributor/check": {
       "get": {
+        "tags": [
+          "contributor"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -6891,8 +7217,11 @@
         }
       }
     },
-    "/api/sitemap/generate": {
+    "/sitemap/generate": {
       "post": {
+        "tags": [
+          "sitemap"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -6944,8 +7273,11 @@
         }
       }
     },
-    "/api/sitemap/generation/list": {
+    "/sitemap/generation/list": {
       "get": {
+        "tags": [
+          "sitemap"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7021,8 +7353,11 @@
         }
       }
     },
-    "/api/notification/list": {
+    "/notification/list": {
       "get": {
+        "tags": [
+          "notification"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7103,8 +7438,11 @@
         }
       }
     },
-    "/api/notification/detail": {
+    "/notification/detail": {
       "get": {
+        "tags": [
+          "notification"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7167,8 +7505,11 @@
         }
       }
     },
-    "/api/notification/unread_count": {
+    "/notification/unread_count": {
       "get": {
+        "tags": [
+          "notification"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -7220,8 +7561,11 @@
         }
       }
     },
-    "/api/notification/mark_read": {
+    "/notification/mark_read": {
       "post": {
+        "tags": [
+          "notification"
+        ],
         "requestBody": {
           "description": "@since 261005",
           "content": {
@@ -7284,8 +7628,11 @@
         }
       }
     },
-    "/api/notification/mark_all_read": {
+    "/notification/mark_all_read": {
       "post": {
+        "tags": [
+          "notification"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -7337,8 +7684,11 @@
         }
       }
     },
-    "/api/message/summary": {
+    "/message/summary": {
       "get": {
+        "tags": [
+          "message"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -7390,8 +7740,11 @@
         }
       }
     },
-    "/api/message/mark_read": {
+    "/message/mark_read": {
       "post": {
+        "tags": [
+          "message"
+        ],
         "requestBody": {
           "description": "@since 261006",
           "content": {
@@ -7454,8 +7807,11 @@
         }
       }
     },
-    "/api/message/received_likes": {
+    "/message/received_likes": {
       "get": {
+        "tags": [
+          "message"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7551,8 +7907,11 @@
         }
       }
     },
-    "/api/message/received_replies": {
+    "/message/received_replies": {
       "get": {
+        "tags": [
+          "message"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7648,8 +8007,11 @@
         }
       }
     },
-    "/api/report/submit": {
+    "/report/submit": {
       "post": {
+        "tags": [
+          "report"
+        ],
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -7712,8 +8074,11 @@
         }
       }
     },
-    "/api/report/queue": {
+    "/report/queue": {
       "get": {
+        "tags": [
+          "report"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7822,8 +8187,11 @@
         }
       }
     },
-    "/api/report/case": {
+    "/report/case": {
       "get": {
+        "tags": [
+          "report"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -7896,8 +8264,11 @@
         }
       }
     },
-    "/api/report/resolve": {
+    "/report/resolve": {
       "post": {
+        "tags": [
+          "report"
+        ],
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -7960,8 +8331,11 @@
         }
       }
     },
-    "/api/report/hidden_reason": {
+    "/report/hidden_reason": {
       "get": {
+        "tags": [
+          "report"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -8034,8 +8408,11 @@
         }
       }
     },
-    "/api/committee/me": {
+    "/committee/me": {
       "get": {
+        "tags": [
+          "committee"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -8087,8 +8464,11 @@
         }
       }
     },
-    "/api/committee/members": {
+    "/committee/members": {
       "get": {
+        "tags": [
+          "committee"
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -8140,8 +8520,11 @@
         }
       }
     },
-    "/api/committee/appoint": {
+    "/committee/appoint": {
       "post": {
+        "tags": [
+          "committee"
+        ],
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8204,8 +8587,11 @@
         }
       }
     },
-    "/api/committee/revoke": {
+    "/committee/revoke": {
       "post": {
+        "tags": [
+          "committee"
+        ],
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8268,8 +8654,11 @@
         }
       }
     },
-    "/api/comment/list": {
+    "/comment/list": {
       "get": {
+        "tags": [
+          "comment"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -8401,8 +8790,11 @@
         }
       }
     },
-    "/api/comment/hot": {
+    "/comment/hot": {
       "get": {
+        "tags": [
+          "comment"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -8479,8 +8871,11 @@
         }
       }
     },
-    "/api/comment/replies": {
+    "/comment/replies": {
       "get": {
+        "tags": [
+          "comment"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -8572,8 +8967,11 @@
         }
       }
     },
-    "/api/comment/create": {
+    "/comment/create": {
       "post": {
+        "tags": [
+          "comment"
+        ],
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -8636,8 +9034,11 @@
         }
       }
     },
-    "/api/comment/delete": {
+    "/comment/delete": {
       "post": {
+        "tags": [
+          "comment"
+        ],
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -8700,8 +9101,11 @@
         }
       }
     },
-    "/api/comment/like": {
+    "/comment/like": {
       "post": {
+        "tags": [
+          "comment"
+        ],
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -8764,8 +9168,11 @@
         }
       }
     },
-    "/api/comment/unlike": {
+    "/comment/unlike": {
       "post": {
+        "tags": [
+          "comment"
+        ],
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -8828,8 +9235,11 @@
         }
       }
     },
-    "/api/moment/upload_image": {
+    "/moment/upload_image": {
       "post": {
+        "tags": [
+          "moment"
+        ],
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -8892,8 +9302,11 @@
         }
       }
     },
-    "/api/moment/create": {
+    "/moment/create": {
       "post": {
+        "tags": [
+          "moment"
+        ],
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -8956,8 +9369,11 @@
         }
       }
     },
-    "/api/moment/delete": {
+    "/moment/delete": {
       "post": {
+        "tags": [
+          "moment"
+        ],
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9020,8 +9436,11 @@
         }
       }
     },
-    "/api/moment/detail": {
+    "/moment/detail": {
       "get": {
+        "tags": [
+          "moment"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -9085,8 +9504,11 @@
         }
       }
     },
-    "/api/moment/list_by_user": {
+    "/moment/list_by_user": {
       "get": {
+        "tags": [
+          "moment"
+        ],
         "parameters": [
           {
             "in": "query",
@@ -9177,8 +9599,11 @@
         }
       }
     },
-    "/api/moment/like": {
+    "/moment/like": {
       "post": {
+        "tags": [
+          "moment"
+        ],
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9241,8 +9666,11 @@
         }
       }
     },
-    "/api/moment/unlike": {
+    "/moment/unlike": {
       "post": {
+        "tags": [
+          "moment"
+        ],
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9305,8 +9733,11 @@
         }
       }
     },
-    "/api/feed/square": {
+    "/feed/square": {
       "get": {
+        "tags": [
+          "feed"
+        ],
         "parameters": [
           {
             "in": "query",
