@@ -21,7 +21,7 @@ pub struct SongAdapter;
 
 /// How a song looks, here and wherever something on a song shows it.
 /// @since 261021
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongPreview {
     pub title: String,
     pub cover_url: String,

@@ -117,14 +117,14 @@ pub async fn page_contributor(
     ok!(resp)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailReq {
     pub review_id: i64,
 }
 
 pub type DetailResp = PublishSongPublishReviewData;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublishSongPublishReviewData {
     pub review_id: i64,
     pub submit_time: DateTime<Utc>,
@@ -254,7 +254,7 @@ pub async fn detail(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewModifyReq {
     pub review_id: i64,
     pub song_temp_id: Option<String>,
@@ -391,7 +391,7 @@ pub async fn review_modify(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewCommentCreateReq {
     pub review_id: i64,
     pub content: String,
@@ -440,14 +440,14 @@ pub async fn review_comment_create(
 
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewCommentListReq {
     pub review_id: i64,
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewCommentListResp {
     pub data: Vec<ReviewCommentItem>,
     pub page_index: i64,
@@ -455,7 +455,7 @@ pub struct ReviewCommentListResp {
     pub total: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewCommentItem {
     pub id: i64,
     pub review_id: i64,
@@ -513,7 +513,7 @@ pub async fn review_comment_list(
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewCommentDeleteReq {
     pub comment_id: i64,
 }
@@ -533,14 +533,14 @@ pub async fn review_comment_delete(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewHistoryListReq {
     pub review_id: i64,
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewHistoryListResp {
     pub data: Vec<ReviewHistoryItem>,
     pub page_index: i64,
@@ -548,7 +548,7 @@ pub struct ReviewHistoryListResp {
     pub total: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReviewHistoryItem {
     pub id: i64,
     pub review_id: i64,
@@ -755,7 +755,7 @@ async fn enqueue_review_modified_emails(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApproveReviewReq {
     pub review_id: i64,
     pub comment: Option<String>,
@@ -890,7 +890,7 @@ pub async fn review_approve(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RejectReviewReq {
     pub review_id: i64,
     pub comment: String,

@@ -13,43 +13,40 @@ use crate::{common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query};
-use axum::routing::post;
-use axum::{extract::State, routing::get, Json, Router};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since_experimental;
+use aide::axum::ApiRouter;
+use axum::{extract::State, Json};
 use chrono::Utc;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/greet", get(greet))
-        .route("/profile", get(get_profile))
-        .route("/update_profile", post(update_profile))
-        .route("/set_avatar", post(set_avatar).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        .route("/search", get(search))
-        // @since 260402 @experimental
-        .nest("/connection", Router::new()
-            .route("/list", get(connection_list))
-            .route("/unlink", post(connection_unlink))
-            .route("/set_visibility", post(connection_set_visibility))
-            .route("/sync", post(connection_sync))
-            .route("/generate_challenge", post(connection_generate_challenge))
-            .route("/verify_challenge", post(connection_verify_challenge)),
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/greet", get(greet))
+        .api_route("/profile", get(get_profile))
+        .api_route("/update_profile", post(update_profile))
+        .api_route("/set_avatar", post(set_avatar).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .api_route("/search", get(search))
+        .nest("/connection", ApiRouter::new()
+            .api_route("/list", get_with(connection_list, since_experimental("260402")))
+            .api_route("/unlink", post_with(connection_unlink, since_experimental("260402")))
+            .api_route("/set_visibility", post_with(connection_set_visibility, since_experimental("260402")))
+            .api_route("/sync", post_with(connection_sync, since_experimental("260402")))
+            .api_route("/generate_challenge", post_with(connection_generate_challenge, since_experimental("260402")))
+            .api_route("/verify_challenge", post_with(connection_verify_challenge, since_experimental("260402"))),
         )
-        // @since 260626 @experimental
-        .route("/following", get(get_following))
-        // @since 260626 @experimental
-        .route("/followers", get(get_followers))
-        // @since 260626 @experimental
-        .route("/follow", post(follow))
-        // @since 260626 @experimental
-        .route("/unfollow", post(unfollow))
+        .api_route("/following", get_with(get_following, since_experimental("260626")))
+        .api_route("/followers", get_with(get_followers, since_experimental("260626")))
+        .api_route("/follow", post_with(follow, since_experimental("260626")))
+        .api_route("/unfollow", post_with(unfollow, since_experimental("260626")))
 }
 
 async fn greet() -> WebResult<&'static str> {
     ok!("Hello from Hachimi World!")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GetProfileReq {
     pub uid: UserId,
 }
@@ -68,7 +65,7 @@ async fn get_profile(
     ok!(profile)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateProfileReq {
     pub username: String,
     pub bio: Option<String>,
@@ -223,7 +220,7 @@ async fn set_avatar(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReq {
     pub q: String,
     pub page: u32,
@@ -233,7 +230,7 @@ pub struct SearchReq {
 
 fn default_search_size() -> u32 { 20 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchResp {
     pub hits: Vec<service::user::PublicUserProfile>,
     pub query: String,
@@ -272,12 +269,12 @@ async fn search(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectionResp {
     pub items: Vec<ConnectionItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectionItem {
     pub r#type: String,
     pub id: String,
@@ -306,7 +303,7 @@ async fn connection_list(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectionUnlinkReq {
     pub r#type: String,
 }
@@ -320,7 +317,7 @@ async fn connection_unlink(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectionSetVisibilityReq {
     pub r#type: String,
     pub visible: bool,
@@ -334,13 +331,13 @@ async fn connection_set_visibility(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerateChallengeReq {
     pub r#type: String,
     pub provider_account_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerateChallengeResp {
     pub challenge_id: String,
     pub challenge: String,
@@ -376,7 +373,7 @@ async fn connection_generate_challenge(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct VerifyChallengeReq {
     pub challenge_id: String,
 }
@@ -407,7 +404,7 @@ async fn connection_verify_challenge(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectionSyncReq {
     r#type: String,
 }
@@ -427,12 +424,12 @@ async fn connection_sync(
 
 // ─── Follow / Unfollow ───────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowReq {
     pub target_uid: UserId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowResp {
     pub follower_count: i64,
 }
@@ -496,7 +493,7 @@ impl From<ServiceError<FollowError>> for WebError<CommonError> {
 
 // ─── Following / Followers Lists ─────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowingListReq {
     pub after: Option<String>,
     #[serde(default = "default_limit")]
@@ -505,7 +502,7 @@ pub struct FollowingListReq {
 
 fn default_limit() -> i64 { 20 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowingListResp {
     pub items: Vec<service::follow::FollowingItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -529,7 +526,7 @@ async fn get_following(
     ok!(FollowingListResp { items, next_cursor })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FollowersListResp {
     pub items: Vec<service::follow::FollowerItem>,
     #[serde(skip_serializing_if = "Option::is_none")]

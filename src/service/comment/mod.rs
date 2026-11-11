@@ -142,7 +142,7 @@ fn business<T>(e: CommentError) -> ServiceResult<T, CommentError> {
 }
 
 /// @since 261021
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CommentUser {
     pub uid: UserId,
     pub username: String,
@@ -151,7 +151,7 @@ pub struct CommentUser {
 
 /// A comment as shown to one viewer.
 /// @since 261021
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CommentItem {
     pub id: CommentId,
     pub target_type: String,
@@ -176,7 +176,7 @@ pub struct CommentItem {
 
 /// A top-level comment and the first few replies under it.
 /// @since 261021
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CommentThread {
     pub comment: CommentItem,
     /// Oldest first.
@@ -534,7 +534,7 @@ async fn change_visibility(tx: &mut sqlx::PgTransaction<'_>, comment_id: Comment
 
 /// What a received reply is on.
 /// @since 261021
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReplyTarget {
     /// Such as `song`.
     pub target_type: String,
@@ -544,7 +544,7 @@ pub struct ReplyTarget {
 
 /// A comment replying to the user, or on what they own.
 /// @since 261021
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedReplyItem {
     pub comment: CommentItem,
     pub target: ReplyTarget,

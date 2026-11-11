@@ -22,6 +22,8 @@ use crate::service::content_check::{self, ContentChecker, Verdict};
 use crate::service::content_review::{self, ReviewItem};
 use crate::service::errors::{ServiceError, ServiceResult};
 use crate::service::notification::{self, to_plain_text, NewNotification};
+use crate::service::playlist::PlaylistMetadata;
+use crate::service::song::PublicSongDetail;
 use crate::service::upload::{scale_down_to_webp, ResizeType};
 use crate::web::state::AppState;
 use anyhow::anyhow;
@@ -109,7 +111,7 @@ pub struct StoredAttachment {
 }
 
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentUser {
     pub uid: UserId,
     pub username: String,
@@ -117,7 +119,7 @@ pub struct MomentUser {
 }
 
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentImage {
     pub url: String,
     /// At most 480 pixels on the long side, for lists.
@@ -126,21 +128,45 @@ pub struct MomentImage {
     pub height: u32,
 }
 
-/// An attachment as shown.
+/// An attachment as shown: `{ "type", "data" }`, where `data` is in the shape its type defines, or
+/// null when what it points at can't be seen any more, shown as "unavailable". Clients show types
+/// they don't know as "update to see this".
+///
+/// Typed per type, not as a JSON value, so the OpenAPI document describes each type's `data` and
+/// the compatibility check covers it.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AttachmentView {
-    /// Such as `song` or `playlist`. Clients show types they don't know as "update to see this".
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum AttachmentView {
+    Known(KnownAttachment),
+    /// A stored type this server doesn't know, such as one a newer version wrote before a rollback.
+    Other(OtherAttachment),
+}
+
+/// An attachment of a type this server knows, with its `data`.
+/// @since 261109
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum KnownAttachment {
+    /// The song's public detail, as in song lists.
+    Song(Option<PublicSongDetail>),
+    /// The playlist's metadata, as in playlist lists.
+    Playlist(Option<PlaylistMetadata>),
+}
+
+/// An attachment of a type this server doesn't know, shown with no `data`.
+/// @since 261109
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct OtherAttachment {
     #[serde(rename = "type")]
     pub kind: String,
-    /// In the shape the type defines: a `song` is the song's public detail, a `playlist` its
-    /// metadata. `None` when what it points at can't be seen any more, shown as "unavailable".
-    pub data: Option<Value>,
+    /// Always null.
+    pub data: (),
 }
 
 /// A moment as shown to one viewer.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentItem {
     pub id: MomentId,
     pub author: MomentUser,
@@ -295,7 +321,7 @@ pub async fn ensure_can_post(pool: &PgPool, uid: UserId) -> ServiceResult<(), Mo
 
 /// An attachment as sent by the client.
 /// @since 261106
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AttachmentInput {
     #[serde(rename = "type")]
     pub kind: String,
@@ -645,7 +671,7 @@ pub(crate) async fn hydrate(state: &AppState, moments: Vec<Moment>, viewer_uid: 
 /// Shows the attachments of several moments, each type's all at once.
 async fn show_attachments(state: &AppState, attachments: &[Vec<StoredAttachment>]) -> anyhow::Result<Vec<Vec<AttachmentView>>> {
     let mut views: Vec<Vec<AttachmentView>> = attachments.iter()
-        .map(|x| x.iter().map(|x| AttachmentView { kind: x.kind.clone(), data: None }).collect())
+        .map(|x| x.iter().map(|x| AttachmentView::Other(OtherAttachment { kind: x.kind.clone(), data: () })).collect())
         .collect();
     for kind in AttachmentKind::iter() {
         let mut places = vec![];
@@ -662,8 +688,34 @@ async fn show_attachments(state: &AppState, attachments: &[Vec<StoredAttachment>
             continue;
         }
         for ((i, j), shown) in places.into_iter().zip(kind.show_many(state, &data).await?) {
-            views[i][j].data = shown;
+            views[i][j] = shown;
         }
     }
     Ok(views)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AttachmentView, KnownAttachment, OtherAttachment};
+    use serde_json::json;
+
+    /// Released clients read `{ "type", "data" }`, with null data for unavailable attachments and
+    /// types they don't know.
+    #[test]
+    fn attachment_view_keeps_its_json_shape() {
+        let song = AttachmentView::Known(KnownAttachment::Song(None));
+        assert_eq!(serde_json::to_value(song).unwrap(), json!({ "type": "song", "data": null }));
+        let playlist = AttachmentView::Known(KnownAttachment::Playlist(None));
+        assert_eq!(serde_json::to_value(playlist).unwrap(), json!({ "type": "playlist", "data": null }));
+        let other = AttachmentView::Other(OtherAttachment { kind: "poll".to_string(), data: () });
+        assert_eq!(serde_json::to_value(&other).unwrap(), json!({ "type": "poll", "data": null }));
+    }
+
+    #[test]
+    fn attachment_view_reads_back_unknown_types() {
+        let view: AttachmentView = serde_json::from_value(json!({ "type": "poll", "data": null })).unwrap();
+        assert!(matches!(view, AttachmentView::Other(OtherAttachment { kind, .. }) if kind == "poll"));
+        let view: AttachmentView = serde_json::from_value(json!({ "type": "song", "data": null })).unwrap();
+        assert!(matches!(view, AttachmentView::Known(KnownAttachment::Song(None))));
+    }
 }

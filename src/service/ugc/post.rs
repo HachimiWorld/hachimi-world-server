@@ -6,7 +6,7 @@ use crate::db::post::Post;
 use serde::{Deserialize, Serialize};
 
 /// @since 261024
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PostPreview {
     pub id: i64,
     pub title: String,

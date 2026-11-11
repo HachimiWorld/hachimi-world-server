@@ -6,24 +6,25 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// @since 261006
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/summary", get(summary))
-        .route("/mark_read", post(mark_read))
-        .route("/received_likes", get(received_likes))
-        // @since 261021
-        .route("/received_replies", get(received_replies))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/summary", get_with(summary, since("261006")))
+        .api_route("/mark_read", post_with(mark_read, since("261006")))
+        .api_route("/received_likes", get_with(received_likes, since("261006")))
+        .api_route("/received_replies", get_with(received_replies, since("261021")))
 }
 
 /// @since 261006
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SummaryResp {
     /// Sum of the unread counts below, for the entry badge.
     pub total_unread: i64,
@@ -57,7 +58,7 @@ async fn summary(claims: Claims, state: State<AppState>) -> WebResult<SummaryRes
 }
 
 /// @since 261006
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MarkReadReq {
     /// `like`, `follow` or `reply` (since 261021). System notifications are marked through
     /// `/notification/*`.
@@ -65,7 +66,7 @@ pub struct MarkReadReq {
 }
 
 /// @since 261006
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MarkReadResp {
     pub read_time: DateTime<Utc>,
 }
@@ -79,7 +80,7 @@ async fn mark_read(claims: Claims, state: State<AppState>, req: Json<MarkReadReq
 }
 
 /// @since 261006
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedLikesReq {
     /// `latest_like_time` of the previous page's last item. Omit both for the first page.
     pub before_time: Option<DateTime<Utc>>,
@@ -90,7 +91,7 @@ pub struct ReceivedLikesReq {
 }
 
 /// @since 261006
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedLikesResp {
     /// Most recently liked first.
     pub items: Vec<ReceivedLikeItem>,
@@ -109,7 +110,7 @@ async fn received_likes(claims: Claims, state: State<AppState>, req: Query<Recei
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedRepliesReq {
     /// `comment.create_time` of the previous page's last item. Omit both for the first page.
     pub before_time: Option<DateTime<Utc>>,
@@ -120,7 +121,7 @@ pub struct ReceivedRepliesReq {
 }
 
 /// @since 261021
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedRepliesResp {
     /// Newest first.
     pub items: Vec<ReceivedReplyItem>,

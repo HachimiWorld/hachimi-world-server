@@ -4,26 +4,27 @@ use crate::web::jwt::PublishVersionClaims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use redis::aio::ConnectionManager;
 use redis::{AsyncTypedCommands, HashFieldExpirationOptions, SetExpiry};
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/server", get(server))
-        .route("/latest", get(latest_version))
-        .route("/latest_batch", post(latest_version_batch))
-        .route("/page", get(page_versions))
-        .route("/publish", post(publish_version))
-        .route("/delete", post(delete_version))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/server", get(server))
+        .api_route("/latest", get(latest_version))
+        .api_route("/latest_batch", post(latest_version_batch))
+        .api_route("/page", get(page_versions))
+        .api_route("/publish", post(publish_version))
+        .api_route("/delete", post(delete_version))
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, schemars::JsonSchema)]
 pub struct ServerVersion {
     pub version: i32,
     pub min_version: i32,
@@ -37,12 +38,12 @@ async fn server() -> WebResult<ServerVersion> {
 }
 
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LatestVersionReq {
     pub variant: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LatestVersionResp {
     pub version_name: String,
     pub version_number: i32,
@@ -78,7 +79,7 @@ async fn latest_version(state: State<AppState>, req: Query<LatestVersionReq>) ->
     ok!(version.map(LatestVersionResp::from))
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LatestVersionBatchReq {
     pub variants: Vec<String>,
 }
@@ -96,14 +97,14 @@ async fn latest_version_batch(state: State<AppState>, req: Json<LatestVersionBat
     ok!(result)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageVersionsReq {
     pub variant: Option<String>,
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageVersionsResp {
     pub data: Vec<LatestVersionResp>,
     pub page_index: i64,
@@ -134,7 +135,7 @@ async fn page_versions(state: State<AppState>, req: Query<PageVersionsReq>) -> W
     })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublishVersionReq {
     pub version_name: String,
     pub version_number: i32,
@@ -152,7 +153,7 @@ pub struct PublishVersionReq {
     pub release_time: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublishVersionResp {
     pub id: i64,
 }
@@ -190,7 +191,7 @@ async fn publish_version(
     ok!(PublishVersionResp { id })
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeleteVersionReq {
     pub id: i64,
 }

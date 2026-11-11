@@ -21,7 +21,7 @@ pub struct CommentAdapter;
 
 /// How a comment looks: its text, and what it's on as that target's kind shows it.
 /// @since 261021
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CommentPreview {
     pub content: String,
     /// What the comment is on; None if it's gone.

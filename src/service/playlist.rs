@@ -106,7 +106,7 @@ pub async fn get_detail(state: &State<AppState>, uid: Option<UserId>, playlist_i
 }
 
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlaylistMetadata {
     pub id: PlaylistId,
     pub user_id: UserId,

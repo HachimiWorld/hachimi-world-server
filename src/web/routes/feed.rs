@@ -5,19 +5,20 @@ use crate::web::state::AppState;
 use crate::{err, ok};
 use async_backtrace::framed;
 use axum::extract::{Query, State};
-use axum::routing::get;
-use axum::Router;
+use aide::axum::routing::get_with;
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
 use serde::{Deserialize, Serialize};
 
 /// Streams that mix kinds of content. See [crate::service::feed].
 /// @since 261106
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/square", get(square))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/square", get_with(square, since("261106")))
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageReq {
     /// `next_cursor` of the previous page; omit for the first page.
     pub cursor: Option<String>,
@@ -26,7 +27,7 @@ pub struct PageReq {
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageResp {
     /// Newest first. Skip kinds you don't know.
     pub items: Vec<FeedItem>,

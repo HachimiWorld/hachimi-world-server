@@ -10,8 +10,10 @@ use crate::{common, err, ok};
 use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
+use aide::axum::ApiRouter;
+use axum::Json;
 use bytes::Bytes;
 use image::{ImageFormat, ImageReader};
 use serde::{Deserialize, Serialize};
@@ -22,19 +24,19 @@ const IMAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 /// Moments, short posts any user can write. See [crate::service::moment]. The square lists them
 /// under `/feed`.
 /// @since 261106
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        .route("/create", post(create))
-        .route("/delete", post(delete))
-        .route("/detail", get(detail))
-        .route("/list_by_user", get(list_by_user))
-        .route("/like", post(like))
-        .route("/unlike", post(unlike))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/upload_image", post_with(upload_image, since("261106")).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .api_route("/create", post_with(create, since("261106")))
+        .api_route("/delete", post_with(delete, since("261106")))
+        .api_route("/detail", get_with(detail, since("261106")))
+        .api_route("/list_by_user", get_with(list_by_user, since("261106")))
+        .api_route("/like", post_with(like, since("261106")))
+        .api_route("/unlike", post_with(unlike, since("261106")))
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UploadImageResp {
     /// Pass it to `/moment/create` within an hour.
     pub image_id: String,
@@ -108,7 +110,7 @@ async fn upload_image(claims: Claims, state: State<AppState>, mut multipart: Mul
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateReq {
     /// Up to 500 characters, trimmed. May be empty when there are images or attachments.
     #[serde(default)]
@@ -123,7 +125,7 @@ pub struct CreateReq {
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreateResp {
     /// The new moment; `None` if it couldn't be checked now and waits to be checked again. It's
     /// seen by no one, its author included, until it passes; if it's blocked then, its author gets
@@ -139,7 +141,7 @@ async fn create(claims: Claims, state: State<AppState>, req: Json<CreateReq>) ->
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentIdReq {
     pub moment_id: MomentId,
 }
@@ -159,7 +161,7 @@ async fn detail(claims: OptionalClaims, state: State<AppState>, req: Query<Momen
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListByUserReq {
     pub user_id: UserId,
     /// `next_cursor` of the previous page; omit for the first page.
@@ -169,7 +171,7 @@ pub struct ListByUserReq {
 }
 
 /// @since 261106
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListResp {
     /// Newest first.
     pub items: Vec<MomentItem>,

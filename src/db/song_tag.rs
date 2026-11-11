@@ -38,7 +38,7 @@ macro_rules! query_song_tags {
     };
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongTag {
     pub id: i64,
     pub name: String,

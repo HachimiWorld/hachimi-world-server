@@ -1,0 +1,2 @@
+# Changes `oasdiff breaking` reports that released clients handle, one per line, as
+# `METHOD /path message` copied from its output. See "API Compatibility" in .github/CONTRIBUTING.md.

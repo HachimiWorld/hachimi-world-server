@@ -6,6 +6,7 @@ use crate::db::song::{SongDao, SongId};
 use crate::db::user::UserId;
 use crate::db::CrudDao;
 use crate::service::content_review::ReviewItem;
+use crate::service::moment::{AttachmentView, KnownAttachment};
 use crate::service::song;
 use crate::web::state::AppState;
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ impl AttachmentAdapter for SongAttachment {
         Ok(vec![])
     }
 
-    async fn show_many(&self, state: &AppState, data: &[&Value]) -> anyhow::Result<Vec<Option<Value>>> {
+    async fn show_many(&self, state: &AppState, data: &[&Value]) -> anyhow::Result<Vec<AttachmentView>> {
         let ids: Vec<Option<SongId>> = data.iter()
             .map(|x| serde_json::from_value::<SongData>((*x).clone()).ok().map(|x| x.id))
             .collect();
@@ -48,8 +49,8 @@ impl AttachmentAdapter for SongAttachment {
         wanted.sort();
         wanted.dedup();
         let songs = song::get_public_detail_with_cache(state.redis_conn.clone(), &state.sql_pool, &wanted).await?;
-        ids.into_iter()
-            .map(|id| id.and_then(|id| songs.get(&id)).map(serde_json::to_value).transpose().map_err(Into::into))
-            .collect()
+        Ok(ids.into_iter()
+            .map(|id| AttachmentView::Known(KnownAttachment::Song(id.and_then(|id| songs.get(&id)).cloned())))
+            .collect())
     }
 }

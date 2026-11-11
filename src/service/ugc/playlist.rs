@@ -21,7 +21,7 @@ pub struct PlaylistAdapter;
 
 /// How a playlist looks.
 /// @since 261021
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlaylistPreview {
     pub name: String,
     pub cover_url: Option<String>,

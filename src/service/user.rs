@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 /// Shared user profile model — returned by all APIs that include user info.
 /// `is_following` / `is_followed_by` are `None` unless enriched via `get_user_profile`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PublicUserProfile {
     pub uid: UserId,
     pub username: String,
@@ -30,7 +30,7 @@ pub struct PublicUserProfile {
     pub is_followed_by: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ConnectedAccountItem {
     pub r#type: String,
     pub id: String,
