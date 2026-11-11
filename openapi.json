@@ -663,6 +663,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "responses": {
           "200": {
             "description": "",
@@ -719,6 +720,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "responses": {
           "200": {
             "description": "",
@@ -775,6 +777,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -842,6 +845,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -909,6 +913,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -976,6 +981,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "responses": {
           "200": {
             "description": "",
@@ -1032,6 +1038,7 @@
         "tags": [
           "auth"
         ],
+        "description": "@since 261105",
         "requestBody": {
           "description": "@since 261105",
           "content": {
@@ -1445,6 +1452,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "responses": {
           "200": {
             "description": "",
@@ -1501,6 +1509,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1567,6 +1576,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1633,6 +1643,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1699,6 +1710,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1765,6 +1777,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260402 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1831,6 +1844,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260626 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -1910,6 +1924,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260626 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -1989,6 +2004,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260626 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -2055,6 +2071,7 @@
         "tags": [
           "user"
         ],
+        "description": "@since 260626 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3229,6 +3246,7 @@
         "tags": [
           "song"
         ],
+        "description": "@since 250328 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3295,6 +3313,7 @@
         "tags": [
           "song"
         ],
+        "description": "@since 250328 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -3361,6 +3380,7 @@
         "tags": [
           "song"
         ],
+        "description": "@since 250328 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -3429,6 +3449,7 @@
         "tags": [
           "song"
         ],
+        "description": "@since 250328 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -3853,6 +3874,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260121",
         "parameters": [
           {
             "in": "query",
@@ -4045,6 +4067,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260121",
         "parameters": [
           {
             "in": "query",
@@ -4577,6 +4600,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260121",
         "parameters": [
           {
             "in": "query",
@@ -4693,6 +4717,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260122",
         "parameters": [
           {
             "in": "query",
@@ -4771,6 +4796,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260122",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4837,6 +4863,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260122",
         "requestBody": {
           "content": {
             "application/json": {
@@ -4903,6 +4930,7 @@
         "tags": [
           "playlist"
         ],
+        "description": "@since 260122",
         "parameters": [
           {
             "in": "query",
@@ -6135,6 +6163,7 @@
         "tags": [
           "publish"
         ],
+        "description": "@since 260407 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6201,6 +6230,7 @@
         "tags": [
           "publish"
         ],
+        "description": "@since 260407 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6267,6 +6297,7 @@
         "tags": [
           "publish"
         ],
+        "description": "@since 260407 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -6355,6 +6386,7 @@
         "tags": [
           "publish"
         ],
+        "description": "@since 260407 @experimental",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6421,6 +6453,7 @@
         "tags": [
           "publish"
         ],
+        "description": "@since 260407 @experimental",
         "parameters": [
           {
             "in": "query",
@@ -6755,6 +6788,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "parameters": [
           {
             "in": "query",
@@ -6833,6 +6867,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "parameters": [
           {
             "in": "query",
@@ -6901,6 +6936,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "requestBody": {
           "content": {
             "application/json": {
@@ -6967,6 +7003,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7033,6 +7070,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "requestBody": {
           "content": {
             "application/json": {
@@ -7099,6 +7137,7 @@
         "tags": [
           "post"
         ],
+        "description": "@since 260125",
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -7166,6 +7205,7 @@
         "tags": [
           "contributor"
         ],
+        "description": "@since 260125",
         "responses": {
           "200": {
             "description": "",
@@ -7222,6 +7262,7 @@
         "tags": [
           "sitemap"
         ],
+        "description": "@since 261003",
         "responses": {
           "200": {
             "description": "",
@@ -7278,6 +7319,7 @@
         "tags": [
           "sitemap"
         ],
+        "description": "@since 261003",
         "parameters": [
           {
             "in": "query",
@@ -7358,6 +7400,7 @@
         "tags": [
           "notification"
         ],
+        "description": "@since 261005",
         "parameters": [
           {
             "in": "query",
@@ -7443,6 +7486,7 @@
         "tags": [
           "notification"
         ],
+        "description": "@since 261005",
         "parameters": [
           {
             "in": "query",
@@ -7510,6 +7554,7 @@
         "tags": [
           "notification"
         ],
+        "description": "@since 261005",
         "responses": {
           "200": {
             "description": "",
@@ -7566,6 +7611,7 @@
         "tags": [
           "notification"
         ],
+        "description": "@since 261005",
         "requestBody": {
           "description": "@since 261005",
           "content": {
@@ -7633,6 +7679,7 @@
         "tags": [
           "notification"
         ],
+        "description": "@since 261005",
         "responses": {
           "200": {
             "description": "",
@@ -7689,6 +7736,7 @@
         "tags": [
           "message"
         ],
+        "description": "@since 261006",
         "responses": {
           "200": {
             "description": "",
@@ -7745,6 +7793,7 @@
         "tags": [
           "message"
         ],
+        "description": "@since 261006",
         "requestBody": {
           "description": "@since 261006",
           "content": {
@@ -7812,6 +7861,7 @@
         "tags": [
           "message"
         ],
+        "description": "@since 261006",
         "parameters": [
           {
             "in": "query",
@@ -7912,6 +7962,7 @@
         "tags": [
           "message"
         ],
+        "description": "@since 261021",
         "parameters": [
           {
             "in": "query",
@@ -8012,6 +8063,7 @@
         "tags": [
           "report"
         ],
+        "description": "@since 261008",
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8079,6 +8131,7 @@
         "tags": [
           "report"
         ],
+        "description": "@since 261008",
         "parameters": [
           {
             "in": "query",
@@ -8192,6 +8245,7 @@
         "tags": [
           "report"
         ],
+        "description": "@since 261008",
         "parameters": [
           {
             "in": "query",
@@ -8269,6 +8323,7 @@
         "tags": [
           "report"
         ],
+        "description": "@since 261008",
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8336,6 +8391,7 @@
         "tags": [
           "report"
         ],
+        "description": "@since 261008",
         "parameters": [
           {
             "in": "query",
@@ -8413,6 +8469,7 @@
         "tags": [
           "committee"
         ],
+        "description": "@since 261008",
         "responses": {
           "200": {
             "description": "",
@@ -8469,6 +8526,7 @@
         "tags": [
           "committee"
         ],
+        "description": "@since 261008",
         "responses": {
           "200": {
             "description": "",
@@ -8525,6 +8583,7 @@
         "tags": [
           "committee"
         ],
+        "description": "@since 261008",
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8592,6 +8651,7 @@
         "tags": [
           "committee"
         ],
+        "description": "@since 261008",
         "requestBody": {
           "description": "@since 261008",
           "content": {
@@ -8659,6 +8719,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "parameters": [
           {
             "in": "query",
@@ -8795,6 +8856,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "parameters": [
           {
             "in": "query",
@@ -8876,6 +8938,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "parameters": [
           {
             "in": "query",
@@ -8972,6 +9035,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -9039,6 +9103,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -9106,6 +9171,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -9173,6 +9239,7 @@
         "tags": [
           "comment"
         ],
+        "description": "@since 261021",
         "requestBody": {
           "description": "@since 261021",
           "content": {
@@ -9240,6 +9307,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "requestBody": {
           "description": "multipart form data",
           "content": {
@@ -9307,6 +9375,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9374,6 +9443,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9441,6 +9511,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "parameters": [
           {
             "in": "query",
@@ -9509,6 +9580,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "parameters": [
           {
             "in": "query",
@@ -9604,6 +9676,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9671,6 +9744,7 @@
         "tags": [
           "moment"
         ],
+        "description": "@since 261106",
         "requestBody": {
           "description": "@since 261106",
           "content": {
@@ -9738,6 +9812,7 @@
         "tags": [
           "feed"
         ],
+        "description": "@since 261106",
         "parameters": [
           {
             "in": "query",

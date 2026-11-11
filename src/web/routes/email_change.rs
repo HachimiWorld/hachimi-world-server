@@ -11,7 +11,8 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::State;
 use axum::Json;
@@ -19,15 +20,16 @@ use crate::web::extractors::ClientUserAgent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// @since 261105
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/info", get(info))
-        .api_route("/send_old_code", post(send_old_code))
-        .api_route("/send_new_code", post(send_new_code))
-        .api_route("/change", post(change))
-        .api_route("/request_change", post(request_change))
-        .api_route("/cancel_change", post(cancel_change))
-        .api_route("/revert_change", post(revert_change))
+        .api_route("/info", get_with(info, since("261105")))
+        .api_route("/send_old_code", post_with(send_old_code, since("261105")))
+        .api_route("/send_new_code", post_with(send_new_code, since("261105")))
+        .api_route("/change", post_with(change, since("261105")))
+        .api_route("/request_change", post_with(request_change, since("261105")))
+        .api_route("/cancel_change", post_with(cancel_change, since("261105")))
+        .api_route("/revert_change", post_with(revert_change, since("261105")))
 }
 
 /// A change waiting to apply.

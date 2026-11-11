@@ -10,7 +10,8 @@ use crate::{common, err, ok};
 use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::Json;
 use bytes::Bytes;
@@ -25,13 +26,13 @@ const IMAGE_MAX_BYTES: usize = 8 * 1024 * 1024;
 /// @since 261106
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        .api_route("/create", post(create))
-        .api_route("/delete", post(delete))
-        .api_route("/detail", get(detail))
-        .api_route("/list_by_user", get(list_by_user))
-        .api_route("/like", post(like))
-        .api_route("/unlike", post(unlike))
+        .api_route("/upload_image", post_with(upload_image, since("261106")).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .api_route("/create", post_with(create, since("261106")))
+        .api_route("/delete", post_with(delete, since("261106")))
+        .api_route("/detail", get_with(detail, since("261106")))
+        .api_route("/list_by_user", get_with(list_by_user, since("261106")))
+        .api_route("/like", post_with(like, since("261106")))
+        .api_route("/unlike", post_with(unlike, since("261106")))
 }
 
 /// @since 261106

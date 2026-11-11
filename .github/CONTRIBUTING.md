@@ -60,7 +60,7 @@ Released clients keep running long after a deploy, so an API change must not bre
 cargo run --bin gen_openapi
 ```
 
-A unit test (`openapi_json_is_current`) and CI fail when it is out of date. CI also fails when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Routes are added with `.api_route` on an `aide::axum::ApiRouter`; a plain `.route` still works but leaves the route out of the document, and so out of the check.
+A unit test (`openapi_json_is_current`) and CI fail when it is out of date. CI also fails when `oasdiff breaking` finds a change from master's copy that breaks released clients, such as a removed endpoint or response field, a changed type, a response field that became nullable or optional, or a new required request parameter. Routes are added with `.api_route` on an `aide::axum::ApiRouter`; a plain `.route` still works but leaves the route out of the document, and so out of the check. Note when a route was added with `get_with(handler, since("YYMMDD"))` (or `since_experimental`), which shows in the document the way `@since` in a field's doc comment does.
 
 A new variant of a polymorphic response type, such as a new moment attachment type or feed kind, only warns (`response-property-one-of-added`, set in `.oasdiff-severity-levels`): every such type the client decodes falls back to an unknown variant for kinds it doesn't know. A new polymorphic type in a response needs that fallback in the client too, which this check can't see.
 

@@ -14,7 +14,8 @@ use crate::web::state::AppState;
 use crate::{err, ok, search};
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Query, State};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since_experimental;
 use aide::axum::ApiRouter;
 use axum::Json;
 use chrono::{DateTime, TimeDelta, Utc};
@@ -47,12 +48,11 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/tag/search", get(tag_search))
         .api_route("/tag/recommend", get(tag_recommend))
         .api_route("/tag/recommend_anonymous", get(tag_recommend_anonymous))
-        // @since 250328 @experimental
         .nest("/likes", ApiRouter::new()
-            .api_route("/like", post(like))
-            .api_route("/unlike", post(unlike))
-            .api_route("/status", get(likes_status))
-            .api_route("/page_my_likes", get(page_my_likes)),
+            .api_route("/like", post_with(like, since_experimental("250328")))
+            .api_route("/unlike", post_with(unlike, since_experimental("250328")))
+            .api_route("/status", get_with(likes_status, since_experimental("250328")))
+            .api_route("/page_my_likes", get_with(page_my_likes, since_experimental("250328"))),
         )
 }
 

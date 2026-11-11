@@ -9,7 +9,8 @@ use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
 use async_backtrace::framed;
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Json, Multipart, Query, State};
 use chrono::Utc;
@@ -18,18 +19,12 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        // @since 260125
-        .api_route("/page", get(page))
-        // @since 260125
-        .api_route("/detail", get(detail))
-        // @since 260125
-        .api_route("/create", post(create))
-        // @since 260125
-        .api_route("/edit", post(edit))
-        // @since 260125
-        .api_route("/delete", post(delete))
-        // @since 260125
-        .api_route("/upload_image", post(upload_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+        .api_route("/page", get_with(page, since("260125")))
+        .api_route("/detail", get_with(detail, since("260125")))
+        .api_route("/create", post_with(create, since("260125")))
+        .api_route("/edit", post_with(edit, since("260125")))
+        .api_route("/delete", post_with(delete, since("260125")))
+        .api_route("/upload_image", post_with(upload_image, since("260125")).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

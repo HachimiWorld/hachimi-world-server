@@ -5,7 +5,8 @@ use crate::web::state::AppState;
 use crate::{err, ok};
 use async_backtrace::framed;
 use axum::extract::{Query, State};
-use aide::axum::routing::get;
+use aide::axum::routing::get_with;
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 /// @since 261106
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/square", get(square))
+        .api_route("/square", get_with(square, since("261106")))
 }
 
 /// @since 261106

@@ -5,7 +5,8 @@ use crate::web::jwt::AuthError;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{FromRequestParts, Query, State};
 use axum::http::request::Parts;
@@ -19,8 +20,8 @@ use serde::{Deserialize, Serialize};
 /// @since 261003
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/generate", post(generate))
-        .api_route("/generation/list", get(generation_list))
+        .api_route("/generate", post_with(generate, since("261003")))
+        .api_route("/generation/list", get_with(generation_list, since("261003")))
 }
 
 /// Requires `Authorization: Bearer <sitemap.trigger_token>`. Rejects everything when the

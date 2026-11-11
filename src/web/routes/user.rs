@@ -13,7 +13,8 @@ use crate::{common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
 use axum::extract::{DefaultBodyLimit, Multipart, Query};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since_experimental;
 use aide::axum::ApiRouter;
 use axum::{extract::State, Json};
 use chrono::Utc;
@@ -27,23 +28,18 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/update_profile", post(update_profile))
         .api_route("/set_avatar", post(set_avatar).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         .api_route("/search", get(search))
-        // @since 260402 @experimental
         .nest("/connection", ApiRouter::new()
-            .api_route("/list", get(connection_list))
-            .api_route("/unlink", post(connection_unlink))
-            .api_route("/set_visibility", post(connection_set_visibility))
-            .api_route("/sync", post(connection_sync))
-            .api_route("/generate_challenge", post(connection_generate_challenge))
-            .api_route("/verify_challenge", post(connection_verify_challenge)),
+            .api_route("/list", get_with(connection_list, since_experimental("260402")))
+            .api_route("/unlink", post_with(connection_unlink, since_experimental("260402")))
+            .api_route("/set_visibility", post_with(connection_set_visibility, since_experimental("260402")))
+            .api_route("/sync", post_with(connection_sync, since_experimental("260402")))
+            .api_route("/generate_challenge", post_with(connection_generate_challenge, since_experimental("260402")))
+            .api_route("/verify_challenge", post_with(connection_verify_challenge, since_experimental("260402"))),
         )
-        // @since 260626 @experimental
-        .api_route("/following", get(get_following))
-        // @since 260626 @experimental
-        .api_route("/followers", get(get_followers))
-        // @since 260626 @experimental
-        .api_route("/follow", post(follow))
-        // @since 260626 @experimental
-        .api_route("/unfollow", post(unfollow))
+        .api_route("/following", get_with(get_following, since_experimental("260626")))
+        .api_route("/followers", get_with(get_followers, since_experimental("260626")))
+        .api_route("/follow", post_with(follow, since_experimental("260626")))
+        .api_route("/unfollow", post_with(unfollow, since_experimental("260626")))
 }
 
 async fn greet() -> WebResult<&'static str> {

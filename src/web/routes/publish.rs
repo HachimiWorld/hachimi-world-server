@@ -23,7 +23,8 @@ use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since_experimental;
 use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::Json;
@@ -48,16 +49,11 @@ pub(crate) fn router() -> ApiRouter<AppState> {
         .api_route("/review/detail", get(review::detail))
         .api_route("/review/approve", post(review::review_approve))
         .api_route("/review/reject", post(review::review_reject))
-        // @since 260407 @experimental
-        .api_route("/review/modify", post(review::review_modify))
-        // @since 260407 @experimental
-        .api_route("/review/comment/create", post(review::review_comment_create))
-        // @since 260407 @experimental
-        .api_route("/review/comment/list", get(review::review_comment_list))
-        // @since 260407 @experimental
-        .api_route("/review/comment/delete", post(review::review_comment_delete))
-        // @since 260407 @experimental
-        .api_route("/review/history/list", get(review::review_history_list))
+        .api_route("/review/modify", post_with(review::review_modify, since_experimental("260407")))
+        .api_route("/review/comment/create", post_with(review::review_comment_create, since_experimental("260407")))
+        .api_route("/review/comment/list", get_with(review::review_comment_list, since_experimental("260407")))
+        .api_route("/review/comment/delete", post_with(review::review_comment_delete, since_experimental("260407")))
+        .api_route("/review/history/list", get_with(review::review_history_list, since_experimental("260407")))
         // .api_route("/review/suggestion/create", post(review_suggestion_create))
         // .api_route("/review/suggestion/delete", post(review_suggestion_delete))
         // .api_route("/review/suggestion/list", get(review_suggestion_list))

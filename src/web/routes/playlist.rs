@@ -14,7 +14,8 @@ use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get, post, get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
 use axum::Json;
@@ -28,12 +29,10 @@ use std::collections::HashMap;
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
         .api_route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
-        // @since 260121
-        .api_route("/detail", get(detail))
+        .api_route("/detail", get_with(detail, since("260121")))
         .api_route("/detail_private", get(detail_private))
         .api_route("/list", get(list))
-        // @since 260121
-        .api_route("/list_public_by_user", get(list_public_by_user))
+        .api_route("/list_public_by_user", get_with(list_public_by_user, since("260121")))
         .api_route("/list_containing", get(list_containing))
         .api_route("/create", post(create))
         .api_route("/update", post(update))
@@ -41,16 +40,11 @@ pub fn router() -> ApiRouter<AppState> {
         .api_route("/add_song", post(add_song))
         .api_route("/remove_song", post(remove_song))
         .api_route("/change_order", post(change_order))
-        // @since 260121
-        .api_route("/search", get(search))
-        // @since 260122
-        .api_route("/favorite/page", get(page_favorites))
-        // @since 260122
-        .api_route("/favorite/add", post(add_favorite))
-        // @since 260122
-        .api_route("/favorite/remove", post(remove_favorite))
-        // @since 260122
-        .api_route("/favorite/check", get(check_favorite))
+        .api_route("/search", get_with(search, since("260121")))
+        .api_route("/favorite/page", get_with(page_favorites, since("260122")))
+        .api_route("/favorite/add", post_with(add_favorite, since("260122")))
+        .api_route("/favorite/remove", post_with(remove_favorite, since("260122")))
+        .api_route("/favorite/check", get_with(check_favorite, since("260122")))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]

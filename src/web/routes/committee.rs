@@ -7,7 +7,8 @@ use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::routes::report::{load_users, UserBrief};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::State;
 use axum::Json;
@@ -17,10 +18,10 @@ use serde::{Deserialize, Serialize};
 /// @since 261008
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/me", get(me))
-        .api_route("/members", get(members))
-        .api_route("/appoint", post(appoint))
-        .api_route("/revoke", post(revoke))
+        .api_route("/me", get_with(me, since("261008")))
+        .api_route("/members", get_with(members, since("261008")))
+        .api_route("/appoint", post_with(appoint, since("261008")))
+        .api_route("/revoke", post_with(revoke, since("261008")))
 }
 
 /// @since 261008

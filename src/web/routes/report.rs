@@ -8,7 +8,8 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -20,11 +21,11 @@ use std::collections::HashMap;
 /// @since 261008
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/submit", post(submit))
-        .api_route("/queue", get(queue))
-        .api_route("/case", get(case))
-        .api_route("/resolve", post(resolve))
-        .api_route("/hidden_reason", get(hidden_reason))
+        .api_route("/submit", post_with(submit, since("261008")))
+        .api_route("/queue", get_with(queue, since("261008")))
+        .api_route("/case", get_with(case, since("261008")))
+        .api_route("/resolve", post_with(resolve, since("261008")))
+        .api_route("/hidden_reason", get_with(hidden_reason, since("261008")))
 }
 
 /// @since 261008

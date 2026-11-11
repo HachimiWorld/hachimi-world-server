@@ -4,7 +4,8 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -15,11 +16,11 @@ use uuid::Uuid;
 /// @since 261005
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/list", get(list))
-        .api_route("/detail", get(detail))
-        .api_route("/unread_count", get(unread_count))
-        .api_route("/mark_read", post(mark_read))
-        .api_route("/mark_all_read", post(mark_all_read))
+        .api_route("/list", get_with(list, since("261005")))
+        .api_route("/detail", get_with(detail, since("261005")))
+        .api_route("/unread_count", get_with(unread_count, since("261005")))
+        .api_route("/mark_read", post_with(mark_read, since("261005")))
+        .api_route("/mark_all_read", post_with(mark_all_read, since("261005")))
 }
 
 /// @since 261005

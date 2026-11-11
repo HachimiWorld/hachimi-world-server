@@ -37,6 +37,18 @@ pub fn router() -> Router<AppState> {
     api_router().into()
 }
 
+/// Notes when an operation was added, as `@since YYMMDD` in its description in the OpenAPI
+/// document, the way fields note it in their doc comments:
+/// `.api_route("/square", get_with(square, since("261106")))`.
+pub fn since(version: &'static str) -> impl FnOnce(TransformOperation) -> TransformOperation {
+    move |op| op.description(&format!("@since {version}"))
+}
+
+/// [since] for an operation that is still experimental.
+pub fn since_experimental(version: &'static str) -> impl FnOnce(TransformOperation) -> TransformOperation {
+    move |op| op.description(&format!("@since {version} @experimental"))
+}
+
 /// Marks an operation deprecated in the OpenAPI document, so it can be removed later without the
 /// compatibility check failing: `.api_route("/recent", get_with(recent, deprecated))`. Say in the
 /// handler's doc when it can go, such as

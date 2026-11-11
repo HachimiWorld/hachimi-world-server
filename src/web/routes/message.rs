@@ -6,7 +6,8 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -16,11 +17,10 @@ use serde::{Deserialize, Serialize};
 /// @since 261006
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/summary", get(summary))
-        .api_route("/mark_read", post(mark_read))
-        .api_route("/received_likes", get(received_likes))
-        // @since 261021
-        .api_route("/received_replies", get(received_replies))
+        .api_route("/summary", get_with(summary, since("261006")))
+        .api_route("/mark_read", post_with(mark_read, since("261006")))
+        .api_route("/received_likes", get_with(received_likes, since("261006")))
+        .api_route("/received_replies", get_with(received_replies, since("261021")))
 }
 
 /// @since 261006

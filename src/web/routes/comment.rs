@@ -6,7 +6,8 @@ use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
 use async_backtrace::framed;
-use aide::axum::routing::{get, post};
+use aide::axum::routing::{get_with, post_with};
+use crate::web::routes::since;
 use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
 use axum::Json;
@@ -17,13 +18,13 @@ use serde::{Deserialize, Serialize};
 /// @since 261021
 pub fn router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .api_route("/list", get(list))
-        .api_route("/hot", get(hot))
-        .api_route("/replies", get(replies))
-        .api_route("/create", post(create))
-        .api_route("/delete", post(delete))
-        .api_route("/like", post(like))
-        .api_route("/unlike", post(unlike))
+        .api_route("/list", get_with(list, since("261021")))
+        .api_route("/hot", get_with(hot, since("261021")))
+        .api_route("/replies", get_with(replies, since("261021")))
+        .api_route("/create", post_with(create, since("261021")))
+        .api_route("/delete", post_with(delete, since("261021")))
+        .api_route("/like", post_with(like, since("261021")))
+        .api_route("/unlike", post_with(unlike, since("261021")))
 }
 
 fn parse_target(target_type: &str) -> Result<CommentTarget, WebError<CommonError>> {
