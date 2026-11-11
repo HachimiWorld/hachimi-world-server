@@ -3,17 +3,18 @@ use crate::service::contributor;
 use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
+use aide::axum::routing::get;
+use aide::axum::ApiRouter;
 use axum::extract::State;
-use axum::Router;
 use serde::{Deserialize, Serialize};
 
-pub fn router() -> Router<AppState> {
-    Router::new()
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
         // @since 260125
-        .route("/check", axum::routing::get(check_contributor))
+        .api_route("/check", get(check_contributor))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CheckContributorResp {
     pub is_contributor: bool,
 }

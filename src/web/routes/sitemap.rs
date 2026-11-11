@@ -5,10 +5,11 @@ use crate::web::jwt::AuthError;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{FromRequestParts, Query, State};
 use axum::http::request::Parts;
-use axum::routing::{get, post};
-use axum::{RequestPartsExt, Router};
+use axum::RequestPartsExt;
 use axum_extra::headers::authorization::Bearer;
 use axum_extra::headers::Authorization;
 use axum_extra::TypedHeader;
@@ -16,10 +17,10 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// @since 261003
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/generate", post(generate))
-        .route("/generation/list", get(generation_list))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/generate", post(generate))
+        .api_route("/generation/list", get(generation_list))
 }
 
 /// Requires `Authorization: Bearer <sitemap.trigger_token>`. Rejects everything when the
@@ -27,6 +28,9 @@ pub fn router() -> Router<AppState> {
 pub struct SitemapClaims {
     cfg: SitemapCfg,
 }
+
+/// A token for the operator, not something clients send.
+impl aide::OperationInput for SitemapClaims {}
 
 impl FromRequestParts<AppState> for SitemapClaims {
     type Rejection = AuthError;
@@ -44,7 +48,7 @@ impl FromRequestParts<AppState> for SitemapClaims {
 }
 
 /// @since 261003
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SitemapGenerationItem {
     pub id: i64,
     /// `schedule` or `manual`.
@@ -83,7 +87,7 @@ async fn generate(claims: SitemapClaims, state: State<AppState>) -> WebResult<Si
 }
 
 /// @since 261003
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerationListReq {
     pub page_index: i64,
     /// 1..=50
@@ -91,7 +95,7 @@ pub struct GenerationListReq {
 }
 
 /// @since 261003
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerationListResp {
     /// Most recent first.
     pub data: Vec<SitemapGenerationItem>,

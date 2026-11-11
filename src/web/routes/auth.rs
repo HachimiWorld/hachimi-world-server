@@ -11,13 +11,13 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok, search, service};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::Query;
 use axum::http::StatusCode;
 use axum::response::Html;
-use axum::routing::get;
-use axum::{debug_handler, extract::State, routing::post, Json, Router};
-use axum_extra::headers::UserAgent;
-use axum_extra::TypedHeader;
+use axum::{debug_handler, extract::State, Json};
+use crate::web::extractors::ClientUserAgent;
 use chrono::{DateTime, Duration, Utc};
 use itertools::Itertools;
 use jsonwebtoken::errors::ErrorKind;
@@ -25,30 +25,30 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::error;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/register/email", post(email_register))
-        .route("/login/email", post(email_login))
-        .route("/send_email_code", post(send_email_code))
-        .route("/device/list", get(device_list))
-        .route("/device/logout", post(device_logout))
-        .route("/refresh_token", post(refresh_token))
-        .route("/protected", get(protected))
-        .route("/reset_password", post(reset_password))
-        .route("/captcha", get(captcha))
-        .route("/captcha/generate", get(generate_captcha))
-        .route("/captcha/submit", post(submit_captcha))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/register/email", post(email_register))
+        .api_route("/login/email", post(email_login))
+        .api_route("/send_email_code", post(send_email_code))
+        .api_route("/device/list", get(device_list))
+        .api_route("/device/logout", post(device_logout))
+        .api_route("/refresh_token", post(refresh_token))
+        .api_route("/protected", get(protected))
+        .api_route("/reset_password", post(reset_password))
+        .api_route("/captcha", get(captcha))
+        .api_route("/captcha/generate", get(generate_captcha))
+        .api_route("/captcha/submit", post(submit_captcha))
         .nest("/email", super::email_change::router())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TokenPair {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_in: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EmailRegisterReq {
     pub email: String,
     pub password: String,
@@ -57,7 +57,7 @@ pub struct EmailRegisterReq {
     pub captcha_key: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EmailRegisterResp {
     pub uid: UserId,
     pub generated_username: String,
@@ -67,7 +67,7 @@ pub struct EmailRegisterResp {
 async fn email_register(
     mut state: State<AppState>,
     XRealIP(ip): XRealIP,
-    TypedHeader(ua): TypedHeader<UserAgent>,
+    ClientUserAgent(ua): ClientUserAgent,
     req: Json<EmailRegisterReq>,
 ) -> WebResult<EmailRegisterResp> {
     let captcha = service::captcha::verify_captcha(&mut state.redis_conn, &req.captcha_key).await?;
@@ -137,7 +137,7 @@ async fn email_register(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LoginReq {
     pub email: String,
     pub password: String,
@@ -146,7 +146,7 @@ pub struct LoginReq {
     pub captcha_key: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct LoginResp {
     pub uid: UserId,
     pub username: String,
@@ -157,7 +157,7 @@ pub struct LoginResp {
 #[debug_handler]
 async fn email_login(
     ip: XRealIP,
-    TypedHeader(ua): TypedHeader<UserAgent>,
+    ClientUserAgent(ua): ClientUserAgent,
     mut state: State<AppState>,
     req: Json<LoginReq>,
 ) -> WebResult<LoginResp> {
@@ -206,7 +206,7 @@ async fn email_login(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RefreshTokenReq {
     pub refresh_token: String,
     pub device_info: String,
@@ -215,7 +215,7 @@ pub struct RefreshTokenReq {
 async fn refresh_token(
     state: State<AppState>,
     XRealIP(ip): XRealIP,
-    TypedHeader(ua): TypedHeader<UserAgent>,
+    ClientUserAgent(ua): ClientUserAgent,
     req: Json<RefreshTokenReq>,
 ) -> WebResult<TokenPair> {
     let claims = jwt::decode_and_validate_refresh_token(&req.refresh_token);
@@ -291,7 +291,7 @@ async fn refresh_token(
     });
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SendVerificationReq {
     pub email: String,
 }
@@ -318,7 +318,7 @@ async fn send_email_code(
     ok!(())
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct OAuthLoginResp {
     pub first_access: bool,
     pub token: TokenPair,
@@ -335,12 +335,12 @@ pub struct OAuthLoginResp {
     // 6. Return tokens
 // }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeviceListResp {
     pub devices: Vec<DeviceItem>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeviceItem {
     pub id: i64,
     pub device_info: Option<String>,
@@ -372,7 +372,7 @@ async fn device_list(
     ok!(DeviceListResp {devices})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeviceLogoutReq {
     pub device_id: i64,
 }
@@ -401,7 +401,7 @@ async fn protected(_: Claims) -> WebResult<()> {
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ResetPasswordReq {
     pub email: String,
     pub code: String,
@@ -476,7 +476,7 @@ async fn generate_token_pairs_and_save(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CaptchaReq {
     pub captcha_key: String,
 }
@@ -499,7 +499,7 @@ async fn captcha(
     (StatusCode::OK, Html(html))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GenerateCaptchaResp {
     pub captcha_key: String,
     pub url: String,
@@ -507,7 +507,7 @@ pub struct GenerateCaptchaResp {
 
 const CAPTCHA_HTML: &str = include_str!("captcha.html");
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TurnstileCfg {
     pub captcha_page_url: String,
     pub api_base_url: String,
@@ -530,7 +530,7 @@ async fn generate_captcha(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SubmitCaptchaReq {
     pub captcha_key: String,
     pub token: String,

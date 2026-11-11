@@ -39,7 +39,7 @@ const CLEANUP_LOCK_NAME: &str = "notification:cleanup";
 /// producer that first uses an action.
 ///
 /// @since 261005
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ContentIntent {
     pub action: String,
     pub data: Map<String, Value>,

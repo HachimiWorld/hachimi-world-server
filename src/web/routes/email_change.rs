@@ -11,28 +11,28 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::State;
-use axum::routing::{get, post};
-use axum::{Json, Router};
-use axum_extra::headers::UserAgent;
-use axum_extra::TypedHeader;
+use axum::Json;
+use crate::web::extractors::ClientUserAgent;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/info", get(info))
-        .route("/send_old_code", post(send_old_code))
-        .route("/send_new_code", post(send_new_code))
-        .route("/change", post(change))
-        .route("/request_change", post(request_change))
-        .route("/cancel_change", post(cancel_change))
-        .route("/revert_change", post(revert_change))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/info", get(info))
+        .api_route("/send_old_code", post(send_old_code))
+        .api_route("/send_new_code", post(send_new_code))
+        .api_route("/change", post(change))
+        .api_route("/request_change", post(request_change))
+        .api_route("/cancel_change", post(cancel_change))
+        .api_route("/revert_change", post(revert_change))
 }
 
 /// A change waiting to apply.
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PendingEmailChange {
     pub new_email: String,
     pub effective_time: DateTime<Utc>,
@@ -50,7 +50,7 @@ impl From<EmailChangeRequest> for PendingEmailChange {
 }
 
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct EmailInfoResp {
     pub email: String,
     pub pending: Option<PendingEmailChange>,
@@ -94,7 +94,7 @@ async fn send_old_code(State(state): State<AppState>, claims: Claims) -> WebResu
 }
 
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SendNewEmailCodeReq {
     pub new_email: String,
 }
@@ -126,7 +126,7 @@ async fn send_new_code(
 }
 
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChangeEmailReq {
     pub new_email: String,
     /// From `/send_old_code`
@@ -140,7 +140,7 @@ async fn change(
     State(state): State<AppState>,
     claims: Claims,
     XRealIP(ip): XRealIP,
-    TypedHeader(ua): TypedHeader<UserAgent>,
+    ClientUserAgent(ua): ClientUserAgent,
     req: Json<ChangeEmailReq>,
 ) -> WebResult<()> {
     let user = current_user(&state, &claims).await?;
@@ -159,7 +159,7 @@ async fn change(
 }
 
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RequestEmailChangeReq {
     pub new_email: String,
     /// From `/send_new_code`
@@ -173,7 +173,7 @@ async fn request_change(
     State(state): State<AppState>,
     claims: Claims,
     XRealIP(ip): XRealIP,
-    TypedHeader(ua): TypedHeader<UserAgent>,
+    ClientUserAgent(ua): ClientUserAgent,
     req: Json<RequestEmailChangeReq>,
 ) -> WebResult<PendingEmailChange> {
     let user = current_user(&state, &claims).await?;
@@ -212,7 +212,7 @@ async fn cancel_change(State(state): State<AppState>, claims: Claims) -> WebResu
 }
 
 /// @since 261105
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RevertEmailChangeReq {
     /// From the link in the email to the old address
     pub token: String,

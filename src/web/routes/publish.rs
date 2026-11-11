@@ -23,9 +23,10 @@ use crate::web::state::AppState;
 use crate::{audio, common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Multipart, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use redis::AsyncTypedCommands;
@@ -34,38 +35,38 @@ use sqlx::{PgPool, Postgres, Transaction};
 use std::io::Cursor;
 use tracing::{error, info};
 
-pub(crate) fn router() -> Router<AppState> {
-    Router::new()
-        .route("/upload_audio_file", post(upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)) )
-        .route("/upload_cover_image", post(upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)) )
-        .route("/publish", post(publish))
-        .route("/modify", post(modify))
-        .route("/delete", post(delete))
-        .route("/change_jmid", post(change_jmid))
-        .route("/review/page", get(review::page))
-        .route("/review/page_contributor", get(review::page_contributor))
-        .route("/review/detail", get(review::detail))
-        .route("/review/approve", post(review::review_approve))
-        .route("/review/reject", post(review::review_reject))
+pub(crate) fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/upload_audio_file", post(upload_audio_file).layer(DefaultBodyLimit::max(20 * 1024 * 1024)) )
+        .api_route("/upload_cover_image", post(upload_cover_image).layer(DefaultBodyLimit::max(10 * 1024 * 1024)) )
+        .api_route("/publish", post(publish))
+        .api_route("/modify", post(modify))
+        .api_route("/delete", post(delete))
+        .api_route("/change_jmid", post(change_jmid))
+        .api_route("/review/page", get(review::page))
+        .api_route("/review/page_contributor", get(review::page_contributor))
+        .api_route("/review/detail", get(review::detail))
+        .api_route("/review/approve", post(review::review_approve))
+        .api_route("/review/reject", post(review::review_reject))
         // @since 260407 @experimental
-        .route("/review/modify", post(review::review_modify))
+        .api_route("/review/modify", post(review::review_modify))
         // @since 260407 @experimental
-        .route("/review/comment/create", post(review::review_comment_create))
+        .api_route("/review/comment/create", post(review::review_comment_create))
         // @since 260407 @experimental
-        .route("/review/comment/list", get(review::review_comment_list))
+        .api_route("/review/comment/list", get(review::review_comment_list))
         // @since 260407 @experimental
-        .route("/review/comment/delete", post(review::review_comment_delete))
+        .api_route("/review/comment/delete", post(review::review_comment_delete))
         // @since 260407 @experimental
-        .route("/review/history/list", get(review::review_history_list))
-        // .route("/review/suggestion/create", post(review_suggestion_create))
-        // .route("/review/suggestion/delete", post(review_suggestion_delete))
-        // .route("/review/suggestion/list", get(review_suggestion_list))
-        // .route("/review/suggestion/accept", post(review_suggestion_accept))
-        // .route("/review/suggestion/reject", post(review_suggestion_reject))
-        .route("/jmid/check_prefix", get(jmid::jmid_check_prefix))
-        .route("/jmid/check", get(jmid::jmid_check))
-        .route("/jmid/mine", get(jmid::jmid_mine))
-        .route("/jmid/get_next", get(jmid::jmid_get_next))
+        .api_route("/review/history/list", get(review::review_history_list))
+        // .api_route("/review/suggestion/create", post(review_suggestion_create))
+        // .api_route("/review/suggestion/delete", post(review_suggestion_delete))
+        // .api_route("/review/suggestion/list", get(review_suggestion_list))
+        // .api_route("/review/suggestion/accept", post(review_suggestion_accept))
+        // .api_route("/review/suggestion/reject", post(review_suggestion_reject))
+        .api_route("/jmid/check_prefix", get(jmid::jmid_check_prefix))
+        .api_route("/jmid/check", get(jmid::jmid_check))
+        .api_route("/jmid/mine", get(jmid::jmid_mine))
+        .api_route("/jmid/get_next", get(jmid::jmid_get_next))
 }
 
 

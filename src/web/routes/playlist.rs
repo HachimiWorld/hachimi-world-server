@@ -14,9 +14,10 @@ use crate::web::state::AppState;
 use crate::{common, err, ok, search, service};
 use anyhow::Context;
 use async_backtrace::framed;
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{DefaultBodyLimit, Multipart, Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
@@ -24,40 +25,40 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use std::collections::HashMap;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/set_cover", post(set_cover).layer(DefaultBodyLimit::max(10 * 1024 * 1024)))
         // @since 260121
-        .route("/detail", get(detail))
-        .route("/detail_private", get(detail_private))
-        .route("/list", get(list))
+        .api_route("/detail", get(detail))
+        .api_route("/detail_private", get(detail_private))
+        .api_route("/list", get(list))
         // @since 260121
-        .route("/list_public_by_user", get(list_public_by_user))
-        .route("/list_containing", get(list_containing))
-        .route("/create", post(create))
-        .route("/update", post(update))
-        .route("/delete", post(delete))
-        .route("/add_song", post(add_song))
-        .route("/remove_song", post(remove_song))
-        .route("/change_order", post(change_order))
+        .api_route("/list_public_by_user", get(list_public_by_user))
+        .api_route("/list_containing", get(list_containing))
+        .api_route("/create", post(create))
+        .api_route("/update", post(update))
+        .api_route("/delete", post(delete))
+        .api_route("/add_song", post(add_song))
+        .api_route("/remove_song", post(remove_song))
+        .api_route("/change_order", post(change_order))
         // @since 260121
-        .route("/search", get(search))
+        .api_route("/search", get(search))
         // @since 260122
-        .route("/favorite/page", get(page_favorites))
+        .api_route("/favorite/page", get(page_favorites))
         // @since 260122
-        .route("/favorite/add", post(add_favorite))
+        .api_route("/favorite/add", post(add_favorite))
         // @since 260122
-        .route("/favorite/remove", post(remove_favorite))
+        .api_route("/favorite/remove", post(remove_favorite))
         // @since 260122
-        .route("/favorite/check", get(check_favorite))
+        .api_route("/favorite/check", get(check_favorite))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailReq {
     pub id: PlaylistId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailResp {
     pub playlist_info: PlaylistItem,
     /// Songs that can be played, by `order_index`.
@@ -70,7 +71,7 @@ pub struct DetailResp {
 }
 
 /// @since 261008
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UnavailableSongItem {
     pub song_id: SongId,
     pub order_index: i32,
@@ -78,7 +79,7 @@ pub struct UnavailableSongItem {
 }
 
 // Basic song information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SongItem {
     pub song_id: SongId,
     pub song_display_id: String,
@@ -125,12 +126,12 @@ async fn detail_private(
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListResp {
     pub playlists: Vec<PlaylistItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlaylistItem {
     pub id: PlaylistId,
     pub name: String,
@@ -175,12 +176,12 @@ async fn list(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListPublicByUserReq {
     pub user_id: UserId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListPublicByUserResp {
     pub playlists: Vec<PlaylistMetadata>,
 }
@@ -206,12 +207,12 @@ async fn list_public_by_user(
     ok!(result)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListContainingReq {
     pub song_id: SongId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListContainingResp {
     pub playlist_ids: Vec<PlaylistId>,
 }
@@ -231,7 +232,7 @@ async fn list_containing(
     ok!(ListContainingResp {playlist_ids: result})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreatePlaylistReq {
     pub name: String,
     // pub use_song_cover: bool,
@@ -240,7 +241,7 @@ pub struct CreatePlaylistReq {
     pub is_public: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CreatePlaylistResp {
     pub id: PlaylistId,
 }
@@ -306,7 +307,7 @@ async fn create(
     ok!(CreatePlaylistResp { id })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdatePlaylistReq {
     pub id: PlaylistId,
     pub name: String,
@@ -396,7 +397,7 @@ async fn check_playlist_text(
     Ok(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeletePlaylistReq {
     pub id: PlaylistId,
 }
@@ -415,7 +416,7 @@ async fn delete(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddSongReq {
     pub playlist_id: PlaylistId,
     pub song_id: SongId,
@@ -461,7 +462,7 @@ async fn add_song(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RemoveSongReq {
     pub playlist_id: PlaylistId,
     pub song_id: SongId,
@@ -482,7 +483,7 @@ async fn remove_song(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ChangeOrderReq {
     pub playlist_id: PlaylistId,
     pub song_id: SongId,
@@ -540,7 +541,7 @@ async fn check_ownership(
     Ok(playlist)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SetCoverReq {
     pub playlist_id: PlaylistId,
 }
@@ -616,7 +617,7 @@ async fn set_cover(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchReq {
     pub q: String,
     pub limit: Option<usize>,
@@ -627,7 +628,7 @@ pub struct SearchReq {
 
 type SearchPlaylistItem = PlaylistMetadata;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SearchResp {
     pub hits: Vec<SearchPlaylistItem>,
     pub query: String,
@@ -681,13 +682,13 @@ async fn search(
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageFavoritesReq {
     pub page_index: i64,
     pub page_size: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PageFavoritesResp {
     pub data: Vec<FavoritePlaylistItem>,
     pub page_index: i64,
@@ -695,7 +696,7 @@ pub struct PageFavoritesResp {
     pub total: i64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FavoritePlaylistItem {
     pub metadata: PlaylistMetadata,
     pub order_index: i32,
@@ -731,7 +732,7 @@ async fn page_favorites(
     ok!(PageFavoritesResp{data: result, page_index, page_size, total: count})
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddFavoriteReq {
     pub playlist_id: PlaylistId,
 }
@@ -760,12 +761,12 @@ async fn add_favorite(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddFavoriteResp {
     pub playlist_id: PlaylistId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct RemoveFavoriteReq {
     pub playlist_id: PlaylistId,
 }
@@ -779,12 +780,12 @@ async fn remove_favorite(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CheckFavoriteReq {
     pub playlist_id: PlaylistId,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CheckFavoriteResp {
     pub playlist_id: PlaylistId,
     pub is_favorite: bool,

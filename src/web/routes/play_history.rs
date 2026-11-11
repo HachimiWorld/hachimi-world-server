@@ -7,9 +7,10 @@ use crate::web::jwt::Claims;
 use crate::web::result::WebResult;
 use crate::web::state::AppState;
 use crate::{err, ok, util};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use metrics::gauge;
@@ -18,26 +19,26 @@ use redis::{AsyncCommands, ExistenceCheck, SetExpiry, SetOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/cursor", get(cursor))
-        .route("/touch", post(touch))
-        .route("/touch_anonymous", post(touch_anonymous))
-        .route("/delete", post(delete))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/cursor", get(cursor))
+        .api_route("/touch", post(touch))
+        .api_route("/touch_anonymous", post(touch_anonymous))
+        .api_route("/delete", post(delete))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CursorReq {
     pub cursor: Option<DateTime<Utc>>,
     pub size: usize
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct CursorResp {
     pub list: Vec<PlayHistoryItem>
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PlayHistoryItem {
     /// @deprecated since 260331
     /// @remove in 260901
@@ -76,7 +77,7 @@ async fn cursor(
     ok!(CursorResp { list: result })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct TouchReq {
     pub song_id: SongId
 }
@@ -142,7 +143,7 @@ async fn touch_anonymous(
     ok!(())
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DeleteReq {
     /// Same value as `PlayHistoryItem.id`, which is the song id
     pub history_id: SongId,

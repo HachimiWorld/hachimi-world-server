@@ -49,7 +49,7 @@ pub fn deprecated(op: TransformOperation) -> TransformOperation {
 }
 
 /// The API as an OpenAPI document, for checking changes stay compatible with released clients.
-/// Only modules on [ApiRouter] routes are in it; the others are still plain axum routes.
+/// Routes added with `.api_route` are in it; a plain `.route` on an [ApiRouter] is left out.
 pub fn openapi() -> OpenApi {
     let mut api = OpenApi {
         info: Info {
@@ -69,21 +69,21 @@ pub fn openapi() -> OpenApi {
 
 fn api_router() -> ApiRouter<AppState> {
     ApiRouter::new()
-        .nest("/auth", auth::router().into())
+        .nest("/auth", auth::router())
         .nest("/user", user::router())
         .nest("/song", song::router())
-        .nest("/play_history", play_history::router().into())
-        .nest("/playlist", playlist::router().into())
-        .nest("/version", version::router().into())
-        .nest("/publish", publish::router().into())
-        .nest("/post", post::router().into())
-        .nest("/contributor", contributor::router().into())
-        .nest("/sitemap", sitemap::router().into())
-        .nest("/notification", notification::router().into())
-        .nest("/message", message::router().into())
-        .nest("/report", report::router().into())
-        .nest("/committee", committee::router().into())
-        .nest("/comment", comment::router().into())
+        .nest("/play_history", play_history::router())
+        .nest("/playlist", playlist::router())
+        .nest("/version", version::router())
+        .nest("/publish", publish::router())
+        .nest("/post", post::router())
+        .nest("/contributor", contributor::router())
+        .nest("/sitemap", sitemap::router())
+        .nest("/notification", notification::router())
+        .nest("/message", message::router())
+        .nest("/report", report::router())
+        .nest("/committee", committee::router())
+        .nest("/comment", comment::router())
         .nest("/moment", moment::router())
         .nest("/feed", feed::router())
 }

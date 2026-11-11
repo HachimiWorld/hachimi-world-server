@@ -4,25 +4,26 @@ use crate::web::jwt::Claims;
 use crate::web::result::{CommonError, WebError, WebResult};
 use crate::web::state::AppState;
 use crate::{common, err, ok};
+use aide::axum::routing::{get, post};
+use aide::axum::ApiRouter;
 use axum::extract::{Query, State};
-use axum::routing::{get, post};
-use axum::{Json, Router};
+use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// @since 261005
-pub fn router() -> Router<AppState> {
-    Router::new()
-        .route("/list", get(list))
-        .route("/detail", get(detail))
-        .route("/unread_count", get(unread_count))
-        .route("/mark_read", post(mark_read))
-        .route("/mark_all_read", post(mark_all_read))
+pub fn router() -> ApiRouter<AppState> {
+    ApiRouter::new()
+        .api_route("/list", get(list))
+        .api_route("/detail", get(detail))
+        .api_route("/unread_count", get(unread_count))
+        .api_route("/mark_read", post(mark_read))
+        .api_route("/mark_all_read", post(mark_all_read))
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct NotificationItem {
     /// UUIDv7. Newer notifications have greater ids.
     pub notification_id: Uuid,
@@ -57,7 +58,7 @@ fn parse_id(s: &str) -> Result<Uuid, WebError<CommonError>> {
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListReq {
     /// The last `notification_id` of the previous page. Omit for the first page.
     pub before_id: Option<String>,
@@ -66,7 +67,7 @@ pub struct ListReq {
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListResp {
     /// Newest first.
     pub items: Vec<NotificationItem>,
@@ -84,7 +85,7 @@ async fn list(claims: Claims, state: State<AppState>, req: Query<ListReq>) -> We
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct DetailReq {
     pub notification_id: String,
 }
@@ -98,7 +99,7 @@ async fn detail(claims: Claims, state: State<AppState>, req: Query<DetailReq>) -
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UnreadCountResp {
     pub unread_count: i64,
 }
@@ -109,13 +110,13 @@ async fn unread_count(claims: Claims, state: State<AppState>) -> WebResult<Unrea
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MarkReadReq {
     pub notification_id: String,
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MarkReadResp {
     pub notification_id: Uuid,
     /// The first time it was marked read.
@@ -133,7 +134,7 @@ async fn mark_read(claims: Claims, state: State<AppState>, req: Json<MarkReadReq
 }
 
 /// @since 261005
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MarkAllReadResp {
     pub marked_count: u64,
     /// May be non-zero if a notification arrived meanwhile.

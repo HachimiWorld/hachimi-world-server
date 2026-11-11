@@ -19,7 +19,7 @@ pub struct MomentAdapter;
 
 /// How a moment looks: its text and the thumbnails of its images.
 /// @since 261106
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MomentPreview {
     pub id: MomentId,
     /// May be empty.

@@ -105,7 +105,7 @@ pub async fn mark_read(pool: &PgPool, uid: UserId, channel: Channel) -> sqlx::Re
 }
 
 /// @since 261006
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Liker {
     pub uid: UserId,
     pub username: String,
@@ -114,7 +114,7 @@ pub struct Liker {
 
 /// The likes one song received from others.
 /// @since 261006
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ReceivedLikeItem {
     pub song_id: SongId,
     pub song_display_id: String,
