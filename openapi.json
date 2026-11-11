@@ -12864,7 +12864,8 @@
           "id": {
             "description": "@deprecated since 260331\n @remove in 260901",
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "deprecated": true
           },
           "play_time": {
             "type": "string",
@@ -14750,7 +14751,8 @@
           },
           "audio_url": {
             "description": "Deprecated since 260114.\n Use detail endpoint to get audio URL",
-            "type": "string"
+            "type": "string",
+            "deprecated": true
           },
           "cover_art_url": {
             "type": "string"

@@ -42,6 +42,7 @@ pub struct CursorResp {
 pub struct PlayHistoryItem {
     /// @deprecated since 260331
     /// @remove in 260901
+    #[schemars(extend("deprecated" = true))]
     pub id: SongId,
     pub song_info: PublicSongDetail,
     pub play_time: DateTime<Utc>

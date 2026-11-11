@@ -226,6 +226,7 @@ pub struct SearchSongItem {
     pub cover_art_url: String,
     /// Deprecated since 260114.
     /// Use detail endpoint to get audio URL
+    #[schemars(extend("deprecated" = true))]
     pub audio_url: String,
     pub uploader_uid: UserId,
     pub uploader_name: String,
