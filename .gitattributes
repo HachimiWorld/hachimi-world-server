@@ -1,3 +1,7 @@
 *.png filter=lfs diff=lfs merge=lfs -text
 *.webp filter=lfs diff=lfs merge=lfs -text
 *.mp3 filter=lfs diff=lfs merge=lfs -text
+
+# Generated files: collapsed in GitHub diffs and left out of the language stats
+openapi.json linguist-generated=true
+.sqlx/** linguist-generated=true
