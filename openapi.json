@@ -12727,8 +12727,16 @@
             "format": "int64"
           },
           "total": {
+            "description": "Total favorites, including unavailable playlists.",
             "type": "integer",
             "format": "int64"
+          },
+          "unavailable": {
+            "description": "Favorites on this page whose playlists have been deleted or hidden.\n @since 261115",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnavailableFavoritePlaylistItem"
+            }
           }
         },
         "required": [
@@ -15563,6 +15571,29 @@
               "type"
             ]
           }
+        ]
+      },
+      "UnavailableFavoritePlaylistItem": {
+        "description": "@since 261115",
+        "type": "object",
+        "properties": {
+          "add_time": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "order_index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "playlist_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "playlist_id",
+          "order_index",
+          "add_time"
         ]
       },
       "UnavailableLikeItem": {
