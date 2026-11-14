@@ -1,12 +1,14 @@
 use crate::common::auth::{with_new_random_test_user, with_test_contributor_user};
 use crate::common::publish::create_approved_song;
 use crate::common::{with_test_environment, CommonParse, TestEnvironment};
-use hachimi_world_server::db::playlist::PlaylistId;
+use hachimi_world_server::db::playlist::{IPlaylistDao, PlaylistDao, PlaylistId};
+use hachimi_world_server::db::song::SongDao;
 use hachimi_world_server::db::song::SongId;
+use hachimi_world_server::db::CrudDao;
 use hachimi_world_server::web::routes::playlist::{
     AddFavoriteReq, AddSongReq, ChangeOrderReq, CheckFavoriteReq, CheckFavoriteResp,
-    CreatePlaylistReq, CreatePlaylistResp, DetailReq, DetailResp, ListContainingReq,
-    ListContainingResp, ListPublicByUserReq, ListPublicByUserResp, ListResp, PageFavoritesReq, PageFavoritesResp, RemoveSongReq, SearchReq,
+    CreatePlaylistReq, CreatePlaylistResp, DeletePlaylistReq, DetailReq, DetailResp, ListContainingReq,
+    ListContainingResp, ListPublicByUserReq, ListPublicByUserResp, ListResp, PageFavoritesReq, PageFavoritesResp, RemoveFavoriteReq, RemoveSongReq, SearchReq,
     SearchResp, SetCoverReq,
 };
 use image::{ImageFormat, Rgb, RgbImage};
@@ -327,6 +329,67 @@ async fn test_favorite_playlists() {
         assert_eq!(remaining.total, 1);
         assert_eq!(remaining.data.len(), 1);
         assert_eq!(remaining.data[0].metadata.id, playlist_b);
+    }).await;
+}
+
+#[tokio::test]
+async fn test_delete_playlist_preserves_favorites_as_unavailable() {
+    with_test_environment(|mut env| async move {
+        let owner = with_new_random_test_user(&mut env).await;
+        let contributor = with_test_contributor_user(&mut env).await;
+        let owner_token = owner.token.access_token;
+        let song_id = create_approved_song(&mut env, &owner_token, &contributor.token.access_token, "Kept song").await.id;
+        env.api.set_token(owner_token.clone());
+        let query = format!("playlist-delete-{}", uuid::Uuid::new_v4().simple());
+        let id = create_playlist(&env, "Deleted playlist", Some(&query), true).await;
+        add_song_to_playlist(&env, id, song_id).await;
+        wait_for_playlist_search_hit(&env, &query, id).await;
+
+        let fan = with_new_random_test_user(&mut env).await;
+        let favorite_req = AddFavoriteReq { playlist_id: id };
+        env.api.post("/playlist/favorite/add", &favorite_req).await.parse_resp::<()>().await.unwrap();
+        let page_req = PageFavoritesReq { page_index: 0, page_size: 1 };
+        let before = env.api.get_query("/playlist/favorite/page", &page_req).await
+            .parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert!(before.unavailable.is_empty());
+        let original = &before.data[0];
+
+        let delete_req = DeletePlaylistReq { id };
+        let denied = env.api.post("/playlist/delete", &delete_req).await.parse_resp::<()>().await.unwrap_err();
+        assert_eq!(denied.code, "not_owner");
+
+        env.api.set_token(owner_token);
+        env.api.post("/playlist/delete", &delete_req).await.parse_resp::<()>().await.unwrap();
+        assert!(PlaylistDao::list_songs(&env.pool, id).await.unwrap().is_empty());
+        assert!(SongDao::get_by_id(&env.pool, song_id).await.unwrap().is_some());
+
+        env.api.set_token(fan.token.access_token);
+        let missing = env.api.get_query("/playlist/detail", &DetailReq { id }).await
+            .parse_resp::<DetailResp>().await.unwrap_err();
+        assert_eq!(missing.code, "not_found");
+        let search = env.api.get_query("/playlist/search", &SearchReq {
+            q: query, limit: Some(10), offset: Some(0), sort_by: None, user_id: None,
+        }).await.parse_resp::<SearchResp>().await.unwrap();
+        assert!(search.hits.is_empty());
+
+        let after = env.api.get_query("/playlist/favorite/page", &page_req).await
+            .parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert_eq!(after.total, 1);
+        assert!(after.data.is_empty());
+        assert_eq!(after.unavailable.len(), 1);
+        let unavailable = &after.unavailable[0];
+        assert_eq!(unavailable.playlist_id, id);
+        assert_eq!(unavailable.order_index, original.order_index);
+        assert_eq!(unavailable.add_time, original.add_time);
+
+        env.api.post("/playlist/favorite/remove", &RemoveFavoriteReq { playlist_id: id }).await
+            .parse_resp::<()>().await.unwrap();
+        let empty = env.api.get_query("/playlist/favorite/page", &page_req).await
+            .parse_resp::<PageFavoritesResp>().await.unwrap();
+        assert_eq!(empty.total, 0);
+        assert!(empty.unavailable.is_empty());
+        let missing = env.api.post("/playlist/favorite/add", &favorite_req).await.parse_resp::<()>().await.unwrap_err();
+        assert_eq!(missing.code, "not_found");
     }).await;
 }
 

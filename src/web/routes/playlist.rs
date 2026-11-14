@@ -23,7 +23,7 @@ use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{PgPool, PgTransaction};
 use std::collections::HashMap;
 
 pub fn router() -> ApiRouter<AppState> {
@@ -402,10 +402,14 @@ async fn delete(
     state: State<AppState>,
     req: Json<DeletePlaylistReq>,
 ) -> WebResult<()> {
-    let playlist = check_ownership(&claims, &state.sql_pool, req.id).await?;
-    PlaylistDao::delete_by_id(&state.sql_pool, playlist.id).await?;
+    let mut tx = state.sql_pool.begin().await?;
+    let playlist = check_ownership_for_update(&claims, &mut tx, req.id).await?;
+    PlaylistDao::delete_cascade_by_id(&mut tx, playlist.id).await?;
+    tx.commit().await?;
 
-    let _ = search::playlist::delete_playlist_document(&state.meilisearch, &[playlist.id]).await;
+    if let Err(error) = search::playlist::delete_playlist_document(&state.meilisearch, &[playlist.id]).await {
+        tracing::warn!(playlist_id = playlist.id.0, ?error, "Failed to remove the playlist from the search index");
+    }
 
     ok!(())
 }
@@ -422,13 +426,14 @@ async fn add_song(
     state: State<AppState>,
     req: Json<AddSongReq>,
 ) -> WebResult<()> {
-    let mut playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
+    let mut tx = state.sql_pool.begin().await?;
+    let mut playlist = check_ownership_for_update(&claims, &mut tx, req.playlist_id).await?;
 
-    let song = SongDao::get_by_id(&state.sql_pool, req.song_id).await?
+    let song = SongDao::get_by_id(&mut *tx, req.song_id).await?
         .filter(|x| !x.is_hidden || x.uploader_uid == claims.uid())
         .ok_or_else(|| common!("song_not_found", "Song not found"))?;
 
-    let songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
+    let songs = PlaylistDao::list_songs(&mut *tx, playlist.id).await?;
     if songs.len() >= 1000 {
         err!("playlist_full", "The playlist is full")
     }
@@ -438,8 +443,6 @@ async fn add_song(
     }
     let target_order = songs.len() as i32;
     playlist.update_time = Utc::now();
-
-    let mut tx = state.sql_pool.begin().await?;
 
     PlaylistDao::add_song(
         &mut *tx,
@@ -468,9 +471,8 @@ async fn remove_song(
     state: State<AppState>,
     req: Json<RemoveSongReq>,
 ) -> WebResult<()> {
-    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
-
     let mut tx = state.sql_pool.begin().await?;
+    let playlist = check_ownership_for_update(&claims, &mut tx, req.playlist_id).await?;
     PlaylistDao::remove_song(&mut *tx, playlist.id, req.song_id).await?;
     PlaylistDao::refresh_default_covers(&mut *tx, &[playlist.id]).await?;
     tx.commit().await?;
@@ -491,9 +493,10 @@ async fn change_order(
     state: State<AppState>,
     req: Json<ChangeOrderReq>,
 ) -> WebResult<()> {
-    let playlist = check_ownership(&claims, &state.sql_pool, req.playlist_id).await?;
+    let mut tx = state.sql_pool.begin().await?;
+    let playlist = check_ownership_for_update(&claims, &mut tx, req.playlist_id).await?;
 
-    let mut songs = PlaylistDao::list_songs(&state.sql_pool, playlist.id).await?;
+    let mut songs = PlaylistDao::list_songs(&mut *tx, playlist.id).await?;
     songs.sort_by(|a, b| a.order_index.cmp(&b.order_index));
 
     let src_index = songs.iter().position(|x| x.song_id == req.song_id)
@@ -516,7 +519,6 @@ async fn change_order(
         song.order_index = i as i32;
     }
 
-    let mut tx = state.sql_pool.begin().await?;
     PlaylistDao::update_songs_orders(&mut tx, &songs).await?;
     tx.commit().await?;
     ok!(())
@@ -527,8 +529,20 @@ async fn check_ownership(
     pool: &PgPool,
     playlist_id: PlaylistId,
 ) -> Result<Playlist, WebError<CommonError>> {
-    let playlist = PlaylistDao::get_by_id(pool, playlist_id).await?
-        .ok_or_else(|| common!("not_found", "Playlist not found"))?;
+    require_owner(claims, PlaylistDao::get_by_id(pool, playlist_id).await?)
+}
+
+/// Locks the playlist before changing its song associations or deleting it.
+async fn check_ownership_for_update(
+    claims: &Claims,
+    tx: &mut PgTransaction<'_>,
+    playlist_id: PlaylistId,
+) -> Result<Playlist, WebError<CommonError>> {
+    require_owner(claims, PlaylistDao::get_by_id_for_update(tx, playlist_id).await?)
+}
+
+fn require_owner(claims: &Claims, playlist: Option<Playlist>) -> Result<Playlist, WebError<CommonError>> {
+    let playlist = playlist.ok_or_else(|| common!("not_found", "Playlist not found"))?;
     if playlist.user_id != claims.uid() {
         err!("not_owner", "You are not the owner of this playlist")
     }
@@ -687,12 +701,23 @@ pub struct PageFavoritesResp {
     pub data: Vec<FavoritePlaylistItem>,
     pub page_index: i64,
     pub page_size: i64,
+    /// Total favorites, including unavailable playlists.
     pub total: i64,
+    /// Favorites on this page whose playlists have been deleted or hidden.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unavailable: Vec<UnavailableFavoritePlaylistItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct FavoritePlaylistItem {
     pub metadata: PlaylistMetadata,
+    pub order_index: i32,
+    pub add_time: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct UnavailableFavoritePlaylistItem {
+    pub playlist_id: PlaylistId,
     pub order_index: i32,
     pub add_time: DateTime<Utc>,
 }
@@ -706,7 +731,7 @@ async fn page_favorites(
     let page_size = req.page_size.clamp(1, 50);
     let count = PlaylistDao::count_favorites(&state.sql_pool, claims.uid()).await?;
     if count == 0 {
-        ok!(PageFavoritesResp {data: vec![], page_index, page_size, total: 0})
+        ok!(PageFavoritesResp { data: vec![], page_index, page_size, total: 0, unavailable: vec![] })
     }
     // Newest first, as the DAO returns them
     let items = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), page_index, page_size).await?;
@@ -716,14 +741,23 @@ async fn page_favorites(
             .into_iter()
             .map(|x| (x.id, x))
             .collect();
-    let result = items.into_iter()
-        .filter_map(|item| playlists.remove(&item.playlist_id).map(|metadata| FavoritePlaylistItem {
-            add_time: item.add_time,
-            order_index: item.order_index,
-            metadata,
-        }))
-        .collect_vec();
-    ok!(PageFavoritesResp{data: result, page_index, page_size, total: count})
+    let mut data = Vec::new();
+    let mut unavailable = Vec::new();
+    for item in items {
+        match playlists.remove(&item.playlist_id) {
+            Some(metadata) => data.push(FavoritePlaylistItem {
+                metadata,
+                order_index: item.order_index,
+                add_time: item.add_time,
+            }),
+            None => unavailable.push(UnavailableFavoritePlaylistItem {
+                playlist_id: item.playlist_id,
+                order_index: item.order_index,
+                add_time: item.add_time,
+            }),
+        }
+    }
+    ok!(PageFavoritesResp { data, page_index, page_size, total: count, unavailable })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -736,22 +770,28 @@ async fn add_favorite(
     state: State<AppState>,
     req: Json<AddFavoriteReq>,
 ) -> WebResult<()> {
-    let playlist = PlaylistDao::page_favorites(&state.sql_pool, claims.uid(), 0, i64::MAX).await?;
-    if playlist.len() > 1000 {
+    let mut tx = state.sql_pool.begin().await?;
+    PlaylistDao::get_by_id_for_update(&mut tx, req.playlist_id).await?
+        .filter(|playlist| !playlist.is_hidden)
+        .ok_or_else(|| common!("not_found", "Playlist not found"))?;
+
+    let favorites = PlaylistDao::page_favorites(&mut *tx, claims.uid(), 0, i64::MAX).await?;
+    if favorites.len() > 1000 {
         err!("too_many_favorites", "You have too many favorite playlists")
     }
-    if playlist.iter().any(|x| x.playlist_id == req.playlist_id) {
+    if favorites.iter().any(|x| x.playlist_id == req.playlist_id) {
         err!("already_favorited", "Playlist is already in your favorites")
     }
 
     let value = FavoritePlaylist {
         user_id: claims.uid(),
         playlist_id: req.playlist_id,
-        order_index: playlist.len() as i32,
+        order_index: favorites.len() as i32,
         add_time: Utc::now(),
     };
 
-    PlaylistDao::add_favorite(&state.sql_pool, &value).await?;
+    PlaylistDao::add_favorite(&mut *tx, &value).await?;
+    tx.commit().await?;
     ok!(())
 }
 

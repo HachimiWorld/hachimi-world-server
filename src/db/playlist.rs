@@ -362,6 +362,12 @@ where
 }
 
 impl<'e> PlaylistDao {
+    pub async fn get_by_id_for_update(tx: &mut PgTransaction<'e>, id: PlaylistId) -> sqlx::Result<Option<Playlist>> {
+        query_playlists!("WHERE id = $1 FOR UPDATE", id as PlaylistId)
+            .fetch_optional(&mut **tx)
+            .await
+    }
+
     pub async fn update_songs_orders(tx: &mut PgTransaction<'e>, values: &[PlaylistSong]) -> sqlx::Result<()> {
         for value in values {
             sqlx::query!(
@@ -374,6 +380,7 @@ impl<'e> PlaylistDao {
         Ok(())
     }
 
+    /// Deletes the locked playlist and its songs' associations. Favorites stay as unavailable entries.
     pub async fn delete_cascade_by_id(tx: &mut PgTransaction<'e>, id: PlaylistId) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM playlist_songs WHERE playlist_id = $1", id as PlaylistId)
             .execute(&mut **tx).await?;
