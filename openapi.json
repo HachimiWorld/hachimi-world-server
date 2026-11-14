@@ -12732,7 +12732,7 @@
             "format": "int64"
           },
           "unavailable": {
-            "description": "Favorites on this page whose playlists have been deleted or hidden.",
+            "description": "Favorites on this page whose playlists have been deleted or hidden.\n @since 261115",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/UnavailableFavoritePlaylistItem"
@@ -15574,6 +15574,7 @@
         ]
       },
       "UnavailableFavoritePlaylistItem": {
+        "description": "@since 261115",
         "type": "object",
         "properties": {
           "add_time": {

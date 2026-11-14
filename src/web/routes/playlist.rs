@@ -704,6 +704,7 @@ pub struct PageFavoritesResp {
     /// Total favorites, including unavailable playlists.
     pub total: i64,
     /// Favorites on this page whose playlists have been deleted or hidden.
+    /// @since 261115
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unavailable: Vec<UnavailableFavoritePlaylistItem>,
 }
@@ -715,6 +716,7 @@ pub struct FavoritePlaylistItem {
     pub add_time: DateTime<Utc>,
 }
 
+/// @since 261115
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UnavailableFavoritePlaylistItem {
     pub playlist_id: PlaylistId,
